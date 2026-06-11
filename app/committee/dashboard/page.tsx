@@ -1,0 +1,104 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Committee Dashboard',
+};
+
+export default function CommitteeDashboard() {
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <p className="page-subtitle">Read-only overview of all club operations</p>
+        </div>
+      </div>
+
+      {/* Status Summary Cards */}
+      <div className="grid grid-4" style={{ marginBottom: 'var(--space-8)' }}>
+        <div className="card stat-card">
+          <div className="stat-icon" style={{ background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' }}>💰</div>
+          <div className="stat-value text-gradient">₹0</div>
+          <div className="stat-label">Today&apos;s Revenue</div>
+        </div>
+        <div className="card stat-card">
+          <div className="stat-icon" style={{ background: 'var(--status-warning-soft)', color: 'var(--status-warning)' }}>🔧</div>
+          <div className="stat-value text-gradient">0</div>
+          <div className="stat-label">Open Tasks</div>
+        </div>
+        <div className="card stat-card">
+          <div className="stat-icon" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>✅</div>
+          <div className="stat-value text-gradient">0%</div>
+          <div className="stat-label">Checklist Completion</div>
+        </div>
+        <div className="card stat-card">
+          <div className="stat-icon" style={{ background: 'var(--accent-secondary-soft)', color: 'var(--accent-secondary)' }}>📦</div>
+          <div className="stat-value text-gradient">0</div>
+          <div className="stat-label">Low Stock Items</div>
+        </div>
+      </div>
+
+      <div className="grid grid-2">
+        {/* Recent Finance */}
+        <div className="card">
+          <div className="card-header">
+            <h3>Recent Finance Entries</h3>
+            <span className="badge badge-neutral">View Only</span>
+          </div>
+          <div className="card-body">
+            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
+              <div className="empty-state-icon">💰</div>
+              <div className="empty-state-title">No entries yet</div>
+              <div className="empty-state-description">Finance entries will appear here once submitted.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Open Maintenance Tasks */}
+        <div className="card">
+          <div className="card-header">
+            <h3>Open Maintenance Tasks</h3>
+            <span className="badge badge-neutral">View Only</span>
+          </div>
+          <div className="card-body">
+            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
+              <div className="empty-state-icon">🔧</div>
+              <div className="empty-state-title">No open tasks</div>
+              <div className="empty-state-description">Maintenance tasks will appear here.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Today's Checklists */}
+        <div className="card">
+          <div className="card-header">
+            <h3>Today&apos;s Checklist Status</h3>
+            <span className="badge badge-neutral">View Only</span>
+          </div>
+          <div className="card-body">
+            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
+              <div className="empty-state-icon">✅</div>
+              <div className="empty-state-title">No checklists today</div>
+              <div className="empty-state-description">Daily checklist status will appear here.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Inventory Status */}
+        <div className="card">
+          <div className="card-header">
+            <h3>Inventory Status</h3>
+            <span className="badge badge-neutral">View Only</span>
+          </div>
+          <div className="card-body">
+            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
+              <div className="empty-state-icon">📦</div>
+              <div className="empty-state-title">No inventory items</div>
+              <div className="empty-state-description">Inventory levels will appear here.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
