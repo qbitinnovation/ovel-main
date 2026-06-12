@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  turbopack: {},
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns: [
       {

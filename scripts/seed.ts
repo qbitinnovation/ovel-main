@@ -73,11 +73,19 @@ const MODULE_DEFINITIONS = [
     availableActions: ['submit_daily_entry', 'view_finance_history', 'export_finance_report', 'request_unlock'],
   },
   {
-    moduleKey: 'inventory_sales',
-    moduleName: 'Inventory & Sales',
-    description: 'Real-time tracking of consumables, sales entries with auto-decrement, and stock alerts.',
+    moduleKey: 'inventory',
+    moduleName: 'Inventory',
+    description: 'Store and track turf items, equipment, and ground assets.',
     icon: '📦',
     displayOrder: 3,
+    availableActions: ['add_turf_inventory_item', 'update_turf_inventory_item', 'view_turf_inventory', 'export_turf_inventory_report'],
+  },
+  {
+    moduleKey: 'inventory_sales',
+    moduleName: 'Sales',
+    description: 'Product listing, sales entries with auto-decrement, and restocking.',
+    icon: '📦',
+    displayOrder: 4,
     availableActions: ['log_sale', 'add_restock_entry', 'view_inventory_levels', 'set_low_stock_threshold', 'export_inventory_report'],
   },
   {
@@ -85,7 +93,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Maintenance & Tasks',
     description: 'Track physical maintenance issues from identification to resolution and closure.',
     icon: '🔧',
-    displayOrder: 4,
+    displayOrder: 5,
     availableActions: ['create_task', 'edit_task', 'assign_task', 'update_task_status', 'close_task', 'reopen_task', 'delete_task', 'view_all_tasks'],
   },
   {
@@ -93,7 +101,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Daily Operations & Staff Checklist',
     description: 'Daily verification of ground-level duties with live photo proof and supervisor approval.',
     icon: '✅',
-    displayOrder: 5,
+    displayOrder: 6,
     availableActions: ['view_checklist', 'submit_checklist_item', 'resubmit_rejected_item', 'approve_checklist_item', 'reject_checklist_item'],
   },
   {
@@ -101,7 +109,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Notifications & Communication',
     description: 'Real-time alerts delivered to users when relevant events occur across the system.',
     icon: '🔔',
-    displayOrder: 6,
+    displayOrder: 7,
     availableActions: ['configure_notification_rules', 'manage_channels', 'view_notification_log'],
   },
   {
@@ -109,7 +117,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Reports & Analytics',
     description: 'Real-time dashboards and exportable reports across all operational modules.',
     icon: '📊',
-    displayOrder: 7,
+    displayOrder: 8,
     availableActions: ['view_dashboards', 'export_report', 'schedule_report_delivery'],
   },
   {
@@ -117,7 +125,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Malayalam Output & MOM',
     description: 'Minutes of Meeting documentation with English-to-Malayalam translation support.',
     icon: '📝',
-    displayOrder: 8,
+    displayOrder: 9,
     availableActions: ['create_mom_entry', 'convert_to_malayalam', 'edit_translation', 'save_mom_record', 'attach_malayalam_instruction', 'view_mom_history'],
   },
   {
@@ -125,7 +133,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Smart Attendance & Safety Checklist',
     description: 'End-of-day safety verification before Turf Manager logout with permanent records.',
     icon: '🛡️',
-    displayOrder: 9,
+    displayOrder: 10,
     availableActions: ['complete_safety_checklist', 'confirm_logout'],
   },
   {
@@ -133,7 +141,7 @@ const MODULE_DEFINITIONS = [
     moduleName: 'Audit & Activity Log',
     description: 'Permanent, tamper-proof record of every action taken by every user across the system.',
     icon: '📋',
-    displayOrder: 10,
+    displayOrder: 11,
     availableActions: ['view_audit_logs', 'search_filter_logs', 'export_audit_report'],
   },
 ];

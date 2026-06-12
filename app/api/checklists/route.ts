@@ -5,9 +5,18 @@ import Checklist from '@/models/Checklist';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevChecklist } from '@/lib/dev-store';
-import { SUPERVISOR_CHECKLIST_ITEMS } from '@/lib/supervisor-checklist';
+import {
+  getChecklistDayRange,
+  isSameChecklistDay,
+  runChecklistMaintenance,
+  runDevChecklistMaintenance,
+  startChecklistMaintenanceScheduler,
+  startOfChecklistDay,
+} from '@/lib/checklist-maintenance';
 
 export const dynamic = 'force-dynamic';
+
+startChecklistMaintenanceScheduler();
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,15 +26,16 @@ export async function GET(request: NextRequest) {
     const staffId = sp.get('staffId');
     const date = sp.get('date');
     const status = sp.get('status');
+    const maintenanceStaffId = staffId || (session.user.portalType === 'turf' ? session.user.id : null);
     try {
       await dbConnect();
     } catch (error) {
       if (!isDevFallbackEnabled()) throw error;
       const store = getDevStore();
-      ensureTodayDevChecklist(session.user.id);
+      runDevChecklistMaintenance({ staffId: maintenanceStaffId });
       let checklists = store.checklists;
       if (staffId) checklists = checklists.filter((checklist) => checklist.staffId === staffId);
-      if (date) checklists = checklists.filter((checklist) => isSameDay(checklist.date, date));
+      if (date) checklists = checklists.filter((checklist) => isSameChecklistDay(checklist.date, date));
       if (status) checklists = checklists.filter((checklist) => checklist.overallStatus === status);
       return successResponse(
         checklists
@@ -35,11 +45,12 @@ export async function GET(request: NextRequest) {
           .map(populateDevChecklist)
       );
     }
+    await runChecklistMaintenance({ staffId: maintenanceStaffId });
     const filter: Record<string, unknown> = {};
     if (staffId) filter.staffId = staffId;
     if (date) {
-      const d = new Date(date);
-      filter.date = { $gte: new Date(d.setHours(0, 0, 0, 0)), $lte: new Date(d.setHours(23, 59, 59, 999)) };
+      const { start, end } = getChecklistDayRange(date);
+      filter.date = { $gte: start, $lt: end };
     }
     if (status) filter.overallStatus = status;
     const checklists = await Checklist.find(filter)
@@ -72,11 +83,16 @@ export async function POST(request: NextRequest) {
     if (action === 'generate') {
       const { staffId, items, date } = body;
       if (!staffId || !items?.length) return errorResponse('Staff and items required');
-      const checklistDate = date ? new Date(date) : new Date();
+      const checklistDate = startOfChecklistDay(date ? new Date(date) : new Date());
       const deadline = new Date(checklistDate);
-      deadline.setDate(deadline.getDate() + 7);
+      deadline.setDate(deadline.getDate() + 1);
       if (useDevStore) {
         const now = new Date().toISOString();
+        const existing = getDevStore().checklists.find((checklist) => checklist.staffId === staffId && isSameChecklistDay(checklist.date, checklistDate));
+        if (existing) {
+          runDevChecklistMaintenance({ staffId, today: checklistDate });
+          return successResponse(populateDevChecklist(existing), 'Checklist already exists for this day');
+        }
         const checklist: DevChecklist = {
           _id: createDevId('checklist'),
           staffId,
@@ -103,18 +119,26 @@ export async function POST(request: NextRequest) {
           updatedAt: now,
         };
         getDevStore().checklists.unshift(checklist);
+        runDevChecklistMaintenance({ staffId, today: checklistDate });
         return successResponse(populateDevChecklist(checklist), 'Checklist generated', 201);
+      }
+      const { start, end } = getChecklistDayRange(checklistDate);
+      const existing = await Checklist.findOne({ staffId, date: { $gte: start, $lt: end } });
+      if (existing) {
+        await runChecklistMaintenance({ staffId, today: checklistDate });
+        return successResponse(existing, 'Checklist already exists for this day');
       }
       const checklist = await Checklist.create({
         staffId,
-        date: checklistDate,
+        date: start,
         items: items.map((item: { key: string; label: string; labelMl?: string }) => ({
           key: item.key, label: item.label, labelMl: item.labelMl || '',
           status: 'pending',
         })),
         overallStatus: 'pending',
-        uploadDeadline: deadline,
+        uploadDeadline: end,
       });
+      await runChecklistMaintenance({ staffId, today: checklistDate });
       await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'generate_checklist', module: 'daily_operations', recordId: checklist._id, description: `Generated daily checklist with ${items.length} items`, ...meta }, request.headers);
       return successResponse(checklist, 'Checklist generated', 201);
     }
@@ -126,52 +150,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function ensureTodayDevChecklist(staffId: string) {
-  const store = getDevStore();
-  const actualStaffId = staffId === 'demo-superadmin' ? 'demo-turf' : staffId;
-  const existing = store.checklists.find((checklist) => checklist.staffId === actualStaffId && isSameDay(checklist.date, new Date().toISOString()));
-  if (existing) return existing;
-
-  const now = new Date();
-  const deadline = new Date(now);
-  deadline.setDate(deadline.getDate() + 1);
-  const checklist: DevChecklist = {
-    _id: createDevId('checklist'),
-    staffId: actualStaffId,
-    date: now.toISOString(),
-    items: SUPERVISOR_CHECKLIST_ITEMS.map((item) => ({
-      key: item.key,
-      label: item.label,
-      labelMl: item.labelMl,
-      photoUrl: '',
-      gpsLat: null,
-      gpsLng: null,
-      capturedAt: null,
-      status: 'pending',
-      supervisorNote: '',
-      rejectedAt: null,
-      approvedAt: null,
-    })),
-    overallStatus: 'pending',
-    submittedAt: null,
-    verifiedAt: null,
-    verifiedBy: null,
-    uploadDeadline: deadline.toISOString(),
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  };
-  store.checklists.unshift(checklist);
-  return checklist;
-}
-
 function populateDevChecklist(checklist: DevChecklist) {
   return {
     ...checklist,
     staffId: devUserRef(checklist.staffId),
     verifiedBy: devUserRef(checklist.verifiedBy),
   };
-}
-
-function isSameDay(left: string, right: string) {
-  return new Date(left).toDateString() === new Date(right).toDateString();
 }

@@ -4,6 +4,7 @@ export interface IInventoryItem extends Document {
   _id: Types.ObjectId;
   name: string;
   unit: string;
+  unitPrice: number;
   currentStock: number;
   lowStockThreshold: number;
   isActive: boolean;
@@ -15,6 +16,7 @@ const InventoryItemSchema = new Schema<IInventoryItem>(
   {
     name: { type: String, required: true, unique: true, trim: true },
     unit: { type: String, default: 'pcs', trim: true },
+    unitPrice: { type: Number, default: 0, min: 0 },
     currentStock: { type: Number, default: 0, min: 0 },
     lowStockThreshold: { type: Number, default: 5, min: 0 },
     isActive: { type: Boolean, default: true },

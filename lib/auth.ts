@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import dbConnect from '@/lib/db';
 import UserModel from '@/models/User';
 import { authConfig } from '@/lib/auth.config';
+import { getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
 
 const DEV_DEMO_USERS = [
   {
@@ -50,6 +51,29 @@ function getDevDemoUser(email: string, password: string) {
     portalType: demoUser.portalType,
     positionId: null,
     mustChangePassword: false,
+  };
+}
+
+async function getDevStoredUser(email: string, password: string) {
+  if (process.env.NODE_ENV !== 'development' || !isDevFallbackEnabled()) return null;
+
+  const devUser = getDevStore().users.find((user) => user.email.toLowerCase() === email);
+  if (!devUser?.passwordHash) return null;
+
+  const isValid = await bcrypt.compare(password, devUser.passwordHash);
+  if (!isValid || !devUser.isActive || devUser.isArchived) return null;
+
+  devUser.lastLogin = new Date().toISOString();
+  devUser.updatedAt = devUser.lastLogin;
+
+  return {
+    id: devUser._id,
+    name: devUser.name,
+    email: devUser.email,
+    userType: devUser.userType,
+    portalType: devUser.portalType,
+    positionId: devUser.positionId,
+    mustChangePassword: devUser.mustChangePassword,
   };
 }
 
@@ -116,13 +140,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             console.warn('MongoDB unavailable; using development demo login.');
             return demoUser;
           }
+          const devStoredUser = await getDevStoredUser(email, password);
+          if (devStoredUser) {
+            console.warn('MongoDB unavailable; using development stored user login.');
+            return devStoredUser;
+          }
+          if (isDevFallbackEnabled()) {
+            return null;
+          }
           throw error;
         }
 
         const user = await UserModel.findOne({ email }).select('+password');
 
         if (!user) {
-          throw new Error('Invalid email or password');
+          return null;
         }
 
         if (!user.isActive) {
@@ -135,7 +167,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
-          throw new Error('Invalid email or password');
+          return null;
         }
 
         // Update last login

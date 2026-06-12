@@ -15,6 +15,7 @@ export interface DevUser {
   name: string;
   email: string;
   phone: string;
+  passwordHash?: string;
   userType: UserType;
   portalType: PortalType;
   positionId: string | null;
@@ -31,6 +32,7 @@ interface DevStore {
   positions: DevPosition[];
   inventoryItems: DevInventoryItem[];
   inventoryTransactions: DevInventoryTransaction[];
+  turfInventoryItems: DevTurfInventoryItem[];
   maintenanceTasks: DevMaintenanceTask[];
   moduleMappings: DevModuleMapping[];
   checklists: DevChecklist[];
@@ -43,6 +45,7 @@ export interface DevInventoryItem {
   _id: string;
   name: string;
   unit: string;
+  unitPrice: number;
   currentStock: number;
   lowStockThreshold: number;
   isActive: boolean;
@@ -60,6 +63,19 @@ export interface DevInventoryTransaction {
   date: string;
   enteredBy: string;
   createdAt: string;
+}
+
+export interface DevTurfInventoryItem {
+  _id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+  condition: 'good' | 'needs_repair' | 'damaged' | 'missing';
+  notes: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DevMaintenanceTask {
@@ -232,6 +248,7 @@ export function getDevStore() {
       positions: [],
       inventoryItems: [],
       inventoryTransactions: [],
+      turfInventoryItems: [],
       maintenanceTasks: [],
       moduleMappings: [],
       checklists: [],
@@ -243,6 +260,7 @@ export function getDevStore() {
 
   global.omsDevStore.inventoryItems ||= [];
   global.omsDevStore.inventoryTransactions ||= [];
+  global.omsDevStore.turfInventoryItems ||= [];
   global.omsDevStore.maintenanceTasks ||= [];
   global.omsDevStore.moduleMappings ||= [];
   global.omsDevStore.checklists ||= [];
@@ -264,9 +282,11 @@ export function populateDevUserPosition(user: DevUser) {
   const position = user.positionId
     ? store.positions.find((item) => item._id === user.positionId) || null
     : null;
+  const { passwordHash, ...safeUser } = user;
+  void passwordHash;
 
   return {
-    ...user,
+    ...safeUser,
     positionId: position ? { _id: position._id, name: position.name, isActive: position.isActive } : null,
   };
 }

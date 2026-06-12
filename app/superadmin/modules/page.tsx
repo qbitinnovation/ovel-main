@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { ACTION_LABELS, MODULE_DEFINITIONS } from '@/lib/constants';
 
 interface Position {
   _id: string;
@@ -32,45 +33,9 @@ const ACCESS_LEVELS = [
   { value: 'full_control', label: 'Full Control', description: 'Complete access to all actions in this module' },
 ];
 
-const ACTION_LABELS: Record<string, string> = {
-  create_user: 'Create User', archive_user: 'Archive User', edit_user: 'Edit User',
-  map_module_to_position: 'Map Module to Committee Position',
-  remove_module_from_position: 'Remove Module from Position',
-  add_individual_override: 'Add Individual Override', remove_override: 'Remove Override',
-  submit_daily_entry: 'Submit Daily Finance Entry', view_finance_history: 'View Finance History',
-  export_finance_report: 'Export Finance Reports', request_unlock: 'Request Admin Unlock',
-  log_sale: 'Log Sale', add_restock_entry: 'Add Restock', view_inventory_levels: 'View Inventory Levels',
-  set_low_stock_threshold: 'Set Low Stock Threshold', export_inventory_report: 'Export Inventory Report',
-  create_task: 'Create Task', edit_task: 'Edit Task', assign_task: 'Assign Task',
-  update_task_status: 'Update Task Status', close_task: 'Close Task', reopen_task: 'Reopen Task',
-  delete_task: 'Delete Task', view_all_tasks: 'View All Tasks',
-  view_checklist: 'View Checklist', submit_checklist_item: 'Submit Checklist Item',
-  resubmit_rejected_item: 'Resubmit Rejected Item', approve_checklist_item: 'Approve Checklist Item',
-  reject_checklist_item: 'Reject Checklist Item',
-  configure_notification_rules: 'Configure Notification Rules', manage_channels: 'Manage Channels',
-  view_notification_log: 'View Notification Log',
-  view_dashboards: 'View Dashboards', export_report: 'Export Report',
-  schedule_report_delivery: 'Schedule Report Delivery',
-  create_mom_entry: 'Create MOM Entry', convert_to_malayalam: 'Convert to Malayalam',
-  edit_translation: 'Edit Translation', save_mom_record: 'Save MOM Record',
-  attach_malayalam_instruction: 'Attach Malayalam Instruction', view_mom_history: 'View MOM History',
-  complete_safety_checklist: 'Complete Safety Checklist', confirm_logout: 'Confirm Logout',
-  view_audit_logs: 'View Audit Logs', search_filter_logs: 'Search & Filter Logs',
-  export_audit_report: 'Export Audit Report',
-};
-
-// Module definitions (matching constants.ts)
-const MODULE_DEFS: ModuleDef[] = [
-  { moduleKey: 'accounts_finance', moduleName: 'Accounts & Finance', description: 'Daily financial recording', icon: '💰', displayOrder: 2, availableActions: ['submit_daily_entry', 'view_finance_history', 'export_finance_report', 'request_unlock'] },
-  { moduleKey: 'inventory_sales', moduleName: 'Inventory & Sales', description: 'Consumables tracking and sales', icon: '📦', displayOrder: 3, availableActions: ['log_sale', 'add_restock_entry', 'view_inventory_levels', 'set_low_stock_threshold', 'export_inventory_report'] },
-  { moduleKey: 'maintenance_tasks', moduleName: 'Maintenance & Tasks', description: 'Physical maintenance tracking', icon: '🔧', displayOrder: 4, availableActions: ['create_task', 'edit_task', 'assign_task', 'update_task_status', 'close_task', 'reopen_task', 'delete_task', 'view_all_tasks'] },
-  { moduleKey: 'daily_operations', moduleName: 'Checklists', description: 'Daily staff checklist with photo proof', icon: '✅', displayOrder: 5, availableActions: ['view_checklist', 'submit_checklist_item', 'resubmit_rejected_item', 'approve_checklist_item', 'reject_checklist_item'] },
-  { moduleKey: 'notifications', moduleName: 'Notifications', description: 'Real-time alerts configuration', icon: '🔔', displayOrder: 6, availableActions: ['configure_notification_rules', 'manage_channels', 'view_notification_log'] },
-  { moduleKey: 'reports_analytics', moduleName: 'Reports & Analytics', description: 'Dashboards and exportable reports', icon: '📊', displayOrder: 7, availableActions: ['view_dashboards', 'export_report', 'schedule_report_delivery'] },
-  { moduleKey: 'malayalam_mom', moduleName: 'MOM & Malayalam', description: 'Minutes of Meeting with translation', icon: '📝', displayOrder: 8, availableActions: ['create_mom_entry', 'convert_to_malayalam', 'edit_translation', 'save_mom_record', 'attach_malayalam_instruction', 'view_mom_history'] },
-  { moduleKey: 'safety_checklist', moduleName: 'Safety Checklist', description: 'End-of-day safety verification', icon: '🛡️', displayOrder: 9, availableActions: ['complete_safety_checklist', 'confirm_logout'] },
-  { moduleKey: 'audit_log', moduleName: 'Audit Log', description: 'Tamper-proof activity records', icon: '📋', displayOrder: 10, availableActions: ['view_audit_logs', 'search_filter_logs', 'export_audit_report'] },
-];
+const MODULE_DEFS: ModuleDef[] = MODULE_DEFINITIONS
+  .filter((mod) => !['user_permission', 'audit_log', 'safety_checklist'].includes(mod.moduleKey))
+  .sort((a, b) => a.displayOrder - b.displayOrder);
 
 export default function ModuleMappingPage() {
   const [positions, setPositions] = useState<Position[]>([]);
@@ -157,9 +122,17 @@ export default function ModuleMappingPage() {
     );
   };
 
+  const handleAccessLevelChange = (level: string) => {
+    setConfigAccessLevel(level);
+    if (level === 'full_control' && configModule) {
+      setConfigActions([...configModule.availableActions]);
+    }
+  };
+
   const handleSaveMapping = async () => {
     if (!selectedPosition || !configModule) return;
     setSaving(true);
+    const actionsToSave = configAccessLevel === 'full_control' ? configModule.availableActions : configActions;
 
     try {
       if (editingMappingId) {
@@ -167,7 +140,7 @@ export default function ModuleMappingPage() {
         const res = await fetch(`/api/module-mappings/${editingMappingId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessLevel: configAccessLevel, enabledActions: configActions }),
+          body: JSON.stringify({ accessLevel: configAccessLevel, enabledActions: actionsToSave }),
         });
         const data = await res.json();
         if (data.success) {
@@ -184,7 +157,7 @@ export default function ModuleMappingPage() {
             positionId: selectedPosition,
             moduleKey: configModule.moduleKey,
             accessLevel: configAccessLevel,
-            enabledActions: configActions,
+            enabledActions: actionsToSave,
           }),
         });
         const data = await res.json();
@@ -409,7 +382,7 @@ export default function ModuleMappingPage() {
                           name="accessLevel"
                           value={level.value}
                           checked={configAccessLevel === level.value}
-                          onChange={() => setConfigAccessLevel(level.value)}
+                          onChange={() => handleAccessLevelChange(level.value)}
                           style={{ accentColor: 'var(--accent-primary)' }}
                         />
                         <div>

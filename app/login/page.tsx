@@ -8,7 +8,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/';
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,7 +29,7 @@ function LoginContent() {
       });
 
       if (result?.error) {
-        setError(result.error);
+        setError(result.error === 'Configuration' || result.error === 'CredentialsSignin' ? 'Invalid email or password, or server database is unavailable.' : result.error);
         setLoading(false);
         return;
       }
@@ -44,98 +44,66 @@ function LoginContent() {
 
   return (
     <div className="login-container">
-      {/* Background decorative elements */}
-      <div style={{
-        position: 'fixed',
-        top: '-20%',
-        right: '-10%',
-        width: '500px',
-        height: '500px',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, hsla(160, 84%, 39%, 0.08) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'fixed',
-        bottom: '-20%',
-        left: '-10%',
-        width: '600px',
-        height: '600px',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, hsla(199, 89%, 48%, 0.06) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
+      <div className="login-bg-overlay" />
 
-      <div className="login-card card" style={{ position: 'relative', zIndex: 1 }}>
-        <div className="card-body" style={{ padding: 'var(--space-8) var(--space-8) var(--space-6)' }}>
-          {/* Logo */}
-          <div className="login-logo">
-            <div className="login-logo-icon">🏏</div>
-            <div>
-              <h1 className="login-title">Oval Turf</h1>
-              <p className="login-subtitle">Operations Management System</p>
-            </div>
+      <main className="login-shell">
+        <section className="login-card" aria-label="Sign in">
+          <div className="login-avatar" aria-hidden="true" />
+
+          <div className="login-card-header">
+            <h1 className="login-title">Oval Turf</h1>
+            <p className="login-subtitle">Operations Management System</p>
           </div>
 
-          {/* Error */}
           {error && (
-            <div className="login-error" style={{ marginBottom: 'var(--space-4)' }}>
-              <span>⚠</span>
+            <div className="login-error">
+              <span>!</span>
               <span>{error}</span>
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="login-form">
             <div className="form-group">
               <label htmlFor="login-email" className="form-label">Email Address</label>
-              <input
-                id="login-email"
-                type="email"
-                className="form-input"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                autoFocus
-                disabled={loading}
-              />
+              <div className="login-input-wrap">
+                <span className="login-input-icon" aria-hidden="true">@</span>
+                <input
+                  id="login-email"
+                  type="email"
+                  className="form-input"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  autoComplete="email"
+                  autoFocus
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             <div className="form-group">
               <label htmlFor="login-password" className="form-label">Password</label>
-              <div style={{ position: 'relative' }}>
+              <div className="login-input-wrap">
+                <span className="login-input-icon login-lock-icon" aria-hidden="true" />
                 <input
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   className="form-input"
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                   autoComplete="current-password"
                   disabled={loading}
-                  style={{ paddingRight: '48px' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute',
-                    right: '12px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--text-md)',
-                    padding: '4px',
-                  }}
+                  className="login-password-toggle"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
             </div>
@@ -151,14 +119,10 @@ function LoginContent() {
               </button>
             </div>
           </form>
-        </div>
 
-        <div className="card-footer" style={{ justifyContent: 'center', padding: 'var(--space-4) var(--space-8) var(--space-6)' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-            Contact SuperAdmin if you need access
-          </p>
-        </div>
-      </div>
+          <p className="login-help">Contact SuperAdmin if you need access</p>
+        </section>
+      </main>
     </div>
   );
 }

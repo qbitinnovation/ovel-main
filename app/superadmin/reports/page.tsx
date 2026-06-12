@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 interface OverviewData { users: { total: number; active: number }; tasks: { total: number; open: number }; financeEntries: number; }
 interface FinanceData { totalIncome: number; totalExpenses: number; netProfit: number; }
 interface MaintenanceData { total: number; open: number; completed: number; closed: number; overdue: number; }
-interface InventoryData { totalItems: number; lowStockCount: number; }
+interface InventoryData { totalItems: number; attentionCount: number; }
 interface ChecklistData { total: number; verified: number; pending: number; partial: number; complianceRate: string; }
 
 const TABS = ['Overview', 'Finance', 'Maintenance', 'Inventory', 'Checklists'];
@@ -106,7 +106,7 @@ export default function ReportsPage() {
           {tab === 'Inventory' && inventory && (
             <div className="grid grid-2">
               <StatCard icon="📦" label="Total Items" value={inventory.totalItems} />
-              <StatCard icon="⚠️" label="Low Stock Items" value={inventory.lowStockCount} color={inventory.lowStockCount > 0 ? 'hsl(0, 84%, 60%)' : 'hsl(160, 84%, 39%)'} />
+              <StatCard icon="⚠️" label="Needs Attention" value={inventory.attentionCount} color={inventory.attentionCount > 0 ? 'hsl(0, 84%, 60%)' : 'hsl(160, 84%, 39%)'} />
             </div>
           )}
 

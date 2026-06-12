@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 interface AuditEntry { _id: string; userId: string; userName: string; userType: string; action: string; module: string; description: string; oldValue: Record<string, unknown> | null; newValue: Record<string, unknown> | null; ipAddress: string; timestamp: string; }
 
 const MODULE_LABELS: Record<string, string> = {
-  user_permission: 'Users & Permissions', accounts_finance: 'Accounts', inventory_sales: 'Inventory',
+  user_permission: 'Users & Permissions', accounts_finance: 'Accounts', inventory: 'Inventory', inventory_sales: 'Sales',
   maintenance_tasks: 'Maintenance', daily_operations: 'Checklists', malayalam_mom: 'MOM',
   notifications: 'Notifications', reports_analytics: 'Reports', settings: 'Settings', audit_log: 'Audit Log',
 };

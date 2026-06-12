@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import FinanceEntry from '@/models/FinanceEntry';
 import MaintenanceTask from '@/models/MaintenanceTask';
-import InventoryItem from '@/models/InventoryItem';
+import TurfInventoryItem from '@/models/TurfInventoryItem';
 import Checklist from '@/models/Checklist';
 import User from '@/models/User';
 import Position from '@/models/Position';
@@ -38,9 +38,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === 'inventory') {
-      const items = await InventoryItem.find({ isActive: true });
-      const lowStock = items.filter((i) => i.currentStock <= i.lowStockThreshold);
-      return successResponse({ totalItems: items.length, lowStockCount: lowStock.length, items });
+      const items = await TurfInventoryItem.find({ isActive: true });
+      const attentionItems = items.filter((i) => i.condition !== 'good' || i.quantity === 0);
+      return successResponse({ totalItems: items.length, attentionCount: attentionItems.length, items });
     }
 
     if (type === 'checklist') {

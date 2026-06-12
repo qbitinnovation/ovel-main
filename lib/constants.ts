@@ -35,6 +35,7 @@ export type AccessLevel = (typeof ACCESS_LEVELS)[keyof typeof ACCESS_LEVELS];
 export const MODULE_KEYS = {
   USER_PERMISSION: 'user_permission',
   ACCOUNTS_FINANCE: 'accounts_finance',
+  INVENTORY: 'inventory',
   INVENTORY_SALES: 'inventory_sales',
   MAINTENANCE_TASKS: 'maintenance_tasks',
   DAILY_OPERATIONS: 'daily_operations',
@@ -90,11 +91,24 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     ],
   },
   {
-    moduleKey: MODULE_KEYS.INVENTORY_SALES,
-    moduleName: 'Inventory & Sales',
-    description: 'Real-time tracking of consumables, sales entries with auto-decrement, and stock alerts.',
+    moduleKey: MODULE_KEYS.INVENTORY,
+    moduleName: 'Inventory',
+    description: 'Store and track turf items, equipment, and ground assets.',
     icon: '📦',
     displayOrder: 3,
+    availableActions: [
+      'add_turf_inventory_item',
+      'update_turf_inventory_item',
+      'view_turf_inventory',
+      'export_turf_inventory_report',
+    ],
+  },
+  {
+    moduleKey: MODULE_KEYS.INVENTORY_SALES,
+    moduleName: 'Sales',
+    description: 'Product listing, sales entries with auto-decrement, and restocking.',
+    icon: '📦',
+    displayOrder: 4,
     availableActions: [
       'log_sale',
       'add_restock_entry',
@@ -108,7 +122,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Maintenance & Tasks',
     description: 'Track physical maintenance issues from identification to resolution and closure.',
     icon: '🔧',
-    displayOrder: 4,
+    displayOrder: 5,
     availableActions: [
       'create_task',
       'edit_task',
@@ -125,7 +139,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Daily Operations & Staff Checklist',
     description: 'Daily verification of ground-level duties with live photo proof and supervisor approval.',
     icon: '✅',
-    displayOrder: 5,
+    displayOrder: 6,
     availableActions: [
       'view_checklist',
       'submit_checklist_item',
@@ -139,7 +153,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Notifications & Communication',
     description: 'Real-time alerts delivered to users when relevant events occur across the system.',
     icon: '🔔',
-    displayOrder: 6,
+    displayOrder: 7,
     availableActions: [
       'configure_notification_rules',
       'manage_channels',
@@ -151,7 +165,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Reports & Analytics',
     description: 'Real-time dashboards and exportable reports across all operational modules.',
     icon: '📊',
-    displayOrder: 7,
+    displayOrder: 8,
     availableActions: [
       'view_dashboards',
       'export_report',
@@ -163,7 +177,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Malayalam Output & MOM',
     description: 'Minutes of Meeting documentation with English-to-Malayalam translation support.',
     icon: '📝',
-    displayOrder: 8,
+    displayOrder: 9,
     availableActions: [
       'create_mom_entry',
       'convert_to_malayalam',
@@ -178,7 +192,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Smart Attendance & Safety Checklist',
     description: 'End-of-day safety verification before Turf Manager logout with permanent records.',
     icon: '🛡️',
-    displayOrder: 9,
+    displayOrder: 10,
     availableActions: [
       'complete_safety_checklist',
       'confirm_logout',
@@ -189,7 +203,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Audit & Activity Log',
     description: 'Permanent, tamper-proof record of every action taken by every user across the system.',
     icon: '📋',
-    displayOrder: 10,
+    displayOrder: 11,
     availableActions: [
       'view_audit_logs',
       'search_filter_logs',
@@ -201,7 +215,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     moduleName: 'Bookings & Payments',
     description: 'Turf booking reservations and payment tracking with cash holder visibility.',
     icon: '📅',
-    displayOrder: 11,
+    displayOrder: 12,
     availableActions: [
       'create_booking',
       'edit_booking',
@@ -229,7 +243,12 @@ export const ACTION_LABELS: Record<string, string> = {
   view_finance_history: 'View Finance History',
   export_finance_report: 'Export Finance Report',
   request_unlock: 'Request Unlock',
-  // Inventory & Sales
+  // Inventory
+  add_turf_inventory_item: 'Add Turf Inventory Item',
+  update_turf_inventory_item: 'Update Turf Inventory Item',
+  view_turf_inventory: 'View Turf Inventory',
+  export_turf_inventory_report: 'Export Turf Inventory Report',
+  // Sales
   log_sale: 'Log Sale',
   add_restock_entry: 'Add Restock Entry',
   view_inventory_levels: 'View Inventory Levels',

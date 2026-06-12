@@ -2,7 +2,7 @@ import NextAuth from 'next-auth';
 import { authConfig } from '@/lib/auth.config';
 
 /**
- * Middleware uses the edge-compatible auth config (no database imports).
+ * Proxy uses the edge-compatible auth config (no database imports).
  * The `authorized` callback in auth.config.ts handles all route protection.
  */
 export default NextAuth(authConfig).auth;

@@ -13,6 +13,7 @@ const navItems = [
   { divider: true, label: 'Operations' },
   { label: 'Accounts', href: '/superadmin/accounts', icon: '💰' },
   { label: 'Inventory', href: '/superadmin/inventory', icon: '📦' },
+  { label: 'Sales', href: '/superadmin/sales', icon: '🛒' },
   { label: 'Maintenance', href: '/superadmin/maintenance', icon: '🔧' },
   { label: 'Checklists', href: '/superadmin/checklists', icon: '✅' },
   { label: 'MOM', href: '/superadmin/mom', icon: '📝' },

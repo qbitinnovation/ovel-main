@@ -20,7 +20,8 @@ const defaultNav: NavItem[] = [
 
 const moduleNavItems: NavItem[] = [
   { label: 'Accounts', href: '/committee/accounts', icon: '💰', moduleKey: 'accounts_finance' },
-  { label: 'Inventory', href: '/committee/inventory', icon: '📦', moduleKey: 'inventory_sales' },
+  { label: 'Inventory', href: '/committee/inventory', icon: '📦', moduleKey: 'inventory' },
+  { label: 'Sales', href: '/committee/sales', icon: '🛒', moduleKey: 'inventory_sales' },
   { label: 'Maintenance', href: '/committee/maintenance', icon: '🔧', moduleKey: 'maintenance_tasks' },
   { label: 'Checklists', href: '/committee/checklists', icon: '✅', moduleKey: 'daily_operations' },
   { label: 'Reports', href: '/committee/reports', icon: '📈', moduleKey: 'reports_analytics' },

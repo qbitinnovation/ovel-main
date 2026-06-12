@@ -62,16 +62,19 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
 
       if (action === 'add-item') {
-        const { name, unit, initialStock, lowStockThreshold } = body;
+        const { name, unit, unitPrice, initialStock, lowStockThreshold } = body;
         if (!name?.trim()) return errorResponse('Item name is required');
         const existing = store.inventoryItems.find((item) => item.name.toLowerCase() === name.trim().toLowerCase());
         if (existing) return errorResponse('Item already exists');
+        const price = Number(unitPrice || 0);
+        if (price < 0) return errorResponse('Price cannot be negative');
         const openingStock = Number(initialStock || 0);
         if (openingStock < 0) return errorResponse('Opening stock cannot be negative');
         const item = {
           _id: createDevId('inventory'),
           name: name.trim(),
           unit: unit || 'pcs',
+          unitPrice: price,
           currentStock: openingStock,
           lowStockThreshold: Number(lowStockThreshold ?? 5),
           isActive: true,
@@ -133,13 +136,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'add-item') {
-      const { name, unit, initialStock, lowStockThreshold } = body;
+      const { name, unit, unitPrice, initialStock, lowStockThreshold } = body;
       if (!name?.trim()) return errorResponse('Item name is required');
       const existing = await InventoryItem.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
       if (existing) return errorResponse('Item already exists');
+      const price = Number(unitPrice || 0);
+      if (price < 0) return errorResponse('Price cannot be negative');
       const openingStock = Number(initialStock || 0);
       if (openingStock < 0) return errorResponse('Opening stock cannot be negative');
-      const item = await InventoryItem.create({ name: name.trim(), unit: unit || 'pcs', currentStock: openingStock, lowStockThreshold: lowStockThreshold ?? 5 });
+      const item = await InventoryItem.create({ name: name.trim(), unit: unit || 'pcs', unitPrice: price, currentStock: openingStock, lowStockThreshold: lowStockThreshold ?? 5 });
       await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'add_inventory_item', module: 'inventory_sales', recordId: item._id, description: `Added inventory item "${item.name}"`, ...meta }, request.headers);
       return successResponse(item, 'Item added', 201);
     }

@@ -99,6 +99,11 @@ export async function PATCH(
       if (!task) return errorResponse('Task not found', 404);
       const now = new Date().toISOString();
       switch (action) {
+        case 'start':
+          if (task.status !== 'open') return errorResponse('Only open tasks can be started');
+          task.status = 'in_progress';
+          task.statusHistory.push({ status: 'in_progress', changedBy: session.user.id, changedAt: now, note: note || 'Work started' });
+          break;
         case 'complete':
           if (task.status === 'closed') return errorResponse('Task is already closed');
           task.status = 'completed';
@@ -124,13 +129,18 @@ export async function PATCH(
           return errorResponse('Invalid action');
       }
       task.updatedAt = now;
-      return successResponse(task, `Task ${action}d`);
+      return successResponse(task, action === 'start' ? 'Task started' : `Task ${action}d`);
     }
     const task = await MaintenanceTask.findById(id);
     if (!task) return errorResponse('Task not found', 404);
     const meta = getRequestMeta(request.headers);
 
     switch (action) {
+      case 'start':
+        if (task.status !== 'open') return errorResponse('Only open tasks can be started');
+        task.status = 'in_progress';
+        task.statusHistory.push({ status: 'in_progress', changedBy: session.user.id as any, changedAt: new Date(), note: note || 'Work started' });
+        break;
       case 'complete':
         if (task.status === 'closed') return errorResponse('Task is already closed');
         task.status = 'completed';
@@ -160,7 +170,7 @@ export async function PATCH(
 
     await task.save();
     await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: `${action}_task`, module: 'maintenance_tasks', recordId: task._id, description: `${action} task "${task.title}". ${note || ''}`, ...meta }, request.headers);
-    return successResponse(task, `Task ${action}d`);
+    return successResponse(task, action === 'start' ? 'Task started' : `Task ${action}d`);
   } catch (error) {
     console.error('PATCH /api/maintenance/[id] error:', error);
     return errorResponse('Failed to update task status', 500);

@@ -1,118 +1,284 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
 
-interface Item { _id: string; name: string; unit: string; currentStock: number; lowStockThreshold: number; }
-interface Txn { _id: string; itemId: { _id: string; name: string } | null; type: string; quantity: number; amount: number; supplier: string; date: string; enteredBy: { name: string } | null; createdAt: string; }
+import { useCallback, useEffect, useState } from 'react';
+
+interface TurfItem {
+  _id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+  condition: 'good' | 'needs_repair' | 'damaged' | 'missing';
+  notes: string;
+}
+
+const conditionLabels: Record<TurfItem['condition'], string> = {
+  good: 'Good',
+  needs_repair: 'Needs Repair',
+  damaged: 'Damaged',
+  missing: 'Missing',
+};
+
+const emptyForm = {
+  name: '',
+  category: 'Equipment',
+  quantity: 1,
+  location: 'Turf',
+  condition: 'good' as TurfItem['condition'],
+  notes: '',
+};
 
 export default function InventoryPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [transactions, setTransactions] = useState<Txn[]>([]);
+  const [items, setItems] = useState<TurfItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [showTxn, setShowTxn] = useState<{ type: 'sale' | 'restock' } | null>(null);
-  const [itemName, setItemName] = useState('');
-  const [itemUnit, setItemUnit] = useState('pcs');
-  const [itemInitialStock, setItemInitialStock] = useState(0);
-  const [itemThreshold, setItemThreshold] = useState(5);
-  const [txnItemId, setTxnItemId] = useState('');
-  const [txnQty, setTxnQty] = useState(1);
-  const [txnAmount, setTxnAmount] = useState(0);
-  const [txnSupplier, setTxnSupplier] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<TurfItem | null>(null);
+  const [editingItem, setEditingItem] = useState<TurfItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
+  const [form, setForm] = useState(emptyForm);
 
-  const fetchData = useCallback(async () => {
-    try { const res = await fetch('/api/inventory'); const d = await res.json(); if (d.success) { setItems(d.data.items); setTransactions(d.data.recentTransactions); } } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleAddItem = async () => {
-    if (!itemName.trim()) return;
-    setSaving(true);
-    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add-item', name: itemName, unit: itemUnit, initialStock: itemInitialStock, lowStockThreshold: itemThreshold }) }); const d = await res.json(); if (d.success) { showToast('Item added'); setShowAddItem(false); setItemName(''); setItemInitialStock(0); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+  const showToast = (message: string, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const handleTxn = async () => {
-    if (!txnItemId || txnQty < 1) return;
+  const fetchItems = useCallback(async () => {
+    try {
+      const res = await fetch('/api/turf-inventory');
+      const data = await res.json();
+      if (data.success) setItems(data.data.items);
+    } catch (error) {
+      console.error(error);
+      showToast('Failed to load inventory', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setEditingItem(null);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    resetForm();
+  };
+
+  const openAddForm = () => {
+    resetForm();
+    setShowForm(true);
+  };
+
+  const openEditForm = (item: TurfItem) => {
+    setEditingItem(item);
+    setForm({
+      name: item.name,
+      category: item.category,
+      quantity: item.quantity,
+      location: item.location,
+      condition: item.condition,
+      notes: item.notes,
+    });
+    setSelectedItem(null);
+    setShowForm(true);
+  };
+
+  const updateQuantity = (nextQuantity: number) => {
+    setForm((current) => ({ ...current, quantity: Math.max(0, nextQuantity) }));
+  };
+
+  const getConditionBadge = (condition: TurfItem['condition']) => {
+    if (condition === 'good') return 'badge-success';
+    if (condition === 'needs_repair') return 'badge-warning';
+    return 'badge-danger';
+  };
+
+  const getItemAccent = (item: TurfItem) => {
+    if (item.condition === 'missing' || item.condition === 'damaged') {
+      return { background: 'var(--status-danger-soft)', color: 'var(--status-danger)' };
+    }
+    if (item.condition === 'needs_repair' || item.quantity === 0) {
+      return { background: 'var(--status-warning-soft)', color: 'var(--status-warning)' };
+    }
+    return { background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' };
+  };
+
+  const handleSaveItem = async () => {
+    if (!form.name.trim()) return showToast('Item name is required', 'error');
     setSaving(true);
-    const act = showTxn?.type === 'sale' ? 'log-sale' : 'add-restock';
-    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount: txnAmount, supplier: txnSupplier }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+    try {
+      const res = await fetch('/api/turf-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: editingItem ? 'update-item' : 'add-item',
+          itemId: editingItem?._id,
+          ...form,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(editingItem ? 'Inventory item updated' : 'Inventory item added');
+        closeForm();
+        fetchItems();
+      } else {
+        showToast(data.message || 'Error saving item', 'error');
+      }
+    } catch {
+      showToast('Error saving item', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
-      <div className="page-header">
-        <div><h1>Inventory</h1><p className="page-subtitle">Track consumables, log sales, and manage restocking</p></div>
-        <div className="flex gap-3">
-          <button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(true)}>+ Add Item</button>
-          <button className="btn btn-primary btn-md" onClick={() => { setShowTxn({ type: 'sale' }); setTxnItemId(items[0]?._id || ''); }}>Log Sale</button>
-          <button className="btn btn-secondary btn-md" onClick={() => { setShowTxn({ type: 'restock' }); setTxnItemId(items[0]?._id || ''); }}>Add Restock</button>
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
+            <span className="toast-icon">{toast.type === 'error' ? 'x' : 'OK'}</span>
+            <div className="toast-content"><div className="toast-title">{toast.message}</div></div>
+          </div>
         </div>
+      )}
+
+      <div className="page-header">
+        <div>
+          <h1>Inventory</h1>
+          <p className="page-subtitle">Store and track turf items, equipment, and ground assets</p>
+        </div>
+        <button className="btn btn-primary btn-md" onClick={openAddForm}>+ Add Turf Item</button>
       </div>
 
-      {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : (
-        <>
-          <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
-            {items.map((item) => (
-              <div key={item._id} className="card stat-card">
-                <div className="stat-icon" style={{ background: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger-soft)' : 'var(--accent-primary-soft)', color: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger)' : 'var(--accent-primary)' }}>📦</div>
-                <div className="stat-value text-gradient">{item.currentStock}</div>
-                <div className="stat-label">{item.name} ({item.unit})</div>
-                {item.currentStock <= item.lowStockThreshold && <span className="badge badge-danger badge-dot" style={{ fontSize: '10px' }}>Low Stock!</span>}
+      {loading ? (
+        <div className="loading-screen"><div className="spinner spinner-lg" /></div>
+      ) : (
+        <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
+          {items.map((item) => {
+            const accent = getItemAccent(item);
+            return (
+              <button
+                key={item._id}
+                className="card stat-card inventory-item-card"
+                type="button"
+                onClick={() => setSelectedItem(item)}
+                style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <div className="stat-icon" style={{ background: accent.background, color: accent.color }}>IT</div>
+                <div className="stat-value text-gradient">{item.quantity}</div>
+                <div className="stat-label">{item.name}</div>
+                <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  {item.category} | {item.location}
+                </div>
+                <span className={`badge ${getConditionBadge(item.condition)} badge-dot`} style={{ marginTop: 'var(--space-2)', fontSize: 10 }}>
+                  {conditionLabels[item.condition]}
+                </span>
+              </button>
+            );
+          })}
+
+          {items.length === 0 && (
+            <div className="card inventory-item-card" style={{ gridColumn: '1 / -1' }}>
+              <div className="empty-state">
+                <div className="empty-state-icon">Box</div>
+                <div className="empty-state-title">No turf items stored</div>
+                <div className="empty-state-description">Add balls, cones, nets, cleaning tools, lights, or other turf assets.</div>
               </div>
-            ))}
-            {items.length === 0 && <div className="card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon">📦</div><div className="empty-state-title">No items</div><div className="empty-state-description">Add inventory items to start tracking.</div></div></div>}
-          </div>
-
-          {transactions.length > 0 && (
-            <div className="card"><div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3></div>
-            <div className="data-table-wrapper" style={{ border: 'none' }}>
-              <table className="data-table"><thead><tr><th>Date</th><th>Item</th><th>Type</th><th>Qty</th><th>Amount</th><th>By</th></tr></thead>
-              <tbody>{transactions.map((t) => (
-                <tr key={t._id}>
-                  <td style={{ fontSize: 'var(--text-sm)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
-                  <td style={{ fontWeight: 600 }}>{t.itemId?.name || '—'}</td>
-                  <td><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
-                  <td>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
-                  <td>{t.amount > 0 ? `₹${t.amount}` : '—'}</td>
-                  <td style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
-                </tr>
-              ))}</tbody></table></div></div>
+            </div>
           )}
-        </>
+        </div>
       )}
 
-      {showAddItem && (
-        <div className="modal-backdrop" onClick={() => setShowAddItem(false)}><div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header"><h3 className="modal-title">Add Inventory Item</h3><button className="modal-close" onClick={() => setShowAddItem(false)}>✕</button></div>
-          <div className="modal-body">
-            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Item Name</label><input className="form-input" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g. Stumps" autoFocus /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-              <div className="form-group"><label className="form-label">Unit</label><input className="form-input" value={itemUnit} onChange={(e) => setItemUnit(e.target.value)} /></div>
-              <div className="form-group"><label className="form-label">Opening Stock</label><input className="form-input" type="number" min={0} value={itemInitialStock} onChange={(e) => setItemInitialStock(Number(e.target.value))} /></div>
-              <div className="form-group"><label className="form-label">Low Stock Threshold</label><input className="form-input" type="number" min={0} value={itemThreshold} onChange={(e) => setItemThreshold(Number(e.target.value))} /></div>
+      {selectedItem && (
+        <div className="modal-backdrop" onClick={() => setSelectedItem(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{selectedItem.name}</h3>
+              <button className="modal-close" onClick={() => setSelectedItem(null)}>x</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                <div className="card" style={{ padding: 'var(--space-4)' }}>
+                  <div className="stat-label">Quantity</div>
+                  <div className="stat-value">{selectedItem.quantity}</div>
+                </div>
+                <div className="card" style={{ padding: 'var(--space-4)' }}>
+                  <div className="stat-label">Condition</div>
+                  <span className={`badge ${getConditionBadge(selectedItem.condition)} badge-dot`}>{conditionLabels[selectedItem.condition]}</span>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                <div><div className="stat-label">Category</div><div style={{ fontWeight: 700 }}>{selectedItem.category}</div></div>
+                <div><div className="stat-label">Location</div><div style={{ fontWeight: 700 }}>{selectedItem.location}</div></div>
+                <div><div className="stat-label">Notes</div><div style={{ color: 'var(--text-secondary)' }}>{selectedItem.notes || '-'}</div></div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary btn-md" onClick={() => setSelectedItem(null)}>Close</button>
+              <button className="btn btn-primary btn-md" onClick={() => openEditForm(selectedItem)}>Edit Item</button>
             </div>
           </div>
-          <div className="modal-footer"><button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(false)}>Cancel</button><button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleAddItem} disabled={saving}>Add Item</button></div>
-        </div></div>
+        </div>
       )}
 
-      {showTxn && (
-        <div className="modal-backdrop" onClick={() => setShowTxn(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header"><h3 className="modal-title">{showTxn.type === 'sale' ? '💸 Log Sale' : '📥 Add Restock'}</h3><button className="modal-close" onClick={() => setShowTxn(null)}>✕</button></div>
-          <div className="modal-body">
-            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Item</label><div className="select-wrapper"><select className="form-select" value={txnItemId} onChange={(e) => setTxnItemId(e.target.value)}>{items.map((i) => <option key={i._id} value={i._id}>{i.name} (Stock: {i.currentStock})</option>)}</select></div></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-              <div className="form-group"><label className="form-label required">Quantity</label><input className="form-input" type="number" min={1} value={txnQty} onChange={(e) => setTxnQty(Number(e.target.value))} /></div>
-              <div className="form-group"><label className="form-label">{showTxn.type === 'sale' ? 'Sale Amount (₹)' : 'Cost (₹)'}</label><input className="form-input" type="number" value={txnAmount} onChange={(e) => setTxnAmount(Number(e.target.value))} /></div>
+      {showForm && (
+        <div className="modal-backdrop" onClick={closeForm}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{editingItem ? 'Edit Turf Item' : 'Add Turf Item'}</h3>
+              <button className="modal-close" onClick={closeForm}>x</button>
             </div>
-            {showTxn.type === 'restock' && <div className="form-group" style={{ marginTop: 'var(--space-4)' }}><label className="form-label">Supplier</label><input className="form-input" value={txnSupplier} onChange={(e) => setTxnSupplier(e.target.value)} placeholder="Supplier name" /></div>}
+            <div className="modal-body">
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label required">Item Name</label>
+                <input className="form-input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Football, Net, Boundary cone" autoFocus />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                <div className="form-group">
+                  <label className="form-label">Category</label>
+                  <input className="form-input" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Location</label>
+                  <input className="form-input" value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Quantity</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 44px', gap: 'var(--space-2)', alignItems: 'center' }}>
+                    <button className="btn btn-secondary btn-md" type="button" onClick={() => updateQuantity(form.quantity - 1)} disabled={form.quantity <= 0}>-</button>
+                    <input className="form-input" type="number" min={0} value={form.quantity} onChange={(event) => updateQuantity(Number(event.target.value))} style={{ textAlign: 'center' }} />
+                    <button className="btn btn-secondary btn-md" type="button" onClick={() => updateQuantity(form.quantity + 1)}>+</button>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Condition</label>
+                  <div className="select-wrapper">
+                    <select className="form-select" value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value as TurfItem['condition'] })}>
+                      <option value="good">Good</option>
+                      <option value="needs_repair">Needs Repair</option>
+                      <option value="damaged">Damaged</option>
+                      <option value="missing">Missing</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+                <label className="form-label">Notes</label>
+                <textarea className="form-textarea" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Optional details" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary btn-md" onClick={closeForm}>Cancel</button>
+              <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSaveItem} disabled={saving}>
+                {editingItem ? 'Update Item' : 'Add Item'}
+              </button>
+            </div>
           </div>
-          <div className="modal-footer"><button className="btn btn-secondary btn-md" onClick={() => setShowTxn(null)}>Cancel</button><button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleTxn} disabled={saving}>{showTxn.type === 'sale' ? 'Log Sale' : 'Add Restock'}</button></div>
-        </div></div>
+        </div>
       )}
     </div>
   );

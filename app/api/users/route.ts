@@ -194,6 +194,7 @@ export async function POST(request: NextRequest) {
         name: sanitizedName,
         email: sanitizedEmail,
         phone: sanitizedPhone,
+        passwordHash: await bcrypt.hash(userPassword, 12),
         userType,
         portalType,
         positionId,
