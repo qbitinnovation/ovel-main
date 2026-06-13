@@ -8,8 +8,64 @@ import Checklist from '@/models/Checklist';
 import User from '@/models/User';
 import Position from '@/models/Position';
 import { successResponse, errorResponse } from '@/lib/utils';
+import { getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
+
+function devReportData(type: string) {
+  const store = getDevStore();
+
+  if (type === 'finance') {
+    return {
+      entries: [],
+      totalIncome: 0,
+      totalExpenses: 0,
+      netProfit: 0,
+    };
+  }
+
+  if (type === 'maintenance') {
+    const tasks = store.maintenanceTasks;
+    return {
+      total: tasks.length,
+      open: tasks.filter((task) => task.status === 'open').length,
+      completed: tasks.filter((task) => task.status === 'completed').length,
+      closed: tasks.filter((task) => task.status === 'closed').length,
+      overdue: tasks.filter((task) => {
+        return ['open', 'in_progress'].includes(task.status) && new Date(task.dueDate) < new Date();
+      }).length,
+    };
+  }
+
+  if (type === 'inventory') {
+    const items = store.turfInventoryItems.filter((item) => item.isActive);
+    const attentionItems = items.filter((item) => item.condition !== 'good' || item.quantity === 0);
+    return { totalItems: items.length, attentionCount: attentionItems.length, items };
+  }
+
+  if (type === 'checklist') {
+    const checklists = store.checklists;
+    const verified = checklists.filter((item) => item.overallStatus === 'verified').length;
+    return {
+      total: checklists.length,
+      verified,
+      pending: checklists.filter((item) => item.overallStatus === 'pending').length,
+      partial: checklists.filter((item) => item.overallStatus === 'partially_verified').length,
+      complianceRate: checklists.length > 0 ? ((verified / checklists.length) * 100).toFixed(1) : '0',
+    };
+  }
+
+  const users = store.users;
+  const activeUsers = users.filter((user) => user.isActive && !user.isArchived);
+  const openTasks = store.maintenanceTasks.filter((task) => task.status === 'open');
+
+  return {
+    users: { total: users.length, active: activeUsers.length },
+    positions: store.positions.filter((position) => position.isActive).length,
+    tasks: { total: store.maintenanceTasks.length, open: openTasks.length },
+    financeEntries: 0,
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -67,6 +123,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('GET /api/reports error:', error);
+    if (isDevFallbackEnabled()) {
+      const type = request.nextUrl.searchParams.get('type') || 'overview';
+      return successResponse(devReportData(type), 'Development fallback report data');
+    }
     return errorResponse('Failed to fetch report data', 500);
   }
 }

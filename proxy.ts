@@ -8,5 +8,7 @@ import { authConfig } from '@/lib/auth.config';
 export default NextAuth(authConfig).auth;
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icons|sw.js|offline.html|manifest).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico)$|icons|sw.js|offline.html|manifest).*)',
+  ],
 };

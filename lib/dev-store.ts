@@ -194,53 +194,7 @@ export function isDevFallbackEnabled() {
 }
 
 export function getDevStore() {
-  const demoUsers: DevUser[] = [
-    {
-      _id: 'demo-committee',
-      name: 'Committee Demo',
-      email: 'committee@ovalturf.com',
-      phone: '+911111111111',
-      userType: 'management',
-      portalType: 'committee',
-      positionId: null,
-      isActive: true,
-      isArchived: false,
-      mustChangePassword: false,
-      lastLogin: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      _id: 'demo-turf',
-      name: 'Turf Demo',
-      email: 'turf@ovalturf.com',
-      phone: '+912222222222',
-      userType: 'staff',
-      portalType: 'turf',
-      positionId: null,
-      isActive: true,
-      isArchived: false,
-      mustChangePassword: false,
-      lastLogin: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      _id: 'demo-shareholder',
-      name: 'Shareholder Demo',
-      email: 'shareholder@ovalturf.com',
-      phone: '+913333333333',
-      userType: 'management',
-      portalType: 'shareholder',
-      positionId: null,
-      isActive: true,
-      isArchived: false,
-      mustChangePassword: false,
-      lastLogin: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+  const demoUsers: DevUser[] = [];
 
   if (!global.omsDevStore) {
     global.omsDevStore = {
@@ -298,7 +252,7 @@ export function createDevId(prefix: string) {
 export function devUserRef(id: string | null) {
   if (!id) return null;
   const user = getDevStore().users.find((item) => item._id === id);
-  return user ? { _id: user._id, name: user.name, email: user.email } : { _id: id, name: 'Demo User', email: '' };
+  return user ? { _id: user._id, name: user.name, email: user.email } : { _id: id, name: 'User', email: '' };
 }
 
 export function devPositionRef(id: string) {

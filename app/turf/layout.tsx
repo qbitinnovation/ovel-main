@@ -19,7 +19,7 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+    signOut({ callbackUrl: '/turf-manager/login' });
   };
 
   return (
@@ -58,10 +58,10 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
         <div className="sidebar-footer">
           <div className="user-menu" onClick={handleSignOut} role="button" tabIndex={0}>
             <div className="user-avatar">
-              {session?.user?.name ? getInitials(session.user.name) : 'TM'}
+              {session?.user?.name ? getInitials(session.user.name) : 'U'}
             </div>
             <div className="user-info">
-              <div className="user-name">{session?.user?.name || 'Turf Manager'}</div>
+              <div className="user-name">{session?.user?.name || 'User'}</div>
               <div className="user-role">സൈൻ ഔട്ട്</div>
             </div>
           </div>

@@ -204,5 +204,5 @@ function getDevChecklistStaffIds(staffId?: string | null) {
 }
 
 function getDevChecklistStaffId(staffId: string) {
-  return staffId === 'demo-superadmin' ? 'demo-turf' : staffId;
+  return staffId;
 }

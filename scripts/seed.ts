@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
 const MONGODB_URI = process.env.MONGODB_URI;
+
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI not found in .env.local');
   process.exit(1);
@@ -146,33 +147,6 @@ const MODULE_DEFINITIONS = [
   },
 ];
 
-const DEMO_PORTAL_USERS = [
-  {
-    name: 'Committee Demo',
-    email: 'committee@ovalturf.com',
-    phone: '+911111111111',
-    password: 'Committee@123',
-    userType: 'management',
-    portalType: 'committee',
-  },
-  {
-    name: 'Turf Demo',
-    email: 'turf@ovalturf.com',
-    phone: '+912222222222',
-    password: 'Turf@123',
-    userType: 'staff',
-    portalType: 'turf',
-  },
-  {
-    name: 'Shareholder Demo',
-    email: 'shareholder@ovalturf.com',
-    phone: '+913333333333',
-    password: 'Shareholder@123',
-    userType: 'management',
-    portalType: 'shareholder',
-  },
-] as const;
-
 // ---- Main Seed ----
 async function seed() {
   console.log('🌱 Starting OMS database seed...\n');
@@ -215,29 +189,7 @@ async function seed() {
     console.log(`   Password: ${superadminPassword}`);
   }
 
-  // 2. Seed demo portal users
-  console.log('\nSeeding demo portal users...');
-  for (const demoUser of DEMO_PORTAL_USERS) {
-    await User.findOneAndUpdate(
-      { email: demoUser.email },
-      {
-        $set: {
-          name: demoUser.name,
-          phone: demoUser.phone,
-          password: await bcrypt.hash(demoUser.password, 12),
-          userType: demoUser.userType,
-          portalType: demoUser.portalType,
-          isActive: true,
-          isArchived: false,
-          mustChangePassword: false,
-        },
-      },
-      { upsert: true, new: true }
-    );
-    console.log(`   ${demoUser.portalType}: ${demoUser.email} / ${demoUser.password}`);
-  }
-
-  // 3. Seed Module Configurations
+  // 2. Seed Module Configurations
   console.log('\n📦 Seeding module configurations...');
   for (const mod of MODULE_DEFINITIONS) {
     await ModuleConfig.findOneAndUpdate(
@@ -251,9 +203,6 @@ async function seed() {
   console.log('\n🎉 Seed completed successfully!');
   console.log('\n📋 Summary:');
   console.log(`   SuperAdmin: ${superadminEmail}`);
-  console.log(`   Committee: ${DEMO_PORTAL_USERS[0].email}`);
-  console.log(`   Turf: ${DEMO_PORTAL_USERS[1].email}`);
-  console.log(`   Shareholder: ${DEMO_PORTAL_USERS[2].email}`);
   console.log(`   Modules: ${MODULE_DEFINITIONS.length} registered`);
   console.log('\n🚀 You can now start the dev server with: npm run dev');
 

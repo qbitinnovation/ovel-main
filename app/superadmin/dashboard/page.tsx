@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import WelcomeMessage from '@/components/WelcomeMessage';
 
 export const metadata: Metadata = {
   title: 'SuperAdmin Dashboard',
@@ -7,12 +8,7 @@ export const metadata: Metadata = {
 export default function SuperAdminDashboard() {
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="page-subtitle">System overview and quick actions</p>
-        </div>
-      </div>
+      <WelcomeMessage />
 
       <div className="grid grid-4" style={{ marginBottom: 'var(--space-8)' }}>
         <div className="card stat-card">

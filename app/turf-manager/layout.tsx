@@ -18,8 +18,12 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  if (pathname === '/turf-manager/login') {
+    return <>{children}</>;
+  }
+
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+    signOut({ callbackUrl: '/turf-manager/login' });
   };
 
   return (
@@ -57,10 +61,10 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
         <div className="sidebar-footer">
           <div className="user-menu" onClick={handleSignOut} role="button" tabIndex={0}>
             <div className="user-avatar">
-              {session?.user?.name ? getInitials(session.user.name) : 'TM'}
+              {session?.user?.name ? getInitials(session.user.name) : 'U'}
             </div>
             <div className="user-info">
-              <div className="user-name">{session?.user?.name || 'Turf Manager'}</div>
+              <div className="user-name">{session?.user?.name || 'User'}</div>
               <div className="user-role">Sign Out</div>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import WelcomeMessage from '@/components/WelcomeMessage';
 
 export const metadata: Metadata = {
   title: 'Committee Dashboard',
@@ -7,12 +8,7 @@ export const metadata: Metadata = {
 export default function CommitteeDashboard() {
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="page-subtitle">Read-only overview of all club operations</p>
-        </div>
-      </div>
+      <WelcomeMessage />
 
       {/* Status Summary Cards */}
       <div className="grid grid-4" style={{ marginBottom: 'var(--space-8)' }}>

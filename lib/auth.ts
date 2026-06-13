@@ -1,10 +1,26 @@
 import NextAuth from 'next-auth';
+import { CredentialsSignin } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import dbConnect from '@/lib/db';
 import UserModel from '@/models/User';
+import PositionModel from '@/models/Position';
+import SystemSettings from '@/models/SystemSettings';
 import { authConfig } from '@/lib/auth.config';
 import { getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
+import {
+  getAuthRoleForUser,
+  getAuthRoleLabel,
+  INVALID_LOGIN_PORTAL_MESSAGE,
+  isUserAllowedForPortal,
+  normalizeAuthPortal,
+} from '@/lib/portal-auth';
+
+class InvalidPortalSigninError extends CredentialsSignin {
+  code = 'invalid_portal';
+}
+
+const DEFAULT_ORGANIZATION_NAME = process.env.ORGANIZATION_NAME || 'Oval Turf';
 
 const DEV_DEMO_USERS = [
   {
@@ -13,35 +29,54 @@ const DEV_DEMO_USERS = [
     name: 'Super Admin',
     userType: 'superadmin',
     portalType: 'superadmin',
-  },
-  {
-    email: 'committee@ovalturf.com',
-    password: 'Committee@123',
-    name: 'Committee Demo',
-    userType: 'management',
-    portalType: 'committee',
-  },
-  {
-    email: 'turf@ovalturf.com',
-    password: 'Turf@123',
-    name: 'Turf Demo',
-    userType: 'staff',
-    portalType: 'turf',
-  },
-  {
-    email: 'shareholder@ovalturf.com',
-    password: 'Shareholder@123',
-    name: 'Shareholder Demo',
-    userType: 'management',
-    portalType: 'shareholder',
+    role: 'SUPER_ADMIN',
   },
 ] as const;
 
-function getDevDemoUser(email: string, password: string) {
+function validatePortalLogin(user: { userType: string; portalType: string }, requestedPortal: ReturnType<typeof normalizeAuthPortal>) {
+  if (requestedPortal && !isUserAllowedForPortal(user, requestedPortal)) {
+    throw new InvalidPortalSigninError(INVALID_LOGIN_PORTAL_MESSAGE);
+  }
+}
+
+async function getOrganizationName() {
+  try {
+    const setting = await SystemSettings.findOne({
+      key: { $in: ['organization_name', 'turf_name', 'club_name'] },
+    }).lean();
+
+    return typeof setting?.value === 'string' && setting.value.trim()
+      ? setting.value.trim()
+      : DEFAULT_ORGANIZATION_NAME;
+  } catch {
+    return DEFAULT_ORGANIZATION_NAME;
+  }
+}
+
+async function getPositionName(positionId: unknown) {
+  if (!positionId) return null;
+
+  try {
+    const position = await PositionModel.findById(positionId).select('name').lean();
+    return typeof position?.name === 'string' && position.name.trim() ? position.name.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDevPositionName(positionId: string | null) {
+  if (!positionId) return null;
+  const position = getDevStore().positions.find((item) => item._id === positionId);
+  return position?.name || null;
+}
+
+function getDevDemoUser(email: string, password: string, requestedPortal: ReturnType<typeof normalizeAuthPortal>) {
   if (process.env.NODE_ENV !== 'development') return null;
 
   const demoUser = DEV_DEMO_USERS.find((user) => user.email.toLowerCase() === email);
   if (!demoUser || demoUser.password !== password) return null;
+
+  validatePortalLogin(demoUser, requestedPortal);
 
   return {
     id: `demo-${demoUser.portalType}`,
@@ -49,12 +84,17 @@ function getDevDemoUser(email: string, password: string) {
     email: demoUser.email,
     userType: demoUser.userType,
     portalType: demoUser.portalType,
+    role: demoUser.role,
+    roleLabel: getAuthRoleLabel(demoUser.role),
+    positionName: null,
+    organizationName: DEFAULT_ORGANIZATION_NAME,
+    loginPortal: requestedPortal || null,
     positionId: null,
     mustChangePassword: false,
   };
 }
 
-async function getDevStoredUser(email: string, password: string) {
+async function getDevStoredUser(email: string, password: string, requestedPortal: ReturnType<typeof normalizeAuthPortal>) {
   if (process.env.NODE_ENV !== 'development' || !isDevFallbackEnabled()) return null;
 
   const devUser = getDevStore().users.find((user) => user.email.toLowerCase() === email);
@@ -62,6 +102,8 @@ async function getDevStoredUser(email: string, password: string) {
 
   const isValid = await bcrypt.compare(password, devUser.passwordHash);
   if (!isValid || !devUser.isActive || devUser.isArchived) return null;
+
+  validatePortalLogin(devUser, requestedPortal);
 
   devUser.lastLogin = new Date().toISOString();
   devUser.updatedAt = devUser.lastLogin;
@@ -72,6 +114,11 @@ async function getDevStoredUser(email: string, password: string) {
     email: devUser.email,
     userType: devUser.userType,
     portalType: devUser.portalType,
+    role: getAuthRoleForUser(devUser) || '',
+    roleLabel: getAuthRoleLabel(getAuthRoleForUser(devUser)),
+    positionName: getDevPositionName(devUser.positionId),
+    organizationName: DEFAULT_ORGANIZATION_NAME,
+    loginPortal: requestedPortal || null,
     positionId: devUser.positionId,
     mustChangePassword: devUser.mustChangePassword,
   };
@@ -83,6 +130,11 @@ declare module 'next-auth' {
     id: string;
     userType: string;
     portalType: string;
+    role: string;
+    roleLabel: string;
+    positionName: string | null;
+    organizationName: string;
+    loginPortal: string | null;
     positionId: string | null;
     mustChangePassword: boolean;
   }
@@ -94,6 +146,11 @@ declare module 'next-auth' {
       email: string;
       userType: string;
       portalType: string;
+      role: string;
+      roleLabel: string;
+      positionName: string | null;
+      organizationName: string;
+      loginPortal: string | null;
       positionId: string | null;
       mustChangePassword: boolean;
     };
@@ -105,6 +162,11 @@ declare module '@auth/core/jwt' {
     id: string;
     userType: string;
     portalType: string;
+    role: string;
+    roleLabel: string;
+    positionName: string | null;
+    organizationName: string;
+    loginPortal: string | null;
     positionId: string | null;
     mustChangePassword: boolean;
   }
@@ -118,6 +180,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        portal: { label: 'Portal', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -126,7 +189,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const email = (credentials.email as string).toLowerCase().trim();
         const password = credentials.password as string;
-        const immediateDemoUser = getDevDemoUser(email, password);
+        const requestedPortal = normalizeAuthPortal(credentials.portal);
+
+        if (!requestedPortal) {
+          throw new InvalidPortalSigninError(INVALID_LOGIN_PORTAL_MESSAGE);
+        }
+
+        const immediateDemoUser = getDevDemoUser(email, password, requestedPortal);
 
         if (immediateDemoUser) {
           return immediateDemoUser;
@@ -135,12 +204,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           await dbConnect();
         } catch (error) {
-          const demoUser = getDevDemoUser(email, password);
+          const demoUser = getDevDemoUser(email, password, requestedPortal);
           if (demoUser) {
             console.warn('MongoDB unavailable; using development demo login.');
             return demoUser;
           }
-          const devStoredUser = await getDevStoredUser(email, password);
+          const devStoredUser = await getDevStoredUser(email, password, requestedPortal);
           if (devStoredUser) {
             console.warn('MongoDB unavailable; using development stored user login.');
             return devStoredUser;
@@ -170,6 +239,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        validatePortalLogin(user, requestedPortal);
+
+        const authRole = getAuthRoleForUser(user) || '';
+        const [positionName, organizationName] = await Promise.all([
+          getPositionName(user.positionId),
+          getOrganizationName(),
+        ]);
+
         // Update last login
         await UserModel.findByIdAndUpdate(user._id, { lastLogin: new Date() });
 
@@ -179,6 +256,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           userType: user.userType,
           portalType: user.portalType,
+          role: authRole,
+          roleLabel: getAuthRoleLabel(authRole),
+          positionName,
+          organizationName,
+          loginPortal: requestedPortal || null,
           positionId: user.positionId?.toString() || null,
           mustChangePassword: user.mustChangePassword,
         };

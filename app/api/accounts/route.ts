@@ -4,6 +4,7 @@ import dbConnect from '@/lib/db';
 import FinanceEntry from '@/models/FinanceEntry';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
+import { isDevFallbackEnabled } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,13 @@ export async function GET(request: NextRequest) {
     return successResponse({ entries, pagination });
   } catch (error) {
     console.error('GET /api/accounts error:', error);
+    if (isDevFallbackEnabled()) {
+      const { page, limit } = parsePagination(request.nextUrl.searchParams);
+      return successResponse({
+        entries: [],
+        pagination: paginate({ page, limit, total: 0 }),
+      }, 'Development fallback finance entries');
+    }
     return errorResponse('Failed to fetch entries', 500);
   }
 }

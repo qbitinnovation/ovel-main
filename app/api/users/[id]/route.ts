@@ -3,6 +3,9 @@ import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import User from '@/models/User';
 import Position from '@/models/Position';
+import Checklist from '@/models/Checklist';
+import Notification from '@/models/Notification';
+import UserOverride from '@/models/UserOverride';
 import bcrypt from 'bcryptjs';
 import { auditAction } from '@/lib/audit';
 import { getUserModuleAccess } from '@/lib/permissions';
@@ -348,5 +351,80 @@ export async function PATCH(
   } catch (error) {
     console.error('PATCH /api/users/[id] error:', error);
     return errorResponse('Failed to perform action', 500);
+  }
+}
+
+/**
+ * DELETE /api/users/[id]
+ * Permanently delete a portal user account.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) return errorResponse('Unauthorized', 401);
+    if (session.user.userType !== 'superadmin') return errorResponse('Forbidden', 403);
+
+    const { id } = await params;
+    if (id === session.user.id) return errorResponse('You cannot delete your own account');
+
+    let useDevStore = false;
+    try {
+      await dbConnect();
+    } catch (error) {
+      if (!isDevFallbackEnabled()) throw error;
+      useDevStore = true;
+    }
+
+    if (useDevStore) {
+      const store = getDevStore();
+      const userIndex = store.users.findIndex((item) => item._id === id);
+      if (userIndex < 0) return errorResponse('User not found', 404);
+
+      const [user] = store.users.splice(userIndex, 1);
+      store.checklists = store.checklists.filter((checklist) => checklist.staffId !== id);
+
+      return successResponse({ deletedUserId: id }, `Deleted user ${user.name}`);
+    }
+
+    const user = await User.findById(id);
+    if (!user) return errorResponse('User not found', 404);
+    if (user.userType === 'superadmin' || user.portalType === 'superadmin') {
+      return errorResponse('Super Admin accounts cannot be deleted from this page');
+    }
+
+    const meta = getRequestMeta(request.headers);
+    const deletedUserSnapshot = {
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      userType: user.userType,
+      portalType: user.portalType,
+      positionId: user.positionId,
+    };
+
+    await Checklist.deleteMany({ staffId: user._id });
+    await Notification.deleteMany({ userId: user._id });
+    await UserOverride.deleteMany({ userId: user._id });
+    await User.deleteOne({ _id: user._id });
+
+    await auditAction({
+      userId: session.user.id,
+      userName: session.user.name || 'SuperAdmin',
+      userType: session.user.userType,
+      action: 'delete_user',
+      module: 'user_permission',
+      recordId: user._id,
+      description: `Deleted user ${user.name}`,
+      oldValue: deletedUserSnapshot,
+      ...meta,
+    }, request.headers);
+
+    return successResponse({ deletedUserId: id }, `Deleted user ${user.name}`);
+  } catch (error) {
+    console.error('DELETE /api/users/[id] error:', error);
+    return errorResponse('Failed to delete user', 500);
   }
 }

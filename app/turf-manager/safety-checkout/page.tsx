@@ -30,7 +30,7 @@ export default function SafetyCheckoutPage() {
       return;
     }
     showToast('Safety checkout completed');
-    setTimeout(() => signOut({ callbackUrl: '/login' }), 600);
+    setTimeout(() => signOut({ callbackUrl: '/turf-manager/login' }), 600);
   };
 
   return (

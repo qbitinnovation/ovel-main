@@ -61,7 +61,7 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
   const bottomNavItems = visibleNavItems.slice(0, 5);
 
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+    signOut({ callbackUrl: '/community/login' });
   };
 
   return (
@@ -100,10 +100,10 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
         <div className="sidebar-footer">
           <div className="user-menu" onClick={handleSignOut} role="button" tabIndex={0}>
             <div className="user-avatar">
-              {session?.user?.name ? getInitials(session.user.name) : 'CM'}
+              {session?.user?.name ? getInitials(session.user.name) : 'U'}
             </div>
             <div className="user-info">
-              <div className="user-name">{session?.user?.name || 'Committee Member'}</div>
+              <div className="user-name">{session?.user?.name || 'User'}</div>
               <div className="user-role">Sign Out</div>
             </div>
           </div>

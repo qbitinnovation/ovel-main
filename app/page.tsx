@@ -7,7 +7,7 @@ export default async function Home() {
   const session = await auth();
 
   if (!session?.user) {
-    redirect('/login');
+    redirect('/community/login');
   }
 
   const portalType = (session.user.portalType || 'committee') as PortalType;

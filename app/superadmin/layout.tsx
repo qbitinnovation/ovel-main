@@ -31,7 +31,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+    signOut({ callbackUrl: '/super-admin/login' });
   };
 
   return (

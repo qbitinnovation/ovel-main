@@ -1,21 +1,48 @@
 import type { NextAuthConfig } from 'next-auth';
+import {
+  getDashboardPathForPortal,
+  getAuthRoleLabel,
+  getLoginPathForPortal,
+  getPortalFromPath,
+  isUserAllowedForPortal,
+  PORTAL_AUTH_RULES,
+} from '@/lib/portal-auth';
 
 type AuthUserFields = {
   userType: string;
   portalType: string;
+  role: string;
+  roleLabel: string;
+  positionName: string | null;
+  organizationName: string;
+  loginPortal: string | null;
   positionId: string | null;
   mustChangePassword: boolean;
 };
 
+function invalidPortalLoginUrl(nextUrl: URL): URL {
+  const requestedPortal = getPortalFromPath(nextUrl.pathname);
+  const loginUrl = new URL(getLoginPathForPortal(requestedPortal), nextUrl);
+  loginUrl.searchParams.set('error', 'InvalidPortal');
+  loginUrl.searchParams.set('callbackUrl', `${nextUrl.pathname}${nextUrl.search}`);
+  return loginUrl;
+}
+
+function portalLoginUrl(nextUrl: URL): URL {
+  const requestedPortal = getPortalFromPath(nextUrl.pathname);
+  const loginUrl = new URL(getLoginPathForPortal(requestedPortal), nextUrl);
+  loginUrl.searchParams.set('callbackUrl', `${nextUrl.pathname}${nextUrl.search}`);
+  return loginUrl;
+}
+
 /**
- * Edge-compatible auth config — NO database imports.
- * This is used by the middleware which runs in the edge runtime.
- * The full auth config with Credentials provider is in auth.ts.
+ * Edge-compatible auth config - NO database imports.
+ * This is used by proxy.ts. The full Credentials provider is in auth.ts.
  */
 export const authConfig: NextAuthConfig = {
   trustHost: true,
   pages: {
-    signIn: '/login',
+    signIn: '/community/login',
   },
   session: {
     strategy: 'jwt',
@@ -26,55 +53,61 @@ export const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user;
       const pathname = nextUrl.pathname;
 
-      // Public paths
-      const publicPaths = ['/login', '/api/auth'];
+      const publicPaths = [
+        '/login',
+        '/admin/login',
+        '/super-admin/login',
+        '/superadmin/login',
+        '/community/login',
+        '/committee/login',
+        '/turf-manager/login',
+        '/turf/login',
+        '/shareholder/login',
+        '/api/auth',
+      ];
       if (publicPaths.some((p) => pathname.startsWith(p))) {
-        // Redirect logged-in users away from login
-        if (isLoggedIn && pathname === '/login') {
-          const portalType = (auth?.user as { portalType?: string })?.portalType || 'committee';
-          const portalPaths: Record<string, string> = {
-            superadmin: '/superadmin/dashboard',
-            committee: '/committee/dashboard',
-            turf: '/turf-manager/dashboard',
-            shareholder: '/shareholder/dashboard',
-          };
-          return Response.redirect(new URL(portalPaths[portalType] || '/committee/dashboard', nextUrl));
+        const requestedPortal = getPortalFromPath(pathname);
+        if (isLoggedIn && requestedPortal) {
+          const user = auth?.user as { role?: string; userType?: string; portalType?: string };
+
+          if (!isUserAllowedForPortal(user, requestedPortal)) {
+            return true;
+          }
+
+          return Response.redirect(new URL(getDashboardPathForPortal(user.portalType), nextUrl));
         }
+
         return true;
       }
 
-      // Not authenticated — redirect to login
+      if (pathname === '/') {
+        if (!isLoggedIn) {
+          return Response.redirect(new URL('/community/login', nextUrl));
+        }
+
+        const user = auth?.user as Record<string, unknown>;
+        return Response.redirect(new URL(getDashboardPathForPortal(user?.portalType as string), nextUrl));
+      }
+
+      const requestedPortal = getPortalFromPath(pathname);
+
       if (!isLoggedIn) {
-        return false; // NextAuth redirects to signIn page
+        return requestedPortal ? Response.redirect(portalLoginUrl(nextUrl)) : false;
       }
 
       const user = auth?.user as Record<string, unknown>;
-
-      // Root path — redirect to appropriate portal
-      if (pathname === '/') {
-        const portalType = (user?.portalType as string) || 'committee';
-        const portalPaths: Record<string, string> = {
-          superadmin: '/superadmin/dashboard',
-          committee: '/committee/dashboard',
-          turf: '/turf-manager/dashboard',
-          shareholder: '/shareholder/dashboard',
-        };
-        return Response.redirect(new URL(portalPaths[portalType] || '/committee/dashboard', nextUrl));
-      }
-
-      // Cross-portal protection
-      const portalPrefixes: Record<string, string> = {
-        superadmin: '/superadmin',
-        committee: '/committee',
-        turf: '/turf-manager',
-        shareholder: '/shareholder',
-      };
-      const userPortalType = (user?.portalType as string) || 'committee';
-      for (const [portalType, prefix] of Object.entries(portalPrefixes)) {
-        if (pathname.startsWith(prefix) && portalType !== userPortalType) {
-          const correctPath = portalPrefixes[userPortalType] || '/committee';
-          return Response.redirect(new URL(`${correctPath}/dashboard`, nextUrl));
-        }
+      if (
+        requestedPortal &&
+        !isUserAllowedForPortal(
+          {
+            userType: user?.userType as string,
+            portalType: user?.portalType as string,
+            role: user?.role as string,
+          },
+          requestedPortal
+        )
+      ) {
+        return Response.redirect(invalidPortalLoginUrl(nextUrl));
       }
 
       return true;
@@ -85,9 +118,20 @@ export const authConfig: NextAuthConfig = {
         token.id = user.id as string;
         token.userType = authUser.userType;
         token.portalType = authUser.portalType;
+        token.role =
+          authUser.role ||
+          PORTAL_AUTH_RULES[authUser.portalType as keyof typeof PORTAL_AUTH_RULES]?.role ||
+          '';
+        token.roleLabel = authUser.roleLabel || '';
+        token.positionName = authUser.positionName || null;
+        token.organizationName = authUser.organizationName || 'Oval Turf';
+        token.loginPortal = authUser.loginPortal || null;
         token.positionId = authUser.positionId;
         token.mustChangePassword = authUser.mustChangePassword;
       }
+      token.roleLabel = (token.roleLabel as string | undefined) || getAuthRoleLabel(token.role as string);
+      token.positionName = (token.positionName as string | null | undefined) || null;
+      token.organizationName = (token.organizationName as string | undefined) || 'Oval Turf';
       return token;
     },
     async session({ session, token }) {
@@ -95,12 +139,17 @@ export const authConfig: NextAuthConfig = {
         session.user.id = token.id as string;
         session.user.userType = token.userType as string;
         session.user.portalType = token.portalType as string;
+        session.user.role = token.role as string;
+        session.user.roleLabel = token.roleLabel as string;
+        session.user.positionName = token.positionName as string | null;
+        session.user.organizationName = token.organizationName as string;
+        session.user.loginPortal = token.loginPortal as string | null;
         session.user.positionId = token.positionId as string | null;
         session.user.mustChangePassword = token.mustChangePassword as boolean;
       }
       return session;
     },
   },
-  providers: [], // Providers are added in auth.ts (not edge-compatible)
+  providers: [],
   secret: process.env.NEXTAUTH_SECRET,
 };

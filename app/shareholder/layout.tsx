@@ -18,8 +18,12 @@ export default function ShareholderLayout({ children }: { children: React.ReactN
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  if (pathname === '/shareholder/login') {
+    return <>{children}</>;
+  }
+
   const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+    signOut({ callbackUrl: '/shareholder/login' });
   };
 
   return (

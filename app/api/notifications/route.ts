@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Notification from '@/models/Notification';
 import { successResponse, errorResponse } from '@/lib/utils';
+import { isDevFallbackEnabled } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,10 @@ export async function GET(request: NextRequest) {
     const unreadOnly = sp.get('unreadOnly') === 'true';
 
     await dbConnect();
+
+    if (process.env.NODE_ENV === 'development' && !/^[0-9a-fA-F]{24}$/.test(session.user.id)) {
+      return successResponse({ notifications: [], unreadCount: 0 });
+    }
 
     const filter: Record<string, unknown> = { userId: session.user.id };
     if (unreadOnly) filter.isRead = false;
@@ -31,6 +36,9 @@ export async function GET(request: NextRequest) {
     return successResponse({ notifications, unreadCount });
   } catch (error) {
     console.error('GET /api/notifications error:', error);
+    if (isDevFallbackEnabled()) {
+      return successResponse({ notifications: [], unreadCount: 0 }, 'Development fallback notifications');
+    }
     return errorResponse('Failed to fetch notifications', 500);
   }
 }

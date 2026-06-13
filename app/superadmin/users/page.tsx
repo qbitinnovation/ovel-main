@@ -33,6 +33,7 @@ const portalLabel = (portalType: string) =>
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
+  const [positions, setPositions] = useState<UserPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -104,6 +105,18 @@ export default function UsersPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
+  const fetchPositions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/positions');
+      const data = await res.json();
+      if (data.success) setPositions(data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch positions:', err);
+    }
+  }, []);
+
+  useEffect(() => { fetchPositions(); }, [fetchPositions]);
+
   const openCreateModal = () => {
     setEditingUser(null);
     setForm({ name: '', email: '', phone: '', portalType: 'committee', positionName: '', password: '' });
@@ -135,7 +148,7 @@ export default function UsersPage() {
           body: JSON.stringify({ name: form.name, phone: form.phone, portalType: form.portalType, positionName: form.positionName }),
         });
         const data = await res.json();
-        if (data.success) { showToast('User updated'); setShowModal(false); fetchUsers(); }
+        if (data.success) { showToast('User updated'); setShowModal(false); fetchUsers(); fetchPositions(); }
         else setFormError(data.message);
       } else {
         const res = await fetch('/api/users', {
@@ -149,6 +162,7 @@ export default function UsersPage() {
           if (data.data.tempPassword) setTempPasswordDisplay(data.data.tempPassword);
           else { setShowModal(false); }
           fetchUsers();
+          fetchPositions();
         } else setFormError(data.message);
       }
     } catch { setFormError('Network error'); }
@@ -158,6 +172,14 @@ export default function UsersPage() {
   const handleAction = async (user: UserRecord, action: string) => {
     setConfirmAction(null);
     try {
+      if (action === 'delete') {
+        const res = await fetch(`/api/users/${user._id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) { showToast(data.message); fetchUsers(); }
+        else showToast(data.message || 'Failed', 'error');
+        return;
+      }
+
       const res = await fetch(`/api/users/${user._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -314,6 +336,14 @@ export default function UsersPage() {
                         {u.isArchived && (
                           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-info)' }} onClick={() => handleAction(u, 'unarchive')} title="Unarchive">📤</button>
                         )}
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--status-danger)' }}
+                          onClick={() => setConfirmAction({ user: u, action: 'delete' })}
+                          title="Delete User"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -388,17 +418,11 @@ export default function UsersPage() {
                       </div>
                       {form.portalType === 'committee' && (
                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                          <label className="form-label required">Member Position</label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="e.g. President, Secretary, Treasurer"
+                          <MemberPositionInput
                             value={form.positionName}
-                            onChange={(e) => setForm({ ...form, positionName: e.target.value })}
+                            positions={positions}
+                            onChange={(positionName) => setForm({ ...form, positionName })}
                           />
-                          <span className="form-helper">
-                            Type the committee member position manually. It will be created if it does not exist.
-                          </span>
                         </div>
                       )}
                     </>
@@ -417,17 +441,11 @@ export default function UsersPage() {
                       </div>
                       {form.portalType === 'committee' && (
                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                          <label className="form-label required">Member Position</label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="e.g. President, Secretary, Treasurer"
+                          <MemberPositionInput
                             value={form.positionName}
-                            onChange={(e) => setForm({ ...form, positionName: e.target.value })}
+                            positions={positions}
+                            onChange={(positionName) => setForm({ ...form, positionName })}
                           />
-                          <span className="form-helper">
-                            Type the committee member position manually.
-                          </span>
                         </div>
                       )}
                     </>
@@ -508,26 +526,127 @@ export default function UsersPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
             <div className="modal-body" style={{ paddingTop: 'var(--space-8)' }}>
               <div className={`confirm-icon ${confirmAction.action === 'archive' ? 'warning' : 'danger'}`}>
-                {confirmAction.action === 'archive' ? '📥' : '⏸'}
+                {confirmAction.action === 'archive' ? '📥' : confirmAction.action === 'delete' ? '!' : '⏸'}
               </div>
               <div className="confirm-title">
-                {confirmAction.action === 'deactivate' ? 'Deactivate' : 'Archive'} {confirmAction.user.name}?
+                {confirmAction.action === 'delete' ? 'Delete' : confirmAction.action === 'deactivate' ? 'Deactivate' : 'Archive'} {confirmAction.user.name}?
               </div>
               <div className="confirm-message">
-                {confirmAction.action === 'deactivate'
-                  ? 'They will not be able to log in but all their data is preserved.'
-                  : 'Account becomes inactive. Historical data is fully preserved. Can be unarchived later.'}
+                {confirmAction.action === 'delete'
+                  ? 'This permanently removes the user account and their checklist records. This cannot be undone.'
+                  : confirmAction.action === 'deactivate'
+                    ? 'They will not be able to log in but all their data is preserved.'
+                    : 'Account becomes inactive. Historical data is fully preserved. Can be unarchived later.'}
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary btn-md" onClick={() => setConfirmAction(null)}>Cancel</button>
               <button className={`btn ${confirmAction.action === 'archive' ? 'btn-danger' : 'btn-danger'} btn-md`} onClick={() => handleAction(confirmAction.user, confirmAction.action)}>
-                Yes, {confirmAction.action === 'deactivate' ? 'Deactivate' : 'Archive'}
+                Yes, {confirmAction.action === 'delete' ? 'Delete' : confirmAction.action === 'deactivate' ? 'Deactivate' : 'Archive'}
               </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MemberPositionInput({
+  value,
+  positions,
+  onChange,
+}: {
+  value: string;
+  positions: UserPosition[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const activePositions = positions.filter((position) => position.isActive);
+  const normalizedValue = value.trim().toLowerCase();
+  const matchingPositions = activePositions.filter((position) =>
+    position.name.toLowerCase().includes(normalizedValue)
+  );
+  const visiblePositions = normalizedValue ? matchingPositions : activePositions;
+  const shouldShowMenu = open && visiblePositions.length > 0;
+
+  return (
+    <div className="position-combobox" onBlur={(e) => {
+      if (!e.currentTarget.contains(e.relatedTarget)) {
+        setOpen(false);
+      }
+    }}>
+      <label className="form-label required">Member Position</label>
+      <div className="position-combobox-control">
+        <input
+          type="text"
+          className="form-input position-combobox-input"
+          placeholder="Type or select position"
+          value={value}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="member-position-options"
+          onFocus={() => {
+            setOpen(visiblePositions.length > 0);
+          }}
+          onChange={(e) => {
+            const nextValue = e.target.value;
+            const nextNormalizedValue = nextValue.trim().toLowerCase();
+            const hasMatches = activePositions.some((position) =>
+              nextNormalizedValue
+                ? position.name.toLowerCase().includes(nextNormalizedValue)
+                : true
+            );
+
+            onChange(nextValue);
+            setOpen(hasMatches);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab') {
+              setOpen(false);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="position-combobox-toggle"
+          aria-label={open ? 'Hide positions' : 'Show positions'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setOpen((current) => (visiblePositions.length > 0 ? !current : false));
+          }}
+        >
+          {open ? '⌃' : '⌄'}
+        </button>
+      </div>
+      {shouldShowMenu && (
+        <div
+          id="member-position-options"
+          className="position-combobox-menu"
+          role="listbox"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {visiblePositions.map((position) => (
+            <button
+              key={position._id}
+              type="button"
+              className="position-combobox-option"
+              role="option"
+              aria-selected={position.name === value}
+              onClick={() => {
+                onChange(position.name);
+                setOpen(false);
+              }}
+            >
+              <span>{position.name}</span>
+              {position.name === value && <span className="position-combobox-check">Selected</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <span className="form-helper">
+        Select an existing position like President, or type a new one to create it.
+      </span>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import WelcomeMessage from '@/components/WelcomeMessage';
 
 export const metadata: Metadata = {
   title: 'Turf Manager Dashboard',
@@ -7,12 +8,7 @@ export const metadata: Metadata = {
 export default function TurfManagerDashboard() {
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Turf Manager Dashboard</h1>
-          <p className="page-subtitle">Daily ground operations, assigned tasks, and safety checkout</p>
-        </div>
-      </div>
+      <WelcomeMessage />
 
       <div className="grid" style={{ gridTemplateColumns: '1fr', gap: 'var(--space-4)' }}>
         <div className="card">
