@@ -142,18 +142,22 @@ export async function PUT(
     await user.save();
 
     const meta = getRequestMeta(request.headers);
-    await auditAction({
-      userId: session.user.id,
-      userName: session.user.name || 'SuperAdmin',
-      userType: session.user.userType,
-      action: 'edit_user',
-      module: 'user_permission',
-      recordId: user._id,
-      description: `Edited user ${user.name}`,
-      oldValue,
-      newValue,
-      ...meta,
-    }, request.headers);
+    try {
+      await auditAction({
+        userId: session.user.id,
+        userName: session.user.name || 'SuperAdmin',
+        userType: session.user.userType,
+        action: 'edit_user',
+        module: 'user_permission',
+        recordId: user._id,
+        description: `Edited user ${user.name}`,
+        oldValue,
+        newValue,
+        ...meta,
+      }, request.headers);
+    } catch (auditErr) {
+      console.error('Audit log failed during user edit:', auditErr);
+    }
 
     const updatedUser = await User.findById(id)
       .select('-password')
@@ -207,7 +211,7 @@ async function getOrCreatePositionId(positionName: string, createdBy: string) {
     await position.save();
   }
 
-  return position._id;
+  return position._id.toString();
 }
 
 function escapeRegExp(value: string) {
@@ -269,16 +273,20 @@ export async function PATCH(
         description = `Reset password for ${user.name}`;
         await user.save();
 
-        await auditAction({
-          userId: session.user.id,
-          userName: session.user.name || 'SuperAdmin',
-          userType: session.user.userType,
-          action: 'reset_password',
-          module: 'user_permission',
-          recordId: user._id,
-          description,
-          ...meta,
-        }, request.headers);
+        try {
+          await auditAction({
+            userId: session.user.id,
+            userName: session.user.name || 'SuperAdmin',
+            userType: session.user.userType,
+            action: 'reset_password',
+            module: 'user_permission',
+            recordId: user._id,
+            description,
+            ...meta,
+          }, request.headers);
+        } catch (auditErr) {
+          console.error('Audit log failed during password reset:', auditErr);
+        }
 
         return successResponse({ tempPassword: body.password ? undefined : newPassword }, 'Password reset');
       }
@@ -294,7 +302,7 @@ export async function PATCH(
           const position = await Position.findById(positionId);
           if (!position) return errorResponse('Position not found', 404);
           if (!position.isActive) return errorResponse('Cannot assign an inactive position');
-          user.positionId = position._id;
+          user.positionId = position._id.toString();
           description = `Assigned ${position.name} position to ${user.name}`;
         }
 
@@ -306,18 +314,22 @@ export async function PATCH(
           (m) => `${m.moduleKey}: ${m.accessLevel}`
         ).join(', ');
 
-        await auditAction({
-          userId: session.user.id,
-          userName: session.user.name || 'SuperAdmin',
-          userType: session.user.userType,
-          action: 'assign_position_to_user',
-          module: 'user_permission',
-          recordId: user._id,
-          description: `${description}. Access: ${accessSummary || 'None'}`,
-          oldValue: { positionId: oldPositionId },
-          newValue: { positionId: user.positionId },
-          ...meta,
-        }, request.headers);
+        try {
+          await auditAction({
+            userId: session.user.id,
+            userName: session.user.name || 'SuperAdmin',
+            userType: session.user.userType,
+            action: 'assign_position_to_user',
+            module: 'user_permission',
+            recordId: user._id,
+            description: `${description}. Access: ${accessSummary || 'None'}`,
+            oldValue: { positionId: oldPositionId },
+            newValue: { positionId: user.positionId },
+            ...meta,
+          }, request.headers);
+        } catch (auditErr) {
+          console.error('Audit log failed during position assignment:', auditErr);
+        }
 
         const updatedUser = await User.findById(id)
           .select('-password')
@@ -332,16 +344,20 @@ export async function PATCH(
 
     await user.save();
 
-    await auditAction({
-      userId: session.user.id,
-      userName: session.user.name || 'SuperAdmin',
-      userType: session.user.userType,
-      action: action,
-      module: 'user_permission',
-      recordId: user._id,
-      description,
-      ...meta,
-    }, request.headers);
+    try {
+      await auditAction({
+        userId: session.user.id,
+        userName: session.user.name || 'SuperAdmin',
+        userType: session.user.userType,
+        action: action,
+        module: 'user_permission',
+        recordId: user._id,
+        description,
+        ...meta,
+      }, request.headers);
+    } catch (auditErr) {
+      console.error('Audit log failed during user status change:', auditErr);
+    }
 
     const updatedUser = await User.findById(id)
       .select('-password')
@@ -410,17 +426,21 @@ export async function DELETE(
     await UserOverride.deleteMany({ userId: user._id });
     await User.deleteOne({ _id: user._id });
 
-    await auditAction({
-      userId: session.user.id,
-      userName: session.user.name || 'SuperAdmin',
-      userType: session.user.userType,
-      action: 'delete_user',
-      module: 'user_permission',
-      recordId: user._id,
-      description: `Deleted user ${user.name}`,
-      oldValue: deletedUserSnapshot,
-      ...meta,
-    }, request.headers);
+    try {
+      await auditAction({
+        userId: session.user.id,
+        userName: session.user.name || 'SuperAdmin',
+        userType: session.user.userType,
+        action: 'delete_user',
+        module: 'user_permission',
+        recordId: user._id,
+        description: `Deleted user ${user.name}`,
+        oldValue: deletedUserSnapshot,
+        ...meta,
+      }, request.headers);
+    } catch (auditErr) {
+      console.error('Audit log failed during user deletion:', auditErr);
+    }
 
     return successResponse({ deletedUserId: id }, `Deleted user ${user.name}`);
   } catch (error) {

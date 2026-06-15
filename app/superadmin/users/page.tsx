@@ -134,8 +134,13 @@ export default function UsersPage() {
   };
 
   const handleSaveUser = async () => {
+    if (saving) return; // Prevent double submission
     if (!form.name.trim()) return setFormError('Full name is required');
-    if (!editingUser && !form.email.trim()) return setFormError('Email is required');
+    if (!editingUser) {
+      if (!form.email.trim()) return setFormError('Email is required');
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(form.email.trim())) return setFormError('Email address is invalid');
+    }
     if (!form.phone.trim()) return setFormError('Phone number is required');
     if (form.portalType === 'committee' && !form.positionName.trim()) return setFormError('Committee member position is required');
     setSaving(true); setFormError('');

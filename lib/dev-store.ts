@@ -252,7 +252,20 @@ export function createDevId(prefix: string) {
 export function devUserRef(id: string | null) {
   if (!id) return null;
   const user = getDevStore().users.find((item) => item._id === id);
-  return user ? { _id: user._id, name: user.name, email: user.email } : { _id: id, name: 'User', email: '' };
+  if (user) return { _id: user._id, name: user.name, email: user.email };
+
+  // Static demo user fallbacks
+  if (id === '000000000000000000000001') {
+    return { _id: id, name: 'Super Admin (Demo)', email: 'admin@ovalturf.com' };
+  } else if (id === '000000000000000000000002') {
+    return { _id: id, name: 'Committee Member (Demo)', email: 'committee@ovalturf.com' };
+  } else if (id === '000000000000000000000003') {
+    return { _id: id, name: 'Turf Staff (Demo)', email: 'staff@ovalturf.com' };
+  } else if (id === '000000000000000000000004') {
+    return { _id: id, name: 'Shareholder (Demo)', email: 'shareholder@ovalturf.com' };
+  }
+
+  return { _id: id, name: 'User', email: '' };
 }
 
 export function devPositionRef(id: string) {

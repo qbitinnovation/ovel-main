@@ -2462,3 +2462,18 @@ h6 { font-size: var(--text-base); }
     max-width: 360px;
   }
 }
+
+/* Booking Modal Redesign responsive styles */
+@media (max-width: 768px) {
+  .booking-modal-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .booking-modal-form-side {
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-top: var(--space-4) !important;
+    border-top: 1px solid var(--surface-glass-border) !important;
+    padding-top: var(--space-4) !important;
+  }
+}
+

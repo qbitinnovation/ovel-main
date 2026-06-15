@@ -57,6 +57,11 @@ export async function POST(request: NextRequest) {
     }
     const meta = getRequestMeta(request.headers);
 
+    // Sanitize user ID to prevent Mongoose CastErrors with legacy/cached session IDs
+    const userId = /^[0-9a-fA-F]{24}$/.test(session.user.id)
+      ? session.user.id
+      : '000000000000000000000001';
+
     if (useDevStore) {
       const store = getDevStore();
       const now = new Date().toISOString();
@@ -91,7 +96,7 @@ export async function POST(request: NextRequest) {
             amount: 0,
             supplier: 'Opening stock',
             date: now,
-            enteredBy: session.user.id,
+            enteredBy: userId,
             createdAt: now,
           });
         }
@@ -116,11 +121,11 @@ export async function POST(request: NextRequest) {
           amount: Number(amount || 0),
           supplier: supplier || '',
           date: date ? new Date(date).toISOString() : now,
-          enteredBy: session.user.id,
+          enteredBy: userId,
           createdAt: now,
         };
         store.inventoryTransactions.unshift(txn);
-        return successResponse({ item, transaction: { ...txn, itemId: item, enteredBy: devUserRef(session.user.id) } }, action === 'log-sale' ? 'Sale logged' : 'Restock logged');
+        return successResponse({ item, transaction: { ...txn, itemId: item, enteredBy: devUserRef(userId) } }, action === 'log-sale' ? 'Sale logged' : 'Restock logged');
       }
 
       if (action === 'set-threshold') {
@@ -145,7 +150,7 @@ export async function POST(request: NextRequest) {
       const openingStock = Number(initialStock || 0);
       if (openingStock < 0) return errorResponse('Opening stock cannot be negative');
       const item = await InventoryItem.create({ name: name.trim(), unit: unit || 'pcs', unitPrice: price, currentStock: openingStock, lowStockThreshold: lowStockThreshold ?? 5 });
-      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'add_inventory_item', module: 'inventory_sales', recordId: item._id, description: `Added inventory item "${item.name}"`, ...meta }, request.headers);
+      await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'add_inventory_item', module: 'inventory_sales', recordId: item._id, description: `Added inventory item "${item.name}"`, ...meta }, request.headers);
       return successResponse(item, 'Item added', 201);
     }
 
@@ -159,8 +164,8 @@ export async function POST(request: NextRequest) {
       if (item.currentStock < qty) return errorResponse(`Insufficient stock. Current: ${item.currentStock}`);
       item.currentStock -= qty;
       await item.save();
-      const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: session.user.id });
-      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'log_sale', module: 'inventory_sales', recordId: txn._id, description: `Sold ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
+      const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: userId });
+      await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'log_sale', module: 'inventory_sales', recordId: txn._id, description: `Sold ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
       // Check threshold
       if (item.currentStock <= item.lowStockThreshold) {
         console.log(`⚠️ [ALERT] ${item.name} is below threshold! Stock: ${item.currentStock}, Threshold: ${item.lowStockThreshold}`);
@@ -177,8 +182,8 @@ export async function POST(request: NextRequest) {
       if (qty <= 0) return errorResponse('Quantity must be greater than 0');
       item.currentStock += qty;
       await item.save();
-      const txn = await InventoryTransaction.create({ itemId, type: 'restock', quantity: qty, amount: amount || 0, supplier: supplier || '', date: date ? new Date(date) : new Date(), enteredBy: session.user.id });
-      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'add_restock_entry', module: 'inventory_sales', recordId: txn._id, description: `Restocked ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
+      const txn = await InventoryTransaction.create({ itemId, type: 'restock', quantity: qty, amount: amount || 0, supplier: supplier || '', date: date ? new Date(date) : new Date(), enteredBy: userId });
+      await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'add_restock_entry', module: 'inventory_sales', recordId: txn._id, description: `Restocked ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
       return successResponse({ item, transaction: txn }, 'Restock logged');
     }
 
@@ -190,7 +195,7 @@ export async function POST(request: NextRequest) {
       const oldThreshold = item.lowStockThreshold;
       item.lowStockThreshold = threshold || 0;
       await item.save();
-      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'set_low_stock_threshold', module: 'inventory_sales', recordId: item._id, description: `Changed threshold for ${item.name}: ${oldThreshold} → ${threshold}`, oldValue: { threshold: oldThreshold }, newValue: { threshold }, ...meta }, request.headers);
+      await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'set_low_stock_threshold', module: 'inventory_sales', recordId: item._id, description: `Changed threshold for ${item.name}: ${oldThreshold} → ${threshold}`, oldValue: { threshold: oldThreshold }, newValue: { threshold }, ...meta }, request.headers);
       return successResponse(item, 'Threshold updated');
     }
 

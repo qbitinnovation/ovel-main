@@ -34,7 +34,7 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   userType: { type: String, required: true, enum: ['superadmin', 'management', 'staff'] },
   portalType: { type: String, required: true, enum: ['superadmin', 'committee', 'turf', 'shareholder'] },
-  positionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Position', default: null },
+  positionId: { type: String, ref: 'Position', default: null },
   isActive: { type: Boolean, default: true },
   isArchived: { type: Boolean, default: false },
   mustChangePassword: { type: Boolean, default: false },
@@ -168,13 +168,32 @@ async function seed() {
 
   const existingSA = await User.findOne({ email: superadminEmail });
   if (existingSA) {
-    if (existingSA.mustChangePassword) {
-      existingSA.mustChangePassword = false;
-      await existingSA.save();
+    if (existingSA._id.toString() !== '000000000000000000000001') {
+      console.log('🔄 SuperAdmin has old ID. Recreating with static ID...');
+      await User.deleteOne({ email: superadminEmail });
+      await User.create({
+        _id: new mongoose.Types.ObjectId('000000000000000000000001'),
+        name: 'Super Admin',
+        email: superadminEmail,
+        phone: '+910000000000',
+        password: hashedPassword,
+        userType: 'superadmin',
+        portalType: 'superadmin',
+        isActive: true,
+        isArchived: false,
+        mustChangePassword: false,
+      });
+      console.log(`✅ SuperAdmin recreated with static ID: ${superadminEmail}`);
+    } else {
+      if (existingSA.mustChangePassword) {
+        existingSA.mustChangePassword = false;
+        await existingSA.save();
+      }
+      console.log(`ℹ️  SuperAdmin already exists with correct static ID: ${superadminEmail}`);
     }
-    console.log(`ℹ️  SuperAdmin already exists: ${superadminEmail}`);
   } else {
     await User.create({
+      _id: new mongoose.Types.ObjectId('000000000000000000000001'),
       name: 'Super Admin',
       email: superadminEmail,
       phone: '+910000000000',

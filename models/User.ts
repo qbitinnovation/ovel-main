@@ -8,7 +8,7 @@ export interface IUser extends Document {
   password: string;
   userType: 'superadmin' | 'management' | 'staff';
   portalType: 'superadmin' | 'committee' | 'turf' | 'shareholder';
-  positionId: Types.ObjectId | null;
+  positionId: string | null;
   isActive: boolean;
   isArchived: boolean;
   mustChangePassword: boolean;
@@ -33,7 +33,7 @@ const UserSchema = new Schema<IUser>(
       required: true,
       enum: ['superadmin', 'committee', 'turf', 'shareholder'],
     },
-    positionId: { type: Schema.Types.ObjectId, ref: 'Position', default: null },
+    positionId: { type: String, ref: 'Position', default: null },
     isActive: { type: Boolean, default: true },
     isArchived: { type: Boolean, default: false },
     mustChangePassword: { type: Boolean, default: false },

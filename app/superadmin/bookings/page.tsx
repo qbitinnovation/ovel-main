@@ -110,6 +110,55 @@ const PAYMENT_MODE_LABELS: Record<string, string> = {
   cash: 'Cash',
 };
 
+const TIME_SLOTS = [
+  { label: '6:00 PM', start: '18:00', end: '18:30' },
+  { label: '6:30 PM', start: '18:30', end: '19:00' },
+  { label: '7:00 PM', start: '19:00', end: '19:30' },
+  { label: '7:30 PM', start: '19:30', end: '20:00' },
+  { label: '8:00 PM', start: '20:00', end: '20:30' },
+  { label: '8:30 PM', start: '20:30', end: '21:00' },
+  { label: '9:00 PM', start: '21:00', end: '21:30' },
+  { label: '9:30 PM', start: '21:30', end: '22:00' },
+  { label: '10:00 PM', start: '22:00', end: '22:30' },
+  { label: '10:30 PM', start: '22:30', end: '23:00' },
+  { label: '11:00 PM', start: '23:00', end: '23:30' },
+  { label: '11:30 PM', start: '23:30', end: '23:59' },
+];
+
+const toISODateString = (dateInput: Date | string) => {
+  if (typeof dateInput === 'string') {
+    if (dateInput.includes('T')) {
+      return dateInput.split('T')[0];
+    }
+    return dateInput;
+  }
+  const y = dateInput.getFullYear();
+  const m = String(dateInput.getMonth() + 1).padStart(2, '0');
+  const d = String(dateInput.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const parseISODate = (str: string) => {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+const calculateDuration = (start: string, end: string) => {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let diffMinutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (diffMinutes < 0) return '';
+  const hours = Math.floor(diffMinutes / 60);
+  const mins = diffMinutes % 60;
+  if (hours > 0 && mins > 0) {
+    return `${hours} hr ${mins} mins`;
+  } else if (hours > 0) {
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  } else {
+    return `${mins} mins`;
+  }
+};
+
 // ---- Component ----
 export default function BookingsPage() {
   // --- State ---
@@ -129,6 +178,14 @@ export default function BookingsPage() {
   const [bfNotes, setBfNotes] = useState('');
   const [bfError, setBfError] = useState('');
   const [bfSaving, setBfSaving] = useState(false);
+  const [viewStartDate, setViewStartDate] = useState<Date>(new Date());
+  const [bookingMode, setBookingMode] = useState<'standard' | 'bulk'>('standard');
+  const [bulkPreset, setBulkPreset] = useState<'full_day' | 'evening_6h' | 'morning_6h' | 'custom'>('full_day');
+  const [bulkStartTime, setBulkStartTime] = useState('06:00');
+  const [bulkEndTime, setBulkEndTime] = useState('23:59');
+  const [bfBaseAmount, setBfBaseAmount] = useState('');
+  const [bfDiscountType, setBfDiscountType] = useState<'none' | 'percent' | 'flat'>('none');
+  const [bfDiscountValue, setBfDiscountValue] = useState('');
 
   // View booking
   const [viewBooking, setViewBooking] = useState<BookingData | null>(null);
@@ -280,6 +337,52 @@ export default function BookingsPage() {
     }
   };
 
+  useEffect(() => {
+    if (bookingMode === 'bulk') {
+      if (bulkPreset === 'full_day') {
+        setBfStartTime('06:00');
+        setBfEndTime('23:59');
+      } else if (bulkPreset === 'evening_6h') {
+        setBfStartTime('18:00');
+        setBfEndTime('23:59');
+      } else if (bulkPreset === 'morning_6h') {
+        setBfStartTime('06:00');
+        setBfEndTime('12:00');
+      } else if (bulkPreset === 'custom') {
+        setBfStartTime(bulkStartTime);
+        setBfEndTime(bulkEndTime);
+      }
+    }
+  }, [bookingMode, bulkPreset, bulkStartTime, bulkEndTime]);
+
+  useEffect(() => {
+    if (bookingMode === 'bulk') {
+      const base = Number(bfBaseAmount) || 0;
+      if (bfDiscountType === 'none') {
+        setBfAmount(base > 0 ? base.toString() : '');
+      } else {
+        const val = Number(bfDiscountValue) || 0;
+        let discount = 0;
+        if (bfDiscountType === 'percent') {
+          discount = (base * val) / 100;
+        } else if (bfDiscountType === 'flat') {
+          discount = val;
+        }
+        const final = Math.max(0, base - discount);
+        setBfAmount(final > 0 ? final.toString() : '');
+      }
+    }
+  }, [bookingMode, bfBaseAmount, bfDiscountType, bfDiscountValue, setBfAmount]);
+
+  const getOverlappingBookings = (dateStr: string, start: string, end: string) => {
+    return bookings.filter((b) => {
+      if (b.bookingStatus !== 'confirmed') return false;
+      const bDateStr = toISODateString(new Date(b.bookingDate));
+      if (bDateStr !== dateStr) return false;
+      return b.startTime < end && start < b.endTime;
+    });
+  };
+
   const resetBookingForm = () => {
     setShowBookingForm(false);
     setBfDate(today());
@@ -290,6 +393,94 @@ export default function BookingsPage() {
     setBfAmount('');
     setBfNotes('');
     setBfError('');
+    setViewStartDate(new Date());
+    setBookingMode('standard');
+    setBulkPreset('full_day');
+    setBulkStartTime('06:00');
+    setBulkEndTime('23:59');
+    setBfBaseAmount('');
+    setBfDiscountType('none');
+    setBfDiscountValue('');
+  };
+
+  const getDaysRange = (start: Date) => {
+    const arr = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      arr.push(d);
+    }
+    return arr;
+  };
+
+  const handlePrevDay = () => {
+    const d = new Date(viewStartDate);
+    d.setDate(d.getDate() - 1);
+    setViewStartDate(d);
+  };
+
+  const handleNextDay = () => {
+    const d = new Date(viewStartDate);
+    d.setDate(d.getDate() + 1);
+    setViewStartDate(d);
+  };
+
+  const isSlotBooked = (dateStr: string, slotStart: string, slotEnd: string) => {
+    return bookings.some((b) => {
+      if (b.bookingStatus !== 'confirmed') return false;
+      const bDateStr = toISODateString(new Date(b.bookingDate));
+      if (bDateStr !== dateStr) return false;
+      return b.startTime < slotEnd && slotStart < b.endTime;
+    });
+  };
+
+  const handleSlotClick = (slot: { start: string; end: string }) => {
+    if (isSlotBooked(bfDate, slot.start, slot.end)) return;
+    
+    if (!bfStartTime || !bfEndTime) {
+      setBfStartTime(slot.start);
+      setBfEndTime(slot.end);
+      return;
+    }
+    
+    const isCurrentlySelected = slot.start >= bfStartTime && slot.end <= bfEndTime;
+    
+    if (isCurrentlySelected) {
+      setBfStartTime('');
+      setBfEndTime('');
+      return;
+    }
+    
+    const startIndex = TIME_SLOTS.findIndex(s => s.start === bfStartTime);
+    const endIndex = TIME_SLOTS.findIndex(s => s.end === bfEndTime);
+    const clickIndex = TIME_SLOTS.findIndex(s => s.start === slot.start);
+    
+    const isSingleSlot = startIndex === endIndex;
+    
+    if (isSingleSlot && startIndex !== -1 && clickIndex !== -1) {
+      const minIdx = Math.min(startIndex, clickIndex);
+      const maxIdx = Math.max(startIndex, clickIndex);
+      
+      let hasBookedBetween = false;
+      for (let i = minIdx; i <= maxIdx; i++) {
+        const s = TIME_SLOTS[i];
+        if (isSlotBooked(bfDate, s.start, s.end)) {
+          hasBookedBetween = true;
+          break;
+        }
+      }
+      
+      if (!hasBookedBetween) {
+        setBfStartTime(TIME_SLOTS[minIdx].start);
+        setBfEndTime(TIME_SLOTS[maxIdx].end);
+      } else {
+        setBfStartTime(slot.start);
+        setBfEndTime(slot.end);
+      }
+    } else {
+      setBfStartTime(slot.start);
+      setBfEndTime(slot.end);
+    }
   };
 
   const openViewBooking = async (booking: BookingData) => {
@@ -475,6 +666,9 @@ export default function BookingsPage() {
     const m = map[status] || { cls: 'badge-neutral', label: status };
     return <span className={`badge ${m.cls} badge-dot`}>{m.label}</span>;
   };
+
+  const overlaps = bfDate && bfStartTime && bfEndTime ? getOverlappingBookings(bfDate, bfStartTime, bfEndTime) : [];
+  const hasConflict = overlaps.length > 0;
 
   // ========================
   // RENDER
@@ -764,42 +958,426 @@ export default function BookingsPage() {
                   ⚠️ {bfError}
                 </div>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-                <div className="form-group">
-                  <label className="form-label required">Booking Date</label>
-                  <input type="date" className="form-input" value={bfDate} onChange={e => setBfDate(e.target.value)} />
+              
+              <div className="booking-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 'var(--space-6)' }}>
+                {/* Left Side: Scheduling UI */}
+                <div>
+                  {/* Booking Mode Selector */}
+                  <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '4px', marginBottom: 'var(--space-4)' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookingMode('standard');
+                        setBfStartTime('');
+                        setBfEndTime('');
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: 'var(--space-2) 0',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        background: bookingMode === 'standard' ? 'white' : 'transparent',
+                        color: bookingMode === 'standard' ? 'var(--text-primary)' : 'var(--text-muted)',
+                        fontWeight: bookingMode === 'standard' ? 600 : 500,
+                        fontSize: 'var(--text-xs)',
+                        cursor: 'pointer',
+                        boxShadow: bookingMode === 'standard' ? 'var(--shadow-sm)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      📅 Standard Booking
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookingMode('bulk');
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: 'var(--space-2) 0',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        background: bookingMode === 'bulk' ? 'white' : 'transparent',
+                        color: bookingMode === 'bulk' ? 'var(--text-primary)' : 'var(--text-muted)',
+                        fontWeight: bookingMode === 'bulk' ? 600 : 500,
+                        fontSize: 'var(--text-xs)',
+                        cursor: 'pointer',
+                        boxShadow: bookingMode === 'bulk' ? 'var(--shadow-sm)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      🏆 Bulk/Tournament Booking
+                    </button>
+                  </div>
+
+                  {/* Month/Year selector header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+                    <button 
+                      className="btn btn-secondary btn-sm" 
+                      onClick={handlePrevDay} 
+                      style={{ padding: '0 var(--space-3)', height: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      &lt;
+                    </button>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>
+                        {viewStartDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </span>
+                      <div style={{ position: 'relative', display: 'inline-block' }}>
+                        <span 
+                          style={{ cursor: 'pointer', fontSize: '1.2rem', display: 'inline-flex', alignItems: 'center' }}
+                          onClick={() => {
+                            const el = document.getElementById('jump-date-picker');
+                            if (el && 'showPicker' in el) {
+                              (el as any).showPicker();
+                            }
+                          }}
+                        >
+                          📅
+                        </span>
+                        <input 
+                          id="jump-date-picker"
+                          type="date"
+                          value={bfDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setBfDate(e.target.value);
+                              setViewStartDate(parseISODate(e.target.value));
+                            }
+                          }}
+                          style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0, 
+                            opacity: 0, 
+                            width: '24px', 
+                            height: '24px', 
+                            cursor: 'pointer' 
+                          }}
+                        />
+                      </div>
+                    </div>
+                    
+                    <button 
+                      className="btn btn-secondary btn-sm" 
+                      onClick={handleNextDay}
+                      style={{ padding: '0 var(--space-3)', height: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      &gt;
+                    </button>
+                  </div>
+
+                  {/* Horizontal Dates list */}
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', overflowX: 'auto', paddingBottom: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+                    {getDaysRange(viewStartDate).map((date, idx) => {
+                      const dateStr = toISODateString(date);
+                      const isActive = bfDate === dateStr;
+                      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                      const dayNum = date.getDate();
+                      
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => setBfDate(dateStr)}
+                          style={{
+                            flex: '1 0 auto',
+                            width: '72px',
+                            height: '76px',
+                            border: isActive ? '1.5px solid #00a65a' : '1px solid var(--surface-glass-border)',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            background: 'white',
+                            transition: 'all 0.15s ease',
+                            color: isActive ? '#00a65a' : 'var(--text-primary)',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                          }}
+                        >
+                          <span style={{ fontSize: 'var(--text-xl)', fontWeight: 700, lineHeight: 1.1 }}>{dayNum}</span>
+                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: isActive ? '#00a65a' : 'var(--text-muted)', marginTop: '2px' }}>{dayName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {bookingMode === 'standard' ? (
+                    <>
+                      {/* Available Slots Title */}
+                      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+                        Available Slots
+                      </div>
+
+                      {/* Slots Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-3)' }}>
+                        {TIME_SLOTS.map((slot, idx) => {
+                          const isBooked = isSlotBooked(bfDate, slot.start, slot.end);
+                          const isSelected = bfStartTime && bfEndTime && slot.start >= bfStartTime && slot.end <= bfEndTime;
+                          
+                          let bg = '#f1f3f5';
+                          let text = '#00a65a';
+                          let cursor = 'pointer';
+                          
+                          if (isBooked) {
+                            bg = '#e60000';
+                            text = 'white';
+                            cursor = 'not-allowed';
+                          } else if (isSelected) {
+                            bg = '#00a65a';
+                            text = 'white';
+                          }
+                          
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleSlotClick(slot)}
+                              disabled={isBooked}
+                              style={{
+                                height: '44px',
+                                borderRadius: '8px',
+                                background: bg,
+                                color: text,
+                                border: 'none',
+                                cursor: cursor,
+                                fontSize: 'var(--text-sm)',
+                                fontWeight: 500,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.15s ease',
+                                boxShadow: isSelected ? '0 4px 12px rgba(0, 166, 90, 0.2)' : 'none',
+                              }}
+                            >
+                              {slot.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                      {/* Presets Header */}
+                      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Tournament / Bulk Presets
+                      </div>
+                      
+                      {/* Preset Selectors */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        {[
+                          { id: 'full_day', label: 'Full Day Event', time: '6:00 AM - 12:00 AM', desc: '18 hours reservation' },
+                          { id: 'evening_6h', label: 'Evening Session', time: '6:00 PM - 12:00 AM', desc: '6 hours reservation' },
+                          { id: 'morning_6h', label: 'Morning Session', time: '6:00 AM - 12:00 PM', desc: '6 hours reservation' },
+                          { id: 'custom', label: 'Custom Bulk Hours', time: 'Select times manually', desc: 'Any duration slot' }
+                        ].map(preset => {
+                          const isSel = bulkPreset === preset.id;
+                          return (
+                            <div
+                              key={preset.id}
+                              onClick={() => {
+                                setBulkPreset(preset.id as any);
+                                if (preset.id === 'full_day') setBfBaseAmount('25000');
+                                else if (preset.id === 'evening_6h') setBfBaseAmount('9000');
+                                else if (preset.id === 'morning_6h') setBfBaseAmount('7500');
+                              }}
+                              style={{
+                                border: isSel ? '1.5px solid #00a65a' : '1px solid var(--surface-glass-border)',
+                                borderRadius: '12px',
+                                padding: 'var(--space-3) var(--space-4)',
+                                cursor: 'pointer',
+                                background: isSel ? 'color-mix(in srgb, #00a65a 6%, transparent)' : 'white',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, color: isSel ? '#00a65a' : 'var(--text-primary)', fontSize: 'var(--text-sm)' }}>
+                                {preset.label}
+                              </div>
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px', fontWeight: 500 }}>
+                                {preset.time}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {preset.desc}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Custom Time inputs */}
+                      {bulkPreset === 'custom' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', background: 'var(--bg-tertiary)', padding: 'var(--space-4)', borderRadius: '12px' }}>
+                          <div className="form-group">
+                            <label className="form-label required">Start Time</label>
+                            <input 
+                              type="time" 
+                              className="form-input" 
+                              value={bulkStartTime} 
+                              onChange={e => setBulkStartTime(e.target.value)} 
+                              style={{ height: '38px', fontSize: 'var(--text-sm)' }}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label required">End Time</label>
+                            <input 
+                              type="time" 
+                              className="form-input" 
+                              value={bulkEndTime} 
+                              onChange={e => setBulkEndTime(e.target.value)} 
+                              style={{ height: '38px', fontSize: 'var(--text-sm)' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Real-time availability indicator / conflict card */}
+                      {bfStartTime && bfEndTime && (
+                        <div style={{ marginTop: 'var(--space-2)' }}>
+                          {hasConflict ? (
+                            <div style={{ background: 'var(--status-danger-soft)', border: '1px solid var(--status-danger-border)', borderRadius: '12px', padding: 'var(--space-4)', color: 'var(--status-danger)' }}>
+                              <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                <span>⚠️ Slot Conflict Detected</span>
+                              </div>
+                              <div style={{ fontSize: 'var(--text-xs)', marginTop: '4px', opacity: 0.9 }}>
+                                This date already has bookings in the selected time range:
+                              </div>
+                              <ul style={{ paddingLeft: 'var(--space-4)', marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', display: 'grid', gap: '4px' }}>
+                                {overlaps.map((o) => (
+                                  <li key={o._id}>
+                                    <strong>{o.customerName || 'Anonymous'}</strong> ({fmtTime(o.startTime)} – {fmtTime(o.endTime)})
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <div style={{ background: 'var(--status-success-soft)', border: '1px solid var(--status-success-border)', borderRadius: '12px', padding: 'var(--space-4)', color: 'var(--status-success)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontWeight: 600 }}>
+                              <span>✅ Time slot is available for bulk reservation!</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+
+                {/* Right Side: Form Details */}
+                <div className="booking-modal-form-side" style={{ borderLeft: '1px solid var(--surface-glass-border)', paddingLeft: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  
+                  {/* Selected Time slot info */}
+                  <div style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Selected Time</div>
+                    <div style={{ fontWeight: 600, marginTop: '2px' }}>
+                      {bfStartTime && bfEndTime ? (
+                        <>
+                          {fmtTime(bfStartTime)} – {fmtTime(bfEndTime)}
+                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-muted)', marginLeft: 'var(--space-2)' }}>
+                            ({calculateDuration(bfStartTime, bfEndTime)})
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 400 }}>No slot selected</span>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="form-group">
-                    <label className="form-label required">Start Time</label>
-                    <input type="time" className="form-input" value={bfStartTime} onChange={e => setBfStartTime(e.target.value)} />
+                    <label className="form-label">Customer Name</label>
+                    <input className="form-input" placeholder="Leave blank if unknown" value={bfCustomer} onChange={e => setBfCustomer(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label className="form-label required">End Time</label>
-                    <input type="time" className="form-input" value={bfEndTime} onChange={e => setBfEndTime(e.target.value)} />
+                    <label className="form-label">Contact Number</label>
+                    <input className="form-input" type="tel" placeholder="Phone number" value={bfContact} onChange={e => setBfContact(e.target.value)} />
+                  </div>
+                  
+                  {bookingMode === 'standard' ? (
+                    <div className="form-group">
+                      <label className="form-label required">Expected Amount (₹)</label>
+                      <input className="form-input" type="number" placeholder="e.g. 4400" value={bfAmount} onChange={e => setBfAmount(e.target.value)} min="1" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label required">Base Price (₹)</label>
+                        <input className="form-input" type="number" placeholder="Base turf rate" value={bfBaseAmount} onChange={e => setBfBaseAmount(e.target.value)} min="1" />
+                      </div>
+                      
+                      <div className="form-group">
+                        <label className="form-label">Offer / Discount</label>
+                        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '3px', marginBottom: 'var(--space-2)' }}>
+                          {(['none', 'percent', 'flat'] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => {
+                                setBfDiscountType(type);
+                                setBfDiscountValue('');
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: 'var(--space-1) 0',
+                                border: 'none',
+                                borderRadius: 'var(--radius-sm)',
+                                background: bfDiscountType === type ? 'white' : 'transparent',
+                                color: bfDiscountType === type ? 'var(--text-primary)' : 'var(--text-muted)',
+                                fontWeight: bfDiscountType === type ? 600 : 500,
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {type === 'none' ? 'None' : type === 'percent' ? 'Percent (%)' : 'Flat (₹)'}
+                            </button>
+                          ))}
+                        </div>
+                        {bfDiscountType !== 'none' && (
+                          <input 
+                            className="form-input" 
+                            type="number" 
+                            placeholder={bfDiscountType === 'percent' ? "Discount % (e.g. 10)" : "Discount Value ₹ (e.g. 500)"} 
+                            value={bfDiscountValue} 
+                            onChange={e => setBfDiscountValue(e.target.value)} 
+                            min="0"
+                            style={{ height: '38px', marginTop: 'var(--space-1)' }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Display price calculation breakdown */}
+                      <div style={{ padding: 'var(--space-2) var(--space-1)', fontSize: 'var(--text-xs)', borderTop: '1px dashed var(--surface-glass-border)', marginTop: 'var(--space-1)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                          <span>Base Price:</span>
+                          <span>₹{Number(bfBaseAmount) || 0}</span>
+                        </div>
+                        {bfDiscountType !== 'none' && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-danger)', marginTop: '2px' }}>
+                            <span>Discount ({bfDiscountType === 'percent' ? `${bfDiscountValue || 0}%` : 'Flat'}):</span>
+                            <span>
+                              -₹{bfDiscountType === 'percent' 
+                                ? Math.round((Number(bfBaseAmount) || 0) * (Number(bfDiscountValue) || 0) / 100)
+                                : (Number(bfDiscountValue) || 0)
+                              }
+                            </span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-success)', fontWeight: 700, fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-1)' }}>
+                          <span>Final Expected:</span>
+                          <span>₹{bfAmount || 0}</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="form-group">
+                    <label className="form-label">Notes</label>
+                    <textarea className="form-input form-textarea" placeholder="Any additional information..." value={bfNotes} onChange={e => setBfNotes(e.target.value)} rows={3} />
                   </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Customer Name</label>
-                  <input className="form-input" placeholder="Leave blank if unknown" value={bfCustomer} onChange={e => setBfCustomer(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Contact Number</label>
-                  <input className="form-input" type="tel" placeholder="Phone number" value={bfContact} onChange={e => setBfContact(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label required">Expected Amount (₹)</label>
-                  <input className="form-input" type="number" placeholder="e.g. 4400" value={bfAmount} onChange={e => setBfAmount(e.target.value)} min="1" />
-                </div>
-              </div>
-              <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
-                <label className="form-label">Notes</label>
-                <textarea className="form-input form-textarea" placeholder="Any additional information..." value={bfNotes} onChange={e => setBfNotes(e.target.value)} rows={3} />
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary btn-md" onClick={() => resetBookingForm()}>Cancel</button>
-              <button className={`btn btn-primary btn-md ${bfSaving ? 'btn-loading' : ''}`} onClick={handleCreateBooking} disabled={bfSaving}>
+              <button className={`btn btn-primary btn-md ${bfSaving ? 'btn-loading' : ''}`} onClick={handleCreateBooking} disabled={bfSaving || hasConflict}>
                 ✅ Confirm Booking
               </button>
             </div>

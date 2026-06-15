@@ -78,8 +78,19 @@ function getDevDemoUser(email: string, password: string, requestedPortal: Return
 
   validatePortalLogin(demoUser, requestedPortal);
 
+  let demoId = `demo-${demoUser.portalType}`;
+  if (demoUser.portalType === 'superadmin') {
+    demoId = '000000000000000000000001';
+  } else if (demoUser.portalType === 'committee') {
+    demoId = '000000000000000000000002';
+  } else if (demoUser.portalType === 'turf') {
+    demoId = '000000000000000000000003';
+  } else if (demoUser.portalType === 'shareholder') {
+    demoId = '000000000000000000000004';
+  }
+
   return {
-    id: `demo-${demoUser.portalType}`,
+    id: demoId,
     name: demoUser.name,
     email: demoUser.email,
     userType: demoUser.userType,

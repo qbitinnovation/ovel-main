@@ -5,7 +5,7 @@ export interface IPosition extends Document {
   name: string;
   description: string;
   isActive: boolean;
-  createdBy: Types.ObjectId;
+  createdBy: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,7 +15,7 @@ const PositionSchema = new Schema<IPosition>(
     name: { type: String, required: true, unique: true, trim: true },
     description: { type: String, default: '', trim: true },
     isActive: { type: Boolean, default: true },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    createdBy: { type: String, required: true },
   },
   {
     timestamps: true,

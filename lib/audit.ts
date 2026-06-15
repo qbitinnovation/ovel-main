@@ -21,23 +21,28 @@ export interface AuditLogEntry {
  * This function is called from every API route after successful operations.
  */
 export async function writeAuditLog(entry: AuditLogEntry): Promise<string> {
-  await dbConnect();
+  try {
+    await dbConnect();
 
-  const log = await AuditLog.create({
-    userId: entry.userId,
-    userName: entry.userName,
-    userType: entry.userType,
-    action: entry.action,
-    module: entry.module,
-    recordId: entry.recordId || null,
-    description: entry.description || '',
-    oldValue: entry.oldValue || null,
-    newValue: entry.newValue || null,
-    ipAddress: entry.ipAddress || 'unknown',
-    deviceInfo: entry.deviceInfo || 'unknown',
-  });
+    const log = await AuditLog.create({
+      userId: entry.userId,
+      userName: entry.userName,
+      userType: entry.userType,
+      action: entry.action,
+      module: entry.module,
+      recordId: entry.recordId || null,
+      description: entry.description || '',
+      oldValue: entry.oldValue || null,
+      newValue: entry.newValue || null,
+      ipAddress: entry.ipAddress || 'unknown',
+      deviceInfo: entry.deviceInfo || 'unknown',
+    });
 
-  return log._id.toString();
+    return log._id.toString();
+  } catch (error) {
+    console.error('Failed to write audit log:', error);
+    return '';
+  }
 }
 
 /**

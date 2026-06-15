@@ -131,6 +131,10 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!name?.trim()) return errorResponse('Full name is required');
     if (!email?.trim()) return errorResponse('Email address is required');
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) return errorResponse('Email address is invalid');
+    
     if (!phone?.trim()) return errorResponse('Phone number is required');
     if (!portalType) return errorResponse('Portal type is required');
 
@@ -240,7 +244,7 @@ export async function POST(request: NextRequest) {
         await position.save();
       }
 
-      positionId = position._id;
+      positionId = position._id.toString();
     }
 
     const user = await User.create({
@@ -257,20 +261,24 @@ export async function POST(request: NextRequest) {
     });
 
     const meta = getRequestMeta(request.headers);
-    await auditAction(
-      {
-        userId: session.user.id,
-        userName: session.user.name || 'SuperAdmin',
-        userType: session.user.userType,
-        action: 'create_user',
-        module: 'user_permission',
-        recordId: user._id,
-        description: `Created user account for ${sanitizedName}, ${userType}, ${PORTAL_LABELS[portalType]} Portal`,
-        newValue: { name: sanitizedName, email: sanitizedEmail, userType, portalType, positionName: sanitizedPositionName || undefined },
-        ...meta,
-      },
-      request.headers
-    );
+    try {
+      await auditAction(
+        {
+          userId: session.user.id,
+          userName: session.user.name || 'SuperAdmin',
+          userType: session.user.userType,
+          action: 'create_user',
+          module: 'user_permission',
+          recordId: user._id,
+          description: `Created user account for ${sanitizedName}, ${userType}, ${PORTAL_LABELS[portalType]} Portal`,
+          newValue: { name: sanitizedName, email: sanitizedEmail, userType, portalType, positionName: sanitizedPositionName || undefined },
+          ...meta,
+        },
+        request.headers
+      );
+    } catch (auditErr) {
+      console.error('Audit log failed during user creation:', auditErr);
+    }
 
     // Stub: would send welcome email/SMS here
     console.log(`📧 [STUB] Welcome email to ${sanitizedEmail} with temp password`);
