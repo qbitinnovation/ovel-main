@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { X, Check, Package } from 'lucide-react';
 
 interface TurfItem {
   _id: string;
@@ -140,7 +141,7 @@ export default function InventoryPage() {
       {toast && (
         <div className="toast-container">
           <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
-            <span className="toast-icon">{toast.type === 'error' ? 'x' : 'OK'}</span>
+            <span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span>
             <div className="toast-content"><div className="toast-title">{toast.message}</div></div>
           </div>
         </div>
@@ -168,7 +169,7 @@ export default function InventoryPage() {
                 onClick={() => setSelectedItem(item)}
                 style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}
               >
-                <div className="stat-icon" style={{ background: accent.background, color: accent.color }}>IT</div>
+                <div className="stat-icon" style={{ background: accent.background, color: accent.color }}><Package size={20} /></div>
                 <div className="stat-value text-gradient">{item.quantity}</div>
                 <div className="stat-label">{item.name}</div>
                 <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
@@ -184,7 +185,7 @@ export default function InventoryPage() {
           {items.length === 0 && (
             <div className="card inventory-item-card" style={{ gridColumn: '1 / -1' }}>
               <div className="empty-state">
-                <div className="empty-state-icon">Box</div>
+                <div className="empty-state-icon"><Package size={48} /></div>
                 <div className="empty-state-title">No turf items stored</div>
                 <div className="empty-state-description">Add balls, cones, nets, cleaning tools, lights, or other turf assets.</div>
               </div>
@@ -198,7 +199,7 @@ export default function InventoryPage() {
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">{selectedItem.name}</h3>
-              <button className="modal-close" onClick={() => setSelectedItem(null)}>x</button>
+              <button className="modal-close" onClick={() => setSelectedItem(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
@@ -230,7 +231,7 @@ export default function InventoryPage() {
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">{editingItem ? 'Edit Turf Item' : 'Add Turf Item'}</h3>
-              <button className="modal-close" onClick={closeForm}>x</button>
+              <button className="modal-close" onClick={closeForm}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>

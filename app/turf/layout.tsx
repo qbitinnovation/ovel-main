@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getInitials } from '@/lib/utils';
 
+import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu } from 'lucide-react';
+
 const navItems = [
-  { label: 'ഡാഷ്ബോർഡ്', labelEn: 'Dashboard', href: '/turf-manager/dashboard', icon: '🏠' },
-  { label: 'ചെക്ക്ലിസ്റ്റ്', labelEn: 'Checklist', href: '/turf-manager/checklist', icon: '✅' },
-  { label: 'മെയിൻറനൻസ്', labelEn: 'Tasks', href: '/turf-manager/maintenance', icon: '🔧' },
-  { label: 'സേഫ്റ്റി', labelEn: 'Safety', href: '/turf-manager/safety-checkout', icon: '🛡️' },
+  { label: 'ഡാഷ്ബോർഡ്', labelEn: 'Dashboard', href: '/turf-manager/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'ചെക്ക്ലിസ്റ്റ്', labelEn: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} /> },
+  { label: 'മെയിൻറനൻസ്', labelEn: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} /> },
+  { label: 'സേഫ്റ്റി', labelEn: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} /> },
 ];
 
 export default function TurfLayout({ children }: { children: React.ReactNode }) {
@@ -31,7 +33,7 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
       {/* Sidebar — hidden by default on mobile, visible on desktop */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">🏏</div>
+          <div className="sidebar-logo"><Building2 size={20} /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">ടർഫ് മാനേജർ</div>
@@ -77,7 +79,7 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
               onClick={() => setSidebarOpen(!sidebarOpen)}
               aria-label="Toggle menu"
             >
-              ☰
+              <Menu size={24} />
             </button>
             <div className="topbar-breadcrumb">
               <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
@@ -87,7 +89,7 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
           </div>
           <div className="topbar-right">
             <button className="notification-bell" aria-label="Notifications">
-              🔔
+              <Bell size={20} />
             </button>
           </div>
         </header>

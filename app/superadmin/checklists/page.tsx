@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { X, Check, CheckCircle } from 'lucide-react';
 
 interface ChecklistItem {
   key: string;
@@ -171,7 +172,7 @@ export default function ChecklistsPage() {
       {toast && (
         <div className="toast-container">
           <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
-            <span className="toast-icon">{toast.type === 'error' ? 'x' : '✓'}</span>
+            <span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span>
             <div className="toast-content"><div className="toast-title">{toast.message}</div></div>
           </div>
         </div>
@@ -189,7 +190,7 @@ export default function ChecklistsPage() {
       ) : checklists.length === 0 ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">✓</div>
+            <div className="empty-state-icon"><CheckCircle size={48} /></div>
             <div className="empty-state-title">No checklists yet</div>
             <div className="empty-state-description">Checklists will appear here when generated for staff members.</div>
           </div>
@@ -269,7 +270,7 @@ export default function ChecklistsPage() {
 
                     {item.status === 'submitted' && (
                       <div className="flex gap-2" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAction(item.sourceChecklistId || selected._id, 'approve-item', item.key)}>✓ Approve</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => handleAction(item.sourceChecklistId || selected._id, 'approve-item', item.key)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Check size={16} /> Approve</button>
                         <button
                           className="btn btn-danger btn-sm"
                           onClick={() => {
@@ -277,7 +278,7 @@ export default function ChecklistsPage() {
                             if (reason) handleAction(item.sourceChecklistId || selected._id, 'reject-item', item.key, reason);
                           }}
                         >
-                          x Reject
+                          <X size={16} /> Reject
                         </button>
                       </div>
                     )}
@@ -294,7 +295,7 @@ export default function ChecklistsPage() {
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Proof Photo - {previewPhoto.label}</h3>
-              <button className="modal-close" onClick={() => setPreviewPhoto(null)}>x</button>
+              <button className="modal-close" onClick={() => setPreviewPhoto(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <img

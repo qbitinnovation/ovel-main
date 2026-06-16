@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { X, Check, CheckCircle } from 'lucide-react';
 
 interface ChecklistItem {
   key: string;
@@ -153,7 +154,7 @@ export default function TurfManagerChecklistPage() {
       {toast && (
         <div className="toast-container">
           <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
-            <span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span>
+            <span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span>
             <div className="toast-content"><div className="toast-title">{toast.message}</div></div>
           </div>
         </div>
@@ -172,7 +173,7 @@ export default function TurfManagerChecklistPage() {
       ) : !checklist ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">✅</div>
+            <div className="empty-state-icon"><CheckCircle size={48} /></div>
             <div className="empty-state-title">No checklist available</div>
             <div className="empty-state-description">Today&apos;s supervisor checklist will appear here when generated.</div>
           </div>
@@ -212,7 +213,7 @@ export default function TurfManagerChecklistPage() {
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Live Photo - {activeItem.label}</h3>
-              <button className="modal-close" onClick={closeCamera}>×</button>
+              <button className="modal-close" onClick={closeCamera}><X size={20} /></button>
             </div>
             <div className="modal-body">
               {cameraError ? (

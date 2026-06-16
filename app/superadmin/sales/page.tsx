@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { X, Check, Package, Banknote, Inbox, User as UserIcon } from 'lucide-react';
 
 interface Item { _id: string; name: string; unit: string; unitPrice?: number; currentStock: number; lowStockThreshold: number; }
 interface Txn { _id: string; itemId: { _id: string; name: string } | null; type: string; quantity: number; amount: number; supplier: string; date: string; enteredBy: { name: string } | null; createdAt: string; }
@@ -67,7 +68,7 @@ export default function SalesPage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Sales</h1><p className="page-subtitle">List products, sell pieces, and manage product restocking</p></div>
         <div className="flex gap-3">
@@ -82,39 +83,95 @@ export default function SalesPage() {
           <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
             {items.map((item) => (
               <button key={item._id} className="card stat-card sales-item-card" type="button" onClick={() => setSelectedItem(item)} style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}>
-                <div className="stat-icon" style={{ background: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger-soft)' : 'var(--accent-primary-soft)', color: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger)' : 'var(--accent-primary)' }}>📦</div>
+                <div className="stat-icon" style={{ background: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger-soft)' : 'var(--accent-primary-soft)', color: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger)' : 'var(--accent-primary)' }}><Package size={20} /></div>
                 <div className="stat-value text-gradient">{item.currentStock}</div>
                 <div className="stat-label">{item.name} ({item.unit})</div>
                 <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>₹{item.unitPrice || 0} / piece</div>
                 {item.currentStock <= item.lowStockThreshold && <span className="badge badge-danger badge-dot" style={{ fontSize: '10px' }}>Low Stock!</span>}
               </button>
             ))}
-            {items.length === 0 && <div className="card sales-item-card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon">📦</div><div className="empty-state-title">No products</div><div className="empty-state-description">Add sales products to start selling.</div></div></div>}
+            {items.length === 0 && <div className="card sales-item-card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon"><Package size={48} /></div><div className="empty-state-title">No products</div><div className="empty-state-description">Add sales products to start selling.</div></div></div>}
           </div>
 
           {transactions.length > 0 && (
             <div className="card"><div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3></div>
-            <div className="data-table-wrapper" style={{ border: 'none' }}>
-              <table className="data-table"><thead><tr><th>Date</th><th>Item</th><th>Type</th><th>Qty</th><th>Amount</th><th>By</th></tr></thead>
-              <tbody>{transactions.map((t) => (
-                <tr key={t._id}>
-                  <td style={{ fontSize: 'var(--text-sm)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
-                  <td style={{ fontWeight: 600 }}>{t.itemId?.name || '—'}</td>
-                  <td><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
-                  <td>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
-                  <td>{t.amount > 0 ? `₹${t.amount}` : '—'}</td>
-                  <td style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
-                </tr>
-              ))}</tbody></table></div></div>
+            <>
+            {/* DESKTOP TABLE VIEW */}
+            <div className="card desktop-only" style={{ padding: 0 }}>
+              <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
+                      <th style={{ padding: 'var(--space-4)' }}>Item</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Date</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Type</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Quantity</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Amount</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Entered By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map(t => (
+                      <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
+                        <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
+                        <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
+                        <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
+                        <td style={{ padding: 'var(--space-4)', fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</td>
+                        <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* MOBILE CARDS VIEW */}
+            <div className="cards-grid mobile-only" style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
+              {transactions.map((t) => (
+                <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {/* Header: Item Name + Date */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                        <Package size={18} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{t.itemId?.name || '—'}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                      </div>
+                    </div>
+                    <span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span>
+                  </div>
+
+                  {/* Info details grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Quantity</div>
+                      <div style={{ fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{t.enteredBy?.name || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            </></div>
           )}
         </>
       )}
 
       {selectedItem && (
         <div className="modal-backdrop" onClick={() => setSelectedItem(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header"><h3 className="modal-title">{selectedItem.name}</h3><button className="modal-close" onClick={() => setSelectedItem(null)}>×</button></div>
+          <div className="modal-header"><h3 className="modal-title">{selectedItem.name}</h3><button className="modal-close" onClick={() => setSelectedItem(null)}><X size={20} /></button></div>
           <div className="modal-body">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
               <div className="card" style={{ padding: 'var(--space-4)' }}><div className="stat-label">Current Stock</div><div className="stat-value">{selectedItem.currentStock}</div></div>
               <div className="card" style={{ padding: 'var(--space-4)' }}><div className="stat-label">Price Per Piece</div><div className="stat-value">Rs. {selectedItem.unitPrice || 0}</div></div>
             </div>
@@ -128,10 +185,10 @@ export default function SalesPage() {
 
       {showAddItem && (
         <div className="modal-backdrop" onClick={() => setShowAddItem(false)}><div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header"><h3 className="modal-title">Add Sales Product</h3><button className="modal-close" onClick={() => setShowAddItem(false)}>✕</button></div>
+          <div className="modal-header"><h3 className="modal-title">Add Sales Product</h3><button className="modal-close" onClick={() => setShowAddItem(false)}><X size={20} /></button></div>
           <div className="modal-body">
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Item Name</label><input className="form-input" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g. Stumps" autoFocus /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
               <div className="form-group"><label className="form-label">Unit</label><input className="form-input" value={itemUnit} onChange={(e) => setItemUnit(e.target.value)} /></div>
               <div className="form-group"><label className="form-label">Price Per Piece (₹)</label><input className="form-input" type="number" min={0} step="0.01" value={itemUnitPrice} onChange={(e) => setItemUnitPrice(Number(e.target.value))} /></div>
               <div className="form-group"><label className="form-label">Opening Stock</label><input className="form-input" type="number" min={0} value={itemInitialStock} onChange={(e) => setItemInitialStock(Number(e.target.value))} /></div>
@@ -144,10 +201,10 @@ export default function SalesPage() {
 
       {showTxn && (
         <div className="modal-backdrop" onClick={() => setShowTxn(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header"><h3 className="modal-title">{showTxn.type === 'sale' ? '💸 Log Sale' : '📥 Add Restock'}</h3><button className="modal-close" onClick={() => setShowTxn(null)}>✕</button></div>
+          <div className="modal-header"><h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{showTxn.type === 'sale' ? <><Banknote size={20} /> Log Sale</> : <><Inbox size={20} /> Add Restock</>}</h3><button className="modal-close" onClick={() => setShowTxn(null)}><X size={20} /></button></div>
           <div className="modal-body">
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Item</label><div className="select-wrapper"><select className="form-select" value={txnItemId} onChange={(e) => { setTxnItemId(e.target.value); if (showTxn.type === 'sale') setTxnAmount(getSaleAmount(e.target.value, txnQty)); }}>{items.map((i) => <option key={i._id} value={i._id}>{i.name} (Stock: {i.currentStock}, ₹{i.unitPrice || 0}/piece)</option>)}</select></div></div>
-            <div style={{ display: 'grid', gridTemplateColumns: showTxn.type === 'sale' ? '1fr' : '1fr 1fr', gap: 'var(--space-4)' }}>
+            <div className={showTxn.type === 'sale' ? 'grid' : 'form-grid-2'} style={{ gap: 'var(--space-4)' }}>
               <div className="form-group">
                 <label className="form-label required">Quantity</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 44px', gap: 'var(--space-2)', alignItems: 'center' }}>

@@ -65,7 +65,7 @@ export default function AccountsPage() {
       <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>{icon} {title}</h3><span className="badge badge-info">{fmt(sum(items))}</span></div>
       <div className="card-body" style={{ padding: 'var(--space-4)' }}>
         {items.map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px 120px 40px', gap: 'var(--space-2)', marginBottom: 'var(--space-2)', alignItems: 'center' }}>
+          <div key={i} className="flex flex-wrap items-center gap-2" style={{ marginBottom: 'var(--space-2)' }}>
             <div className="select-wrapper"><select className="form-select" value={item.category} onChange={(e) => updateItem(setter, i, 'category', e.target.value)} style={{ height: '38px', fontSize: 'var(--text-sm)' }}><option value="">Category</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
             <input className="form-input" placeholder="Description" value={item.description} onChange={(e) => updateItem(setter, i, 'description', e.target.value)} style={{ height: '38px', fontSize: 'var(--text-sm)' }} />
             <input className="form-input" type="number" placeholder="Amount" value={item.amount || ''} onChange={(e) => updateItem(setter, i, 'amount', Number(e.target.value))} style={{ height: '38px', fontSize: 'var(--text-sm)' }} />

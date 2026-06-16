@@ -1,15 +1,16 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Wrench, Package, Bell, Globe, BarChart3, Home, X, Check, Save } from 'lucide-react';
 
 interface Setting { _id: string; key: string; value: unknown; label: string; category: string; }
 
-const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
-  operations: { label: 'Operations', icon: '⚙️' },
-  inventory: { label: 'Inventory', icon: '📦' },
-  notifications: { label: 'Notifications', icon: '🔔' },
-  language: { label: 'Language', icon: '🌐' },
-  reports: { label: 'Reports', icon: '📊' },
-  general: { label: 'General', icon: '🏠' },
+const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
+  operations: { label: 'Operations', icon: <Wrench size={16} /> },
+  inventory: { label: 'Inventory', icon: <Package size={16} /> },
+  notifications: { label: 'Notifications', icon: <Bell size={16} /> },
+  language: { label: 'Language', icon: <Globe size={16} /> },
+  reports: { label: 'Reports', icon: <BarChart3 size={16} /> },
+  general: { label: 'General', icon: <Home size={16} /> },
 };
 
 export default function SettingsPage() {
@@ -64,20 +65,24 @@ export default function SettingsPage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Settings</h1><p className="page-subtitle">Configure system-wide preferences and defaults</p></div>
-        {hasChanges && <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSave} disabled={saving}>💾 Save Changes</button>}
+        {hasChanges && <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Save size={16} /> Save Changes</button>}
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           {categories.map((cat) => {
             const catSettings = settings.filter((s) => s.category === cat);
-            const catInfo = CATEGORY_LABELS[cat] || { label: cat, icon: '⚙️' };
+            const catInfo = CATEGORY_LABELS[cat] || { label: cat, icon: <Wrench size={16} /> };
             return (
               <div key={cat} className="card">
-                <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>{catInfo.icon} {catInfo.label}</h3></div>
+                <div className="card-header">
+                  <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    {catInfo.icon} <span>{catInfo.label}</span>
+                  </h3>
+                </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   {catSettings.map((s) => (
                     <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4) var(--space-6)', borderBottom: '1px solid var(--border-primary)' }}>

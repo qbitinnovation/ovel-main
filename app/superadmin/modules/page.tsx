@@ -243,9 +243,9 @@ export default function ModuleMappingPage() {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 'var(--space-6)', minHeight: '60vh' }}>
+        <div className="mapping-layout">
           {/* Left Panel — Committee Positions List */}
-          <div className="card" style={{ alignSelf: 'start', position: 'sticky', top: 'calc(var(--topbar-height) + var(--space-6))' }}>
+          <div className="card mapping-sidebar" style={{ alignSelf: 'start', position: 'sticky', top: 'calc(var(--topbar-height) + var(--space-6))' }}>
             <div className="card-header">
               <h3 style={{ fontSize: 'var(--text-sm)' }}>Committee Positions</h3>
               <span className="badge badge-neutral">{positions.length}</span>
@@ -295,7 +295,7 @@ export default function ModuleMappingPage() {
 
                   return (
                     <div key={mod.moduleKey} className="card" style={{ transition: 'all var(--transition-base)' }}>
-                      <div style={{ padding: 'var(--space-5) var(--space-6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+                      <div className="module-card-inner" style={{ padding: 'var(--space-5) var(--space-6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flex: 1 }}>
                           <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-lg)', background: isMapped ? 'var(--accent-primary-soft)' : 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xl)', flexShrink: 0 }}>
                             {mod.icon}

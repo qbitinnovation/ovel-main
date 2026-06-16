@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import WelcomeMessage from '@/components/WelcomeMessage';
+import { Shield } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Turf Manager Dashboard',
@@ -49,13 +50,13 @@ export default function TurfManagerDashboard() {
                 height: '48px',
                 borderRadius: 'var(--radius-lg)',
                 background: 'var(--status-warning-soft)',
+                color: 'var(--status-warning)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 'var(--text-xl)',
                 flexShrink: 0,
               }}>
-                🛡️
+                <Shield size={24} />
               </div>
               <div>
                 <div style={{ fontWeight: 600, color: 'var(--status-warning)' }}>

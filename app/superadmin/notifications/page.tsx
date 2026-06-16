@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { X, Check, Bell } from 'lucide-react';
 
 interface NotifRecord { _id: string; type: string; title: string; message: string; moduleKey: string; isRead: boolean; createdAt: string; }
 
@@ -32,14 +33,14 @@ export default function NotificationsPage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Notifications</h1><p className="page-subtitle">{unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'All caught up!'}</p></div>
-        {unreadCount > 0 && <button className="btn btn-secondary btn-md" onClick={markAllRead}>✓ Mark All Read</button>}
+        {unreadCount > 0 && <button className="btn btn-secondary btn-md" onClick={markAllRead} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Check size={16} /> Mark All Read</button>}
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : notifications.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">🔔</div><div className="empty-state-title">No notifications</div><div className="empty-state-description">Notifications from system events will appear here.</div></div></div>
+        <div className="card"><div className="empty-state"><div className="empty-state-icon"><Bell size={48} /></div><div className="empty-state-title">No notifications</div><div className="empty-state-description">Notifications from system events will appear here.</div></div></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {notifications.map((n) => (

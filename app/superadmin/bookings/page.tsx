@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Calendar, Clock, User as UserIcon, Phone, FileText, CheckCircle, AlertCircle, X, Check, Search, Filter } from 'lucide-react';
 
 // ---- Types ----
 interface BookingData {
@@ -717,45 +718,111 @@ export default function BookingsPage() {
           ) : bookings.length === 0 ? (
             <div className="card"><div className="empty-state"><div className="empty-state-icon">📅</div><div className="empty-state-title">No bookings yet</div><div className="empty-state-description">Create your first turf booking reservation.</div></div></div>
           ) : (
-            <div className="data-table-wrapper">
-              <table className="data-table" id="bookings-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Time Slot</th>
-                    <th>Customer</th>
-                    <th>Contact</th>
-                    <th>Expected</th>
-                    <th>Payment</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.map(b => (
-                    <tr key={b._id} style={b.bookingStatus === 'cancelled' ? { opacity: 0.55 } : undefined}>
-                      <td style={{ fontWeight: 600 }}>{fmtDate(b.bookingDate)}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
-                        {fmtTime(b.startTime)} – {fmtTime(b.endTime)}
-                      </td>
-                      <td>{b.customerName || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Anonymous</span>}</td>
-                      <td style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{b.contactNumber || '—'}</td>
-                      <td style={{ fontWeight: 600 }}>{fmt(b.expectedAmount)}</td>
-                      <td>{statusBadge(b.paymentStatus)}</td>
-                      <td>{statusBadge(b.bookingStatus)}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => openViewBooking(b)}>View</button>
-                          {b.bookingStatus === 'confirmed' && b.paymentStatus !== 'paid' && (
-                            <button className="btn btn-primary btn-sm" onClick={() => openPaymentForm(b)}>+ Pay</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <>
+              {/* DESKTOP TABLE VIEW */}
+              <div className="card desktop-only">
+                <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
+                        <th style={{ padding: 'var(--space-4)' }}>DATE</th>
+                        <th style={{ padding: 'var(--space-4)' }}>TIME SLOT</th>
+                        <th style={{ padding: 'var(--space-4)' }}>CUSTOMER</th>
+                        <th style={{ padding: 'var(--space-4)' }}>CONTACT</th>
+                        <th style={{ padding: 'var(--space-4)' }}>PAYMENT</th>
+                        <th style={{ padding: 'var(--space-4)' }}>STATUS</th>
+                        <th style={{ padding: 'var(--space-4)' }}>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bookings.map(b => (
+                        <tr key={`desk-${b._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)', opacity: b.bookingStatus === 'cancelled' ? 0.55 : 1 }}>
+                          <td style={{ padding: 'var(--space-4)', whiteSpace: 'nowrap', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {new Date(b.bookingDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td style={{ padding: 'var(--space-4)', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                            {fmtTime(b.startTime)} - {fmtTime(b.endTime)}
+                          </td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                            <span style={{ fontStyle: b.customerName ? 'normal' : 'italic', color: b.customerName ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: 500 }}>
+                              {b.customerName || 'Anonymous'}
+                            </span>
+                          </td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{b.contactNumber || '—'}</td>
+                          <td style={{ padding: 'var(--space-4)' }}><span className="badge badge-neutral" style={{ padding: '4px 8px' }}>{b.paymentStatus}</span></td>
+                          <td style={{ padding: 'var(--space-4)' }}>{statusBadge(b.bookingStatus)}</td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                              <button className="btn btn-secondary btn-sm" onClick={() => openViewBooking(b)}>View</button>
+                              {b.bookingStatus === 'confirmed' && b.paymentStatus !== 'paid' && (
+                                <button className="btn btn-primary btn-sm" onClick={() => openPaymentForm(b)}>+ Pay</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--surface-glass-border)' }}>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Showing {bookings.length} of {bookings.length} bookings</div>
+                  <div className="select-wrapper" style={{ width: '130px' }}>
+                    <select className="form-select form-select-sm" style={{ height: '36px', fontSize: 'var(--text-sm)' }}>
+                      <option>10 per page</option>
+                      <option>25 per page</option>
+                      <option>50 per page</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* MOBILE CARDS VIEW */}
+              <div className="cards-grid mobile-only">
+              {bookings.map(b => (
+                <div key={b._id} className="card" style={{ padding: 'var(--space-4)', opacity: b.bookingStatus === 'cancelled' ? 0.55 : 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {/* Header: Date + Status Badges */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />
+                      <span style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>
+                        {new Date(b.bookingDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                      {statusBadge(b.paymentStatus)}
+                      {statusBadge(b.bookingStatus)}
+                    </div>
+                  </div>
+
+                  {/* Info Details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '4px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={12} style={{ color: 'var(--accent-primary)' }} />
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{fmtTime(b.startTime)} - {fmtTime(b.endTime)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <UserIcon size={12} style={{ color: 'var(--accent-primary)' }} />
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.customerName || 'Anonymous'}</span>
+                      {b.contactNumber && (
+                        <>
+                          <span style={{ color: 'var(--text-muted)' }}>•</span>
+                          <span>{b.contactNumber}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: '2px' }}>
+                    <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => openViewBooking(b)}>View</button>
+                    {b.bookingStatus === 'confirmed' && b.paymentStatus !== 'paid' && (
+                      <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => openPaymentForm(b)}>+ Pay</button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
+            </>
           )}
         </>
       )}
@@ -887,51 +954,64 @@ export default function BookingsPage() {
                     No bookings in this period
                   </div>
                 ) : (
-                  <div className="data-table-wrapper" style={{ border: 'none', borderRadius: 0 }}>
-                    <table className="data-table" id="payment-breakdown-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Time Slot</th>
-                          <th>Customer</th>
-                          <th>Expected</th>
-                          <th>Paid</th>
-                          <th>Balance</th>
-                          <th>Mode</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dashBreakdown.map(b => (
-                          <tr
-                            key={b._id}
-                            style={
-                              b.paymentStatus === 'pending' ? { background: 'var(--status-warning-soft)' } :
-                              b.paymentStatus === 'partial' ? { background: 'var(--status-info-soft)' } :
-                              undefined
-                            }
-                          >
-                            <td style={{ fontWeight: 600 }}>{fmtDate(b.bookingDate)}</td>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
-                              {fmtTime(b.startTime)} – {fmtTime(b.endTime)}
-                            </td>
-                            <td>{b.customerName}</td>
-                            <td>{fmt(b.expectedAmount)}</td>
-                            <td style={{ fontWeight: 600, color: 'var(--status-success)' }}>{fmt(b.totalPaid)}</td>
-                            <td style={{ color: b.remainingBalance > 0 ? 'var(--status-danger)' : 'var(--text-muted)' }}>
-                              {b.remainingBalance > 0 ? fmt(b.remainingBalance) : '—'}
-                            </td>
-                            <td>
-                              {b.paymentModes.length > 0
-                                ? b.paymentModes.map(m => PAYMENT_MODE_LABELS[m] || m).join(', ')
-                                : <span style={{ color: 'var(--text-muted)' }}>—</span>
-                              }
-                            </td>
-                            <td>{statusBadge(b.paymentStatus)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="cards-grid" style={{ padding: '0 var(--space-6) var(--space-6) var(--space-6)' }}>
+                    {dashBreakdown.map(b => (
+                      <div key={b._id} className="card" style={{ padding: 'var(--space-6)', background: b.paymentStatus === 'pending' ? 'var(--status-warning-soft)' : b.paymentStatus === 'partial' ? 'var(--status-info-soft)' : 'var(--surface-glass)' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: '12px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', marginBottom: 'var(--space-5)' }}>
+                          <FileText size={24} />
+                        </div>
+
+                        <div style={{ marginBottom: 'var(--space-6)' }}>
+                          <div style={{ fontSize: '32px', fontWeight: 700, lineHeight: 1.2 }}>{new Date(b.bookingDate).getDate()}</div>
+                          <div style={{ fontSize: 'var(--text-md)', color: 'var(--text-secondary)' }}>{new Date(b.bookingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</div>
+                        </div>
+
+                        <div style={{ display: 'grid', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                          <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <Clock size={16} style={{ color: 'var(--text-secondary)', marginTop: '2px' }} />
+                            <div>
+                              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Time Slot</div>
+                              <div style={{ fontWeight: 500 }}>{fmtTime(b.startTime)} - {fmtTime(b.endTime)}</div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <UserIcon size={16} style={{ color: 'var(--text-secondary)', marginTop: '2px' }} />
+                            <div>
+                              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Customer</div>
+                              <div style={{ fontWeight: 500 }}>{b.customerName}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <hr style={{ border: 'none', borderTop: '1px solid var(--surface-glass-border)', margin: 'var(--space-5) 0' }} />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                          <div>
+                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Expected</div>
+                            <div style={{ fontWeight: 600 }}>{fmt(b.expectedAmount)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Paid</div>
+                            <div style={{ fontWeight: 600, color: 'var(--status-success)' }}>{fmt(b.totalPaid)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Balance</div>
+                            <div style={{ color: b.remainingBalance > 0 ? 'var(--status-danger)' : 'var(--text-muted)' }}>{b.remainingBalance > 0 ? fmt(b.remainingBalance) : '—'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '2px' }}>Mode</div>
+                            <div style={{ fontSize: 'var(--text-sm)' }}>{b.paymentModes.length > 0 ? b.paymentModes.map(m => PAYMENT_MODE_LABELS[m] || m).join(', ') : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                          </div>
+                        </div>
+                        
+                        <hr style={{ border: 'none', borderTop: '1px solid var(--surface-glass-border)', margin: 'var(--space-5) 0' }} />
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500 }}>Status</div>
+                          <div>{statusBadge(b.paymentStatus)}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -959,7 +1039,7 @@ export default function BookingsPage() {
                 </div>
               )}
               
-              <div className="booking-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 'var(--space-6)' }}>
+              <div className="booking-modal-grid form-grid-responsive" style={{ gap: 'var(--space-6)' }}>
                 {/* Left Side: Scheduling UI */}
                 <div>
                   {/* Booking Mode Selector */}
@@ -1010,98 +1090,32 @@ export default function BookingsPage() {
                     </button>
                   </div>
 
-                  {/* Month/Year selector header */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
-                    <button 
-                      className="btn btn-secondary btn-sm" 
-                      onClick={handlePrevDay} 
-                      style={{ padding: '0 var(--space-3)', height: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      &lt;
-                    </button>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                      <span style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>
-                        {viewStartDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                      </span>
-                      <div style={{ position: 'relative', display: 'inline-block' }}>
-                        <span 
-                          style={{ cursor: 'pointer', fontSize: '1.2rem', display: 'inline-flex', alignItems: 'center' }}
-                          onClick={() => {
-                            const el = document.getElementById('jump-date-picker');
-                            if (el && 'showPicker' in el) {
-                              (el as any).showPicker();
-                            }
-                          }}
-                        >
-                          📅
-                        </span>
-                        <input 
-                          id="jump-date-picker"
-                          type="date"
-                          value={bfDate}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              setBfDate(e.target.value);
-                              setViewStartDate(parseISODate(e.target.value));
-                            }
-                          }}
-                          style={{ 
-                            position: 'absolute', 
-                            top: 0, 
-                            left: 0, 
-                            opacity: 0, 
-                            width: '24px', 
-                            height: '24px', 
-                            cursor: 'pointer' 
-                          }}
-                        />
-                      </div>
+                  {/* Calendar Date Selector */}
+                  <div style={{ marginBottom: 'var(--space-5)' }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                      Select Date
                     </div>
-                    
-                    <button 
-                      className="btn btn-secondary btn-sm" 
-                      onClick={handleNextDay}
-                      style={{ padding: '0 var(--space-3)', height: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      &gt;
-                    </button>
-                  </div>
-
-                  {/* Horizontal Dates list */}
-                  <div style={{ display: 'flex', gap: 'var(--space-2)', overflowX: 'auto', paddingBottom: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
-                    {getDaysRange(viewStartDate).map((date, idx) => {
-                      const dateStr = toISODateString(date);
-                      const isActive = bfDate === dateStr;
-                      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                      const dayNum = date.getDate();
-                      
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => setBfDate(dateStr)}
-                          style={{
-                            flex: '1 0 auto',
-                            width: '72px',
-                            height: '76px',
-                            border: isActive ? '1.5px solid #00a65a' : '1px solid var(--surface-glass-border)',
-                            borderRadius: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            background: 'white',
-                            transition: 'all 0.15s ease',
-                            color: isActive ? '#00a65a' : 'var(--text-primary)',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                          }}
-                        >
-                          <span style={{ fontSize: 'var(--text-xl)', fontWeight: 700, lineHeight: 1.1 }}>{dayNum}</span>
-                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: isActive ? '#00a65a' : 'var(--text-muted)', marginTop: '2px' }}>{dayName}</span>
-                        </div>
-                      );
-                    })}
+                    <input 
+                      type="date"
+                      className="form-input"
+                      value={bfDate}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setBfDate(e.target.value);
+                          try {
+                            // Keep viewStartDate in sync just in case
+                            setViewStartDate(new Date(e.target.value));
+                          } catch (err) {}
+                        }
+                      }}
+                      style={{ 
+                        width: '100%',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--font-sans)',
+                        fontWeight: 500,
+                        color: 'var(--text-primary)'
+                      }}
+                    />
                   </div>
 
                   {bookingMode === 'standard' ? (
@@ -1165,7 +1179,7 @@ export default function BookingsPage() {
                       </div>
                       
                       {/* Preset Selectors */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                      <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
                         {[
                           { id: 'full_day', label: 'Full Day Event', time: '6:00 AM - 12:00 AM', desc: '18 hours reservation' },
                           { id: 'evening_6h', label: 'Evening Session', time: '6:00 PM - 12:00 AM', desc: '6 hours reservation' },
@@ -1207,7 +1221,7 @@ export default function BookingsPage() {
 
                       {/* Custom Time inputs */}
                       {bulkPreset === 'custom' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', background: 'var(--bg-tertiary)', padding: 'var(--space-4)', borderRadius: '12px' }}>
+                        <div className="form-grid-2" style={{ gap: 'var(--space-3)', background: 'var(--bg-tertiary)', padding: 'var(--space-4)', borderRadius: '12px' }}>
                           <div className="form-group">
                             <label className="form-label required">Start Time</label>
                             <input 
@@ -1405,7 +1419,7 @@ export default function BookingsPage() {
               ) : editMode ? (
                 /* Edit Form */
                 <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                  <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
                     <div className="form-group">
                       <label className="form-label">Customer Name</label>
                       <input className="form-input" value={efCustomer} onChange={e => setEfCustomer(e.target.value)} />
@@ -1434,7 +1448,7 @@ export default function BookingsPage() {
                 /* View Details */
                 <div style={{ display: 'grid', gap: 'var(--space-5)' }}>
                   {/* Booking Info Grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                  <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
                     {[
                       { label: 'Date', value: fmtDate(viewBooking.bookingDate) },
                       { label: 'Time Slot', value: `${fmtTime(viewBooking.startTime)} – ${fmtTime(viewBooking.endTime)}` },
@@ -1554,7 +1568,7 @@ export default function BookingsPage() {
             </div>
             <div className="modal-body">
               {/* Booking Context */}
-              <div style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-5)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+              <div className="grid-4" style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-5)', gap: 'var(--space-3)' }}>
                 {[
                   { label: 'Date', value: fmtDate(paymentBooking.bookingDate) },
                   { label: 'Time', value: `${fmtTime(paymentBooking.startTime)} – ${fmtTime(paymentBooking.endTime)}` },
@@ -1574,7 +1588,7 @@ export default function BookingsPage() {
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
                 <div className="form-group">
                   <label className="form-label required">Amount Paid (₹)</label>
                   <input className="form-input" type="number" placeholder="e.g. 4400" value={pfAmount} onChange={e => setPfAmount(e.target.value)} min="1" />

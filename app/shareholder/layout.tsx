@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getInitials } from '@/lib/utils';
 
+import { LayoutDashboard, BarChart3, Wallet, Bell, Building2 } from 'lucide-react';
+
 const navItems = [
-  { label: 'Dashboard', href: '/shareholder/dashboard', icon: '📊' },
-  { label: 'Reports', href: '/shareholder/reports', icon: '📈' },
-  { label: 'Finance', href: '/shareholder/finance', icon: '💰' },
-  { label: 'Updates', href: '/shareholder/updates', icon: '🔔' },
+  { label: 'Dashboard', href: '/shareholder/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'Reports', href: '/shareholder/reports', icon: <BarChart3 size={20} /> },
+  { label: 'Finance', href: '/shareholder/finance', icon: <Wallet size={20} /> },
+  { label: 'Updates', href: '/shareholder/updates', icon: <Bell size={20} /> },
 ];
 
 export default function ShareholderLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +36,7 @@ export default function ShareholderLayout({ children }: { children: React.ReactN
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">🏏</div>
+          <div className="sidebar-logo"><Building2 size={20} /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">Shareholder Portal</div>
@@ -91,7 +93,7 @@ export default function ShareholderLayout({ children }: { children: React.ReactN
           </div>
           <div className="topbar-right">
             <button className="notification-bell" aria-label="Notifications">
-              🔔
+              <Bell size={20} />
             </button>
           </div>
         </header>

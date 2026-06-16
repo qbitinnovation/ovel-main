@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import WelcomeMessage from '@/components/WelcomeMessage';
+import { Users, Link as LinkIcon, Wrench, ClipboardList } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'SuperAdmin Dashboard',
@@ -12,22 +13,22 @@ export default function SuperAdminDashboard() {
 
       <div className="grid grid-4" style={{ marginBottom: 'var(--space-8)' }}>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' }}>👥</div>
+          <div className="stat-icon" style={{ background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' }}><Users size={24} /></div>
           <div className="stat-value text-gradient">0</div>
           <div className="stat-label">Total Users</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--accent-secondary-soft)', color: 'var(--accent-secondary)' }}>🔗</div>
+          <div className="stat-icon" style={{ background: 'var(--accent-secondary-soft)', color: 'var(--accent-secondary)' }}><LinkIcon size={24} /></div>
           <div className="stat-value text-gradient">4</div>
           <div className="stat-label">Portal URLs</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--status-warning-soft)', color: 'var(--status-warning)' }}>🔧</div>
+          <div className="stat-icon" style={{ background: 'var(--status-warning-soft)', color: 'var(--status-warning)' }}><Wrench size={24} /></div>
           <div className="stat-value text-gradient">0</div>
           <div className="stat-label">Open Tasks</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--accent-tertiary-soft)', color: 'var(--accent-tertiary)' }}>📋</div>
+          <div className="stat-icon" style={{ background: 'var(--accent-tertiary-soft)', color: 'var(--accent-tertiary)' }}><ClipboardList size={24} /></div>
           <div className="stat-value text-gradient">0</div>
           <div className="stat-label">Audit Entries Today</div>
         </div>
@@ -40,7 +41,7 @@ export default function SuperAdminDashboard() {
           </div>
           <div className="card-body">
             <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-              <div className="empty-state-icon">📋</div>
+              <div className="empty-state-icon"><ClipboardList size={32} /></div>
               <div className="empty-state-title">No activity yet</div>
               <div className="empty-state-description">
                 Activity will appear here once users start interacting with the system.

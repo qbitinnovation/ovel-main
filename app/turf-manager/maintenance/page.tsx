@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { X, Check, Wrench } from 'lucide-react';
 
 interface Task {
   _id: string;
@@ -84,7 +85,7 @@ export default function TurfMaintenancePage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? 'x' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
 
       <div className="page-header">
         <div>
@@ -106,7 +107,7 @@ export default function TurfMaintenancePage() {
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : tasks.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">🔧</div><div className="empty-state-title">No tasks assigned</div><div className="empty-state-description">Assigned maintenance tasks will appear here.</div></div></div>
+        <div className="card"><div className="empty-state"><div className="empty-state-icon"><Wrench size={48} /></div><div className="empty-state-title">No tasks assigned</div><div className="empty-state-description">Assigned maintenance tasks will appear here.</div></div></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {tasks.map((task) => (

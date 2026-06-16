@@ -6,23 +6,28 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getInitials } from '@/lib/utils';
 
+import {
+  LayoutDashboard, Users, Link as LinkIcon, Wallet, Package, ShoppingCart, Wrench, CheckSquare, FileText, Calendar,
+  BarChart3, Bell, ClipboardList, Settings, Building2
+} from 'lucide-react';
+
 const navItems = [
-  { label: 'Dashboard', href: '/superadmin/dashboard', icon: '📊' },
-  { label: 'Users', href: '/superadmin/users', icon: '👥' },
-  { label: 'Module Mapping', href: '/superadmin/modules', icon: '🔗' },
+  { label: 'Dashboard', href: '/superadmin/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'Users', href: '/superadmin/users', icon: <Users size={20} /> },
+  { label: 'Module Mapping', href: '/superadmin/modules', icon: <LinkIcon size={20} /> },
   { divider: true, label: 'Operations' },
-  { label: 'Accounts', href: '/superadmin/accounts', icon: '💰' },
-  { label: 'Inventory', href: '/superadmin/inventory', icon: '📦' },
-  { label: 'Sales', href: '/superadmin/sales', icon: '🛒' },
-  { label: 'Maintenance', href: '/superadmin/maintenance', icon: '🔧' },
-  { label: 'Checklists', href: '/superadmin/checklists', icon: '✅' },
-  { label: 'MOM', href: '/superadmin/mom', icon: '📝' },
-  { label: 'Bookings', href: '/superadmin/bookings', icon: '📅' },
+  { label: 'Accounts', href: '/superadmin/accounts', icon: <Wallet size={20} /> },
+  { label: 'Inventory', href: '/superadmin/inventory', icon: <Package size={20} /> },
+  { label: 'Sales', href: '/superadmin/sales', icon: <ShoppingCart size={20} /> },
+  { label: 'Maintenance', href: '/superadmin/maintenance', icon: <Wrench size={20} /> },
+  { label: 'Checklists', href: '/superadmin/checklists', icon: <CheckSquare size={20} /> },
+  { label: 'MOM', href: '/superadmin/mom', icon: <FileText size={20} /> },
+  { label: 'Bookings', href: '/superadmin/bookings', icon: <Calendar size={20} /> },
   { divider: true, label: 'System' },
-  { label: 'Reports', href: '/superadmin/reports', icon: '📈' },
-  { label: 'Notifications', href: '/superadmin/notifications', icon: '🔔' },
-  { label: 'Audit Log', href: '/superadmin/audit-log', icon: '📋' },
-  { label: 'Settings', href: '/superadmin/settings', icon: '⚙️' },
+  { label: 'Reports', href: '/superadmin/reports', icon: <BarChart3 size={20} /> },
+  { label: 'Notifications', href: '/superadmin/notifications', icon: <Bell size={20} /> },
+  { label: 'Audit Log', href: '/superadmin/audit-log', icon: <ClipboardList size={20} /> },
+  { label: 'Settings', href: '/superadmin/settings', icon: <Settings size={20} /> },
 ];
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
@@ -47,7 +52,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">🏏</div>
+          <div className="sidebar-logo"><Building2 size={20} /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">SuperAdmin Portal</div>
@@ -113,7 +118,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
           </div>
           <div className="topbar-right">
             <button className="notification-bell" aria-label="Notifications">
-              🔔
+              <Bell size={20} />
               <span className="bell-badge" />
             </button>
           </div>

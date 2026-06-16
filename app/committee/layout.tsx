@@ -6,28 +6,33 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
 
+import { ReactNode } from 'react';
+import {
+  LayoutDashboard, Wallet, Package, ShoppingCart, Wrench, CheckSquare, BarChart3, FileText, Calendar, Bell, Building2, UserCircle
+} from 'lucide-react';
+
 interface NavItem {
   label: string;
   href: string;
-  icon: string;
+  icon: ReactNode;
   moduleKey?: string;
 }
 
 // Dashboard is always visible. Module-specific items are shown based on user's access.
 const defaultNav: NavItem[] = [
-  { label: 'Dashboard', href: '/committee/dashboard', icon: '📊' },
+  { label: 'Dashboard', href: '/committee/dashboard', icon: <LayoutDashboard size={20} /> },
 ];
 
 const moduleNavItems: NavItem[] = [
-  { label: 'Accounts', href: '/committee/accounts', icon: '💰', moduleKey: 'accounts_finance' },
-  { label: 'Inventory', href: '/committee/inventory', icon: '📦', moduleKey: 'inventory' },
-  { label: 'Sales', href: '/committee/sales', icon: '🛒', moduleKey: 'inventory_sales' },
-  { label: 'Maintenance', href: '/committee/maintenance', icon: '🔧', moduleKey: 'maintenance_tasks' },
-  { label: 'Checklists', href: '/committee/checklists', icon: '✅', moduleKey: 'daily_operations' },
-  { label: 'Reports', href: '/committee/reports', icon: '📈', moduleKey: 'reports_analytics' },
-  { label: 'MOM', href: '/committee/mom', icon: '📝', moduleKey: 'malayalam_mom' },
-  { label: 'Bookings', href: '/committee/bookings', icon: '📅', moduleKey: 'bookings' },
-  { label: 'Notifications', href: '/committee/notifications', icon: '🔔', moduleKey: 'notifications' },
+  { label: 'Accounts', href: '/committee/accounts', icon: <Wallet size={20} />, moduleKey: 'accounts_finance' },
+  { label: 'Inventory', href: '/committee/inventory', icon: <Package size={20} />, moduleKey: 'inventory' },
+  { label: 'Sales', href: '/committee/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
+  { label: 'Maintenance', href: '/committee/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
+  { label: 'Checklists', href: '/committee/checklists', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
+  { label: 'Reports', href: '/committee/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
+  { label: 'MOM', href: '/committee/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
+  { label: 'Bookings', href: '/committee/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
+  { label: 'Notifications', href: '/committee/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
 ];
 
 export default function CommitteeLayout({ children }: { children: React.ReactNode }) {
@@ -73,7 +78,7 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">🏏</div>
+          <div className="sidebar-logo"><Building2 size={20} /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">Committee Portal</div>
@@ -131,7 +136,7 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
           </div>
           <div className="topbar-right">
             <button className="notification-bell" aria-label="Notifications">
-              🔔
+              <Bell size={20} />
               <span className="bell-badge" />
             </button>
           </div>

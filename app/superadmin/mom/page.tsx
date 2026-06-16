@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { X, Check, Save, Globe, FileText } from 'lucide-react';
 
 interface MOM { _id: string; date: string; attendees: string[]; pointsEnglish: string; pointsMalayalam: string; decisions: string[]; pendingTasksSummary: string; createdBy: { name: string } | null; createdAt: string; }
 
@@ -43,7 +44,7 @@ export default function MOMPage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Minutes of Meeting</h1><p className="page-subtitle">Create, translate, and manage meeting minutes</p></div>
         {view === 'list' && <button className="btn btn-primary btn-md" onClick={() => setView('form')}>+ New MOM</button>}
@@ -51,35 +52,35 @@ export default function MOMPage() {
       </div>
 
       {view === 'form' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-6)' }}>
+        <div className="form-grid-2">
           <div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Meeting Date</label><input type="date" className="form-input" value={formDate} onChange={(e) => setFormDate(e.target.value)} /></div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label">Attendees (comma-separated)</label><input className="form-input" value={attendees} onChange={(e) => setAttendees(e.target.value)} placeholder="Name 1, Name 2, Name 3" /></div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Meeting Points (English)</label><textarea className="form-input form-textarea" value={pointsEnglish} onChange={(e) => setPointsEnglish(e.target.value)} rows={10} placeholder="Enter meeting discussion points..." /></div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label">Decisions (one per line)</label><textarea className="form-input form-textarea" value={decisions} onChange={(e) => setDecisions(e.target.value)} rows={4} placeholder="Decision 1&#10;Decision 2" /></div>
             <div className="flex gap-3">
-              <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSave} disabled={saving}>💾 Save MOM</button>
+              <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Save size={16} /> Save MOM</button>
             </div>
           </div>
           <div>
             <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
-              <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>🌐 Malayalam Translation</h3>
+              <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}><Globe size={18} /> Malayalam Translation</h3>
                 <button className={`btn btn-secondary btn-sm ${translating ? 'btn-loading' : ''}`} onClick={handleTranslate} disabled={translating}>Convert to Malayalam</button>
               </div>
               <div className="card-body" style={{ padding: 'var(--space-4)' }}>
                 {pointsMalayalam ? (
                   <textarea className="form-input form-textarea" value={pointsMalayalam} onChange={(e) => setPointsMalayalam(e.target.value)} rows={12} style={{ direction: 'ltr' }} />
                 ) : (
-                  <div className="empty-state" style={{ padding: 'var(--space-8)' }}><div className="empty-state-icon">🌐</div><div className="empty-state-title">Enter English points first</div><div className="empty-state-description">Then click &quot;Convert to Malayalam&quot; to generate translation</div></div>
+                  <div className="empty-state" style={{ padding: 'var(--space-8)' }}><div className="empty-state-icon"><Globe size={48} /></div><div className="empty-state-title">Enter English points first</div><div className="empty-state-description">Then click &quot;Convert to Malayalam&quot; to generate translation</div></div>
                 )}
               </div>
             </div>
           </div>
         </div>
       ) : loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : records.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">📝</div><div className="empty-state-title">No meeting minutes</div><div className="empty-state-description">Create your first meeting record.</div></div></div>
+        <div className="card"><div className="empty-state"><div className="empty-state-icon"><FileText size={48} /></div><div className="empty-state-title">No meeting minutes</div><div className="empty-state-description">Create your first meeting record.</div></div></div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1.5fr' : '1fr', gap: 'var(--space-6)' }}>
+        <div className={selected ? 'form-grid-responsive' : 'grid'}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {records.map((r) => (
               <div key={r._id} className={`card card-interactive ${selected?._id === r._id ? 'card-active' : ''}`} onClick={() => setSelected(r)} style={{ cursor: 'pointer', borderColor: selected?._id === r._id ? 'var(--accent-primary)' : undefined }}>
@@ -92,7 +93,7 @@ export default function MOMPage() {
           </div>
           {selected && (
             <div className="card">
-              <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>📝 {new Date(selected.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3></div>
+              <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={18} /> {new Date(selected.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3></div>
               <div className="card-body" style={{ padding: 'var(--space-6)' }}>
                 <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">Attendees</div><div style={{ fontSize: 'var(--text-sm)' }}>{selected.attendees.join(', ') || 'None listed'}</div></div>
                 <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">Meeting Points (English)</div><div style={{ fontSize: 'var(--text-sm)', whiteSpace: 'pre-wrap' }}>{selected.pointsEnglish}</div></div>

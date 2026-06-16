@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import WelcomeMessage from '@/components/WelcomeMessage';
+import { Wallet, BarChart3, Calendar, Bell } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Shareholder Dashboard',
@@ -12,22 +13,30 @@ export default function ShareholderDashboard() {
 
       <div className="grid grid-4" style={{ marginBottom: 'var(--space-8)' }}>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' }}>💰</div>
+          <div className="stat-icon" style={{ background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)' }}>
+            <Wallet size={20} />
+          </div>
           <div className="stat-value text-gradient">₹0</div>
           <div className="stat-label">Revenue</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>📈</div>
+          <div className="stat-icon" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>
+            <BarChart3 size={20} />
+          </div>
           <div className="stat-value text-gradient">0%</div>
           <div className="stat-label">Growth</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--status-warning-soft)', color: 'var(--status-warning)' }}>🏏</div>
+          <div className="stat-icon" style={{ background: 'var(--status-warning-soft)', color: 'var(--status-warning)' }}>
+            <Calendar size={20} />
+          </div>
           <div className="stat-value text-gradient">0</div>
           <div className="stat-label">Bookings</div>
         </div>
         <div className="card stat-card">
-          <div className="stat-icon" style={{ background: 'var(--accent-secondary-soft)', color: 'var(--accent-secondary)' }}>🔔</div>
+          <div className="stat-icon" style={{ background: 'var(--accent-secondary-soft)', color: 'var(--accent-secondary)' }}>
+            <Bell size={20} />
+          </div>
           <div className="stat-value text-gradient">0</div>
           <div className="stat-label">Updates</div>
         </div>
@@ -41,7 +50,7 @@ export default function ShareholderDashboard() {
           </div>
           <div className="card-body">
             <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-              <div className="empty-state-icon">💰</div>
+              <div className="empty-state-icon"><Wallet size={32} /></div>
               <div className="empty-state-title">No financial entries yet</div>
               <div className="empty-state-description">Shareholder finance summaries will appear here.</div>
             </div>
@@ -55,7 +64,7 @@ export default function ShareholderDashboard() {
           </div>
           <div className="card-body">
             <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-              <div className="empty-state-icon">🔔</div>
+              <div className="empty-state-icon"><Bell size={32} /></div>
               <div className="empty-state-title">No updates yet</div>
               <div className="empty-state-description">Important turf updates will appear here.</div>
             </div>

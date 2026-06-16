@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { signOut } from 'next-auth/react';
+import { X, Check } from 'lucide-react';
 import { SAFETY_CHECKLIST_ITEMS } from '@/lib/constants';
 
 export default function SafetyCheckoutPage() {
@@ -35,7 +36,7 @@ export default function SafetyCheckoutPage() {
 
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? 'x' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
 
       <div className="page-header">
         <div>
@@ -59,7 +60,7 @@ export default function SafetyCheckoutPage() {
               style={{ padding: 'var(--space-4)', display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 'var(--space-4)', alignItems: 'center', textAlign: 'left', cursor: 'pointer', border: checkedItems[item.key] ? '1px solid var(--status-success)' : '1px solid var(--surface-glass-border)' }}
             >
               <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-full)', background: checkedItems[item.key] ? 'var(--status-success)' : 'var(--bg-tertiary)', color: checkedItems[item.key] ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                {checkedItems[item.key] ? '✓' : index + 1}
+                {checkedItems[item.key] ? <Check size={20} /> : index + 1}
               </div>
               <div>
                 <div style={{ fontWeight: 700 }}>{item.label}</div>

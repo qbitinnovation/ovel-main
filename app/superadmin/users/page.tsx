@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { X, Check, Search, Users, Pencil, Key, Pause, Play, Inbox, Upload, CheckCircle, AlertTriangle, ChevronUp, ChevronDown, Briefcase, Globe, Clock, User as UserIcon } from 'lucide-react';
 
 interface UserPosition {
   _id: string;
@@ -227,7 +228,7 @@ export default function UsersPage() {
       {toast && (
         <div className="toast-container">
           <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
-            <span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span>
+            <span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span>
             <div className="toast-content"><div className="toast-title">{toast.message}</div></div>
           </div>
         </div>
@@ -246,7 +247,7 @@ export default function UsersPage() {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
         <div className="search-input-wrapper" style={{ flex: '1 1 250px' }}>
-          <span className="search-icon">🔍</span>
+          <span className="search-icon"><Search size={16} /></span>
           <input type="text" className="form-input search-input" placeholder="Search by name, email, or phone..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div className="select-wrapper" style={{ flex: '0 0 auto' }}>
@@ -279,87 +280,131 @@ export default function UsersPage() {
       ) : users.length === 0 && !search && !filterType && !filterPortal && !filterStatus ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">👥</div>
+            <div className="empty-state-icon"><Users size={48} /></div>
             <div className="empty-state-title">No users yet</div>
             <div className="empty-state-description">Create management members and staff accounts to get started.</div>
             <button className="btn btn-primary btn-md" onClick={openCreateModal} style={{ marginTop: 'var(--space-4)' }}>+ Create First User</button>
           </div>
         </div>
       ) : (
-        <div className="data-table-wrapper">
-          <table className="data-table" id="table-users">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Position</th>
-                <th>User Type</th>
-                <th>Portal</th>
-                <th>Status</th>
-                <th>Last Login</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const s = statusOf(u);
-                return (
-                  <tr key={u._id}>
-                    <td>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{u.name}</div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{u.email}</div>
-                      </div>
-                    </td>
-                    <td>
-                      {u.positionId ? (
-                        <span className="badge badge-info badge-dot">{u.positionId.name}</span>
-                      ) : (
-                        <span className="badge badge-neutral">Unassigned</span>
-                      )}
-                    </td>
-                    <td style={{ textTransform: 'capitalize' }}>{u.userType}</td>
-                    <td>
-                      <span className="badge badge-neutral">
-                        {portalLabel(u.portalType)}
-                      </span>
-                    </td>
-                    <td><span className={`badge ${s.cls} badge-dot`}>{s.label}</span></td>
-                    <td style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{formatDate(u.lastLogin)}</td>
-                    <td>
-                      <div className="flex justify-end gap-1" style={{ flexWrap: 'wrap' }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => openEditModal(u)}>✏️</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setResetUser(u); setResetPassword(''); setResetResult(null); }} title="Reset Password">🔑</button>
-                        {u.isActive && !u.isArchived && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-danger)' }} onClick={() => setConfirmAction({ user: u, action: 'deactivate' })}>⏸</button>
-                        )}
-                        {!u.isActive && !u.isArchived && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-success)' }} onClick={() => handleAction(u, 'reactivate')}>▶</button>
-                        )}
-                        {!u.isArchived && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-warning)' }} onClick={() => setConfirmAction({ user: u, action: 'archive' })} title="Archive">📥</button>
-                        )}
-                        {u.isArchived && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-info)' }} onClick={() => handleAction(u, 'unarchive')} title="Unarchive">📤</button>
-                        )}
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          style={{ color: 'var(--status-danger)' }}
-                          onClick={() => setConfirmAction({ user: u, action: 'delete' })}
-                          title="Delete User"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+        <>
+          <div className="card desktop-only" style={{ padding: 0 }}>
+            <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
+                    <th style={{ padding: 'var(--space-4)' }}>Name</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Email</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Phone</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Portal</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Position</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Status</th>
+                    <th style={{ padding: 'var(--space-4)' }}>Actions</th>
                   </tr>
-                );
-              })}
-              {users.length === 0 && (
-                <tr><td colSpan={7}><div className="empty-state" style={{ padding: 'var(--space-8)' }}><div className="empty-state-icon">🔍</div><div className="empty-state-title">No matching users</div></div></td></tr>
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {users.length === 0 ? (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 'var(--space-8)' }}><div className="empty-state"><div className="empty-state-icon"><Search size={48} /></div><div className="empty-state-title">No matching users</div></div></td></tr>
+                  ) : (
+                    users.map((u) => {
+                      const s = statusOf(u);
+                      return (
+                        <tr key={`desk-${u._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)', opacity: !u.isActive ? 0.7 : 1 }}>
+                          <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{u.name}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{u.email}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{u.phone}</td>
+                          <td style={{ padding: 'var(--space-4)' }}><span className="badge badge-neutral" style={{ padding: '4px 8px' }}>{portalLabel(u.portalType)}</span></td>
+                          <td style={{ padding: 'var(--space-4)' }}>{u.positionId ? <span className="badge badge-info badge-dot" style={{ padding: '4px 8px' }}>{u.positionId.name}</span> : <span className="badge badge-neutral" style={{ padding: '4px 8px' }}>Unassigned</span>}</td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                             <span className={`badge ${s.cls} badge-dot`} style={{ padding: '4px 8px' }}>{s.label}</span>
+                          </td>
+                          <td style={{ padding: 'var(--space-4)', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 'var(--space-2)' }}>
+                              <button className="btn btn-secondary btn-sm" onClick={() => openEditModal(u)} title="Edit" style={{ whiteSpace: 'nowrap' }}><Pencil size={16} /> Edit</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => { setResetUser(u); setResetPassword(''); setResetResult(null); }} title="Reset Password" style={{ whiteSpace: 'nowrap' }}><Key size={16} /> Reset</button>
+
+                              {!u.isActive && !u.isArchived && (
+                                <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-success)', whiteSpace: 'nowrap' }} onClick={() => handleAction(u, 'reactivate')} title="Reactivate"><Play size={16} /> Reactivate</button>
+                              )}
+                              {!u.isArchived && (
+                                <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-warning)', whiteSpace: 'nowrap' }} onClick={() => setConfirmAction({ user: u, action: 'archive' })} title="Archive"><Inbox size={16} /> Archive</button>
+                              )}
+                              {u.isArchived && (
+                                <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-info)', whiteSpace: 'nowrap' }} onClick={() => handleAction(u, 'unarchive')} title="Unarchive"><Upload size={16} /> Unarchive</button>
+                              )}
+                              <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-danger)', whiteSpace: 'nowrap' }} onClick={() => setConfirmAction({ user: u, action: 'delete' })} title="Delete User">Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="cards-grid mobile-only">
+          {users.length === 0 ? (
+            <div className="card" style={{ gridColumn: '1 / -1' }}><div className="empty-state" style={{ padding: 'var(--space-8)' }}><div className="empty-state-icon"><Search size={48} /></div><div className="empty-state-title">No matching users</div></div></div>
+          ) : (
+            users.map((u) => {
+              const s = statusOf(u);
+              return (
+                <div key={u._id} className="card" style={{ padding: 'var(--space-4)', opacity: !u.isActive ? 0.7 : 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {/* Header: User Icon + Name + Status */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                        <UserIcon size={18} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: 1.2 }}>{u.name}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>{u.email}</div>
+                      </div>
+                    </div>
+                    <span className={`badge ${s.cls} badge-dot`} style={{ padding: '4px 8px' }}>{s.label}</span>
+                  </div>
+
+                  {/* Info details row/grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Portal: </span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{portalLabel(u.portalType)}</span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Role: </span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.positionId ? u.positionId.name : 'Unassigned'}</span>
+                    </div>
+                    {u.phone && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Phone: </span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.phone}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: '2px' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openEditModal(u)} title="Edit"><Pencil size={14} /> Edit</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setResetUser(u); setResetPassword(''); setResetResult(null); }} title="Reset Password"><Key size={14} /> Reset</button>
+                    {!u.isActive && !u.isArchived && (
+                      <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-success)' }} onClick={() => handleAction(u, 'reactivate')} title="Reactivate"><Play size={14} /> Reactivate</button>
+                    )}
+                    {!u.isArchived && (
+                      <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-warning)' }} onClick={() => setConfirmAction({ user: u, action: 'archive' })} title="Archive"><Inbox size={14} /> Archive</button>
+                    )}
+                    {u.isArchived && (
+                      <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-info)' }} onClick={() => handleAction(u, 'unarchive')} title="Unarchive"><Upload size={14} /> Unarchive</button>
+                    )}
+                    <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-danger)' }} onClick={() => setConfirmAction({ user: u, action: 'delete' })} title="Delete User">Delete</button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
+        </>
       )}
 
       {/* Create/Edit User Modal */}
@@ -368,12 +413,12 @@ export default function UsersPage() {
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">{editingUser ? 'Edit User' : 'Create New User'}</h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               {tempPasswordDisplay ? (
                 <div style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                  <div style={{ fontSize: 'var(--text-2xl)', marginBottom: 'var(--space-4)' }}>✅</div>
+                  <div style={{ marginBottom: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}><CheckCircle size={48} color="var(--status-success)" /></div>
                   <div style={{ fontWeight: 600, fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>User Created Successfully</div>
                   <div style={{ marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
                     Share these temporary credentials with the user:
@@ -389,12 +434,12 @@ export default function UsersPage() {
                   >
                     Copy Credentials
                   </button>
-                  <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--status-warning)' }}>
-                    ⚠ User will be prompted to change password on first login
+                  <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--status-warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                    <AlertTriangle size={14} /> User will be prompted to change password on first login
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)' }}>
+                <div className="form-grid-2">
                   <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                     <label className="form-label required">Full Name</label>
                     <input type="text" className="form-input" placeholder="e.g. Rajan K" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
@@ -461,7 +506,7 @@ export default function UsersPage() {
                       <input type="text" className="form-input" placeholder="Auto-generated if blank" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
                     </div>
                   )}
-                  {formError && <div className="form-error" style={{ gridColumn: '1 / -1' }}>⚠ {formError}</div>}
+                  {formError && <div className="form-error" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={16} /> {formError}</div>}
                 </div>
               )}
             </div>
@@ -487,12 +532,12 @@ export default function UsersPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Reset Password — {resetUser.name}</h3>
-              <button className="modal-close" onClick={() => setResetUser(null)}>✕</button>
+              <button className="modal-close" onClick={() => setResetUser(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               {resetResult ? (
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 'var(--text-2xl)', marginBottom: 'var(--space-3)' }}>✅</div>
+                  <div style={{ marginBottom: 'var(--space-3)', display: 'flex', justifyContent: 'center' }}><CheckCircle size={48} color="var(--status-success)" /></div>
                   <div className="selectable-text" style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-mono)' }}>
                     New Password: <strong>{resetResult}</strong>
                   </div>
@@ -530,8 +575,8 @@ export default function UsersPage() {
         <div className="modal-backdrop" onClick={() => setConfirmAction(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
             <div className="modal-body" style={{ paddingTop: 'var(--space-8)' }}>
-              <div className={`confirm-icon ${confirmAction.action === 'archive' ? 'warning' : 'danger'}`}>
-                {confirmAction.action === 'archive' ? '📥' : confirmAction.action === 'delete' ? '!' : '⏸'}
+              <div className={`confirm-icon ${confirmAction.action === 'archive' ? 'warning' : 'danger'}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {confirmAction.action === 'archive' ? <Inbox size={24} /> : confirmAction.action === 'delete' ? <AlertTriangle size={24} /> : <Pause size={24} />}
               </div>
               <div className="confirm-title">
                 {confirmAction.action === 'delete' ? 'Delete' : confirmAction.action === 'deactivate' ? 'Deactivate' : 'Archive'} {confirmAction.user.name}?
@@ -621,7 +666,7 @@ function MemberPositionInput({
             setOpen((current) => (visiblePositions.length > 0 ? !current : false));
           }}
         >
-          {open ? '⌃' : '⌄'}
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
       </div>
       {shouldShowMenu && (

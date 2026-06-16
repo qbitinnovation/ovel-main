@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getInitials } from '@/lib/utils';
 
+import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu } from 'lucide-react';
+
 const navItems = [
-  { label: 'Dashboard', href: '/turf-manager/dashboard', icon: '🏠' },
-  { label: 'Checklist', href: '/turf-manager/checklist', icon: '✅' },
-  { label: 'Tasks', href: '/turf-manager/maintenance', icon: '🔧' },
-  { label: 'Safety', href: '/turf-manager/safety-checkout', icon: '🛡️' },
+  { label: 'Dashboard', href: '/turf-manager/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} /> },
+  { label: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} /> },
+  { label: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} /> },
 ];
 
 export default function TurfManagerLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +36,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">🏏</div>
+          <div className="sidebar-logo"><Building2 size={20} /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">Turf Manager Portal</div>
@@ -77,9 +79,8 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
             <button
               className="mobile-menu-toggle"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label="Toggle menu"
             >
-              ☰
+              <Menu size={24} />
             </button>
             <div className="topbar-breadcrumb">
               <span>Turf Manager</span>
@@ -91,7 +92,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
           </div>
           <div className="topbar-right">
             <button className="notification-bell" aria-label="Notifications">
-              🔔
+              <Bell size={20} />
             </button>
           </div>
         </header>
