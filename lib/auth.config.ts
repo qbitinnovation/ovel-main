@@ -8,6 +8,26 @@ import {
   PORTAL_AUTH_RULES,
 } from '@/lib/portal-auth';
 
+// Dynamically determine the base URL for NextAuth / Auth.js
+const getBaseUrl = () => {
+  if (process.env.AUTH_URL) return process.env.AUTH_URL;
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.COOLIFY_URL) return process.env.COOLIFY_URL;
+  if (process.env.COOLIFY_FQDN) {
+    const fqdn = process.env.COOLIFY_FQDN;
+    // Handle comma-separated list of domains if present in Coolify
+    const primaryFqdn = fqdn.split(',')[0].trim();
+    return primaryFqdn.startsWith('http') ? primaryFqdn : `https://${primaryFqdn}`;
+  }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
+};
+
+const baseUrl = getBaseUrl();
+process.env.AUTH_URL = baseUrl;
+process.env.NEXTAUTH_URL = baseUrl;
+process.env.AUTH_TRUST_HOST = 'true';
+
 type AuthUserFields = {
   userType: string;
   portalType: string;
