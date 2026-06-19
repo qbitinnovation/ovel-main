@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { X, Check, Wrench } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface Task {
   _id: string;
@@ -95,14 +96,18 @@ export default function TurfMaintenancePage() {
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
-        <div className="select-wrapper">
-          <select className="form-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ minWidth: '160px' }}>
-            <option value="">All Status</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="closed">Closed</option>
-          </select>
+        <div style={{ width: '160px' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Status' },
+              { value: 'open', label: 'Open' },
+              { value: 'in_progress', label: 'In Progress' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'closed', label: 'Closed' }
+            ]}
+            value={filterStatus}
+            onChange={(val) => setFilterStatus(val)}
+          />
         </div>
       </div>
 

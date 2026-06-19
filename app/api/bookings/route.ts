@@ -5,6 +5,8 @@ import Booking from '@/models/Booking';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevBooking } from '@/lib/dev-store';
+import { calculateTurfSlotPrice } from '@/lib/turf-pricing';
+import { getDevTurfPricingConfig, getTurfPricingConfig } from '@/lib/turf-pricing-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,13 +75,12 @@ export async function POST(request: NextRequest) {
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
     const body = await request.json();
-    const { bookingDate, startTime, endTime, customerName, contactNumber, expectedAmount, notes } = body;
+    const { bookingDate, startTime, endTime, customerName, contactNumber, notes, bulkId, priceType, discountAmount, discountPercentage } = body;
 
     // Validate required fields
     if (!bookingDate) return errorResponse('Booking date is required');
     if (!startTime) return errorResponse('Start time is required');
     if (!endTime) return errorResponse('End time is required');
-    if (!expectedAmount || expectedAmount <= 0) return errorResponse('Expected amount must be greater than 0');
 
     // Validate time format (HH:mm)
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -88,12 +89,38 @@ export async function POST(request: NextRequest) {
     if (startTime >= endTime) return errorResponse('Start time must be before end time');
 
     let useDevStore = false;
+    let expectedAmount = 0;
+    let pricingSnapshot: ReturnType<typeof calculateTurfSlotPrice> | null = null;
     try {
       await dbConnect();
     } catch (error) {
       if (!isDevFallbackEnabled()) throw error;
       useDevStore = true;
     }
+
+    const pricing = useDevStore ? getDevTurfPricingConfig() : await getTurfPricingConfig();
+    pricingSnapshot = calculateTurfSlotPrice({
+      bookingDate,
+      startTime,
+      endTime,
+      priceType,
+      weekdayRules: pricing.weekdayRules,
+      weekendRules: pricing.weekendRules,
+      holidays: pricing.holidays,
+      weekendDays: pricing.weekendDays,
+    });
+    expectedAmount = pricingSnapshot.amount;
+
+    let finalDiscountAmount = Number(discountAmount) || 0;
+    const finalDiscountPercentage = Number(discountPercentage) || 0;
+    if (finalDiscountPercentage > 0) {
+      finalDiscountAmount = (expectedAmount * finalDiscountPercentage) / 100;
+    }
+    
+    expectedAmount -= finalDiscountAmount;
+    expectedAmount = Math.max(0, Math.round(expectedAmount));
+    
+    if (pricingSnapshot.amount <= 0) return errorResponse('Calculated slot price must be greater than 0');
 
     if (useDevStore) {
       const store = getDevStore();
@@ -113,7 +140,11 @@ export async function POST(request: NextRequest) {
         endTime,
         customerName: customerName?.trim() || '',
         contactNumber: contactNumber?.trim() || '',
-        expectedAmount: Number(expectedAmount),
+        expectedAmount,
+        discountAmount: finalDiscountAmount,
+        discountPercentage: finalDiscountPercentage,
+        priceType: pricingSnapshot.priceType,
+        pricingSnapshot,
         notes: notes || '',
         bookingStatus: 'confirmed',
         paymentStatus: 'pending',
@@ -122,6 +153,7 @@ export async function POST(request: NextRequest) {
         cancelledAt: null,
         cancelledBy: null,
         createdBy: session.user.id,
+        bulkId: bulkId || null,
         createdAt: now,
         updatedAt: now,
       };
@@ -157,10 +189,15 @@ export async function POST(request: NextRequest) {
       customerName: customerName?.trim() || '',
       contactNumber: contactNumber?.trim() || '',
       expectedAmount: Number(expectedAmount),
+      discountAmount: finalDiscountAmount,
+      discountPercentage: finalDiscountPercentage,
+      priceType: pricingSnapshot.priceType,
+      pricingSnapshot,
       notes: notes || '',
       bookingStatus: 'confirmed',
       paymentStatus: 'pending',
       totalPaid: 0,
+      bulkId: bulkId || null,
       createdBy: session.user.id,
     });
 
@@ -179,6 +216,8 @@ export async function POST(request: NextRequest) {
         endTime,
         customerName: customerName || '',
         expectedAmount,
+        priceType: pricingSnapshot.priceType,
+        pricingSnapshot,
       },
       ...meta,
     }, request.headers);

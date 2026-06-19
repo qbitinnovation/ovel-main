@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
+import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 
 interface LineItem { category: string; description: string; amount: number; referenceNumber: string; }
 interface Entry { _id: string; date: string; income: LineItem[]; expenses: LineItem[]; electricity: LineItem[]; otherPayments: LineItem[]; totalIncome: number; totalExpenses: number; totalElectricity: number; totalOtherPayments: number; netAmount: number; isLocked: boolean; lockedAt: string; submittedBy: { name: string } | null; createdAt: string; }
@@ -66,7 +68,16 @@ export default function AccountsPage() {
       <div className="card-body" style={{ padding: 'var(--space-4)' }}>
         {items.map((item, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2" style={{ marginBottom: 'var(--space-2)' }}>
-            <div className="select-wrapper"><select className="form-select" value={item.category} onChange={(e) => updateItem(setter, i, 'category', e.target.value)} style={{ height: '38px', fontSize: 'var(--text-sm)' }}><option value="">Category</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div style={{ width: '100%', minWidth: '150px' }}>
+              <CustomSelect
+                options={[
+                  { value: '', label: 'Category' },
+                  ...cats.map((c) => ({ value: c, label: c }))
+                ]}
+                value={item.category}
+                onChange={(val) => updateItem(setter, i, 'category', val)}
+              />
+            </div>
             <input className="form-input" placeholder="Description" value={item.description} onChange={(e) => updateItem(setter, i, 'description', e.target.value)} style={{ height: '38px', fontSize: 'var(--text-sm)' }} />
             <input className="form-input" type="number" placeholder="Amount" value={item.amount || ''} onChange={(e) => updateItem(setter, i, 'amount', Number(e.target.value))} style={{ height: '38px', fontSize: 'var(--text-sm)' }} />
             <input className="form-input" placeholder="Ref #" value={item.referenceNumber} onChange={(e) => updateItem(setter, i, 'referenceNumber', e.target.value)} style={{ height: '38px', fontSize: 'var(--text-sm)' }} />
@@ -92,7 +103,7 @@ export default function AccountsPage() {
         <div>
           <div className="form-group" style={{ marginBottom: 'var(--space-6)', maxWidth: '250px' }}>
             <label className="form-label required">Date</label>
-            <input type="date" className="form-input" value={formDate} onChange={(e) => setFormDate(e.target.value)} />
+            <CustomDatePicker value={formDate} onChange={(val) => setFormDate(val)} />
           </div>
           {renderSection('Income', income, setIncome, CATEGORIES.income, '💰')}
           {renderSection('Expenses', expenses, setExpenses, CATEGORIES.expenses, '💸')}

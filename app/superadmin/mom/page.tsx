@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { X, Check, Save, Globe, FileText } from 'lucide-react';
+import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 
 interface MOM { _id: string; date: string; attendees: string[]; pointsEnglish: string; pointsMalayalam: string; decisions: string[]; pendingTasksSummary: string; createdBy: { name: string } | null; createdAt: string; }
 
@@ -54,7 +55,10 @@ export default function MOMPage() {
       {view === 'form' ? (
         <div className="form-grid-2">
           <div>
-            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Meeting Date</label><input type="date" className="form-input" value={formDate} onChange={(e) => setFormDate(e.target.value)} /></div>
+            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+              <label className="form-label required">Meeting Date</label>
+              <CustomDatePicker value={formDate} onChange={(val) => setFormDate(val)} />
+            </div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label">Attendees (comma-separated)</label><input className="form-input" value={attendees} onChange={(e) => setAttendees(e.target.value)} placeholder="Name 1, Name 2, Name 3" /></div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Meeting Points (English)</label><textarea className="form-input form-textarea" value={pointsEnglish} onChange={(e) => setPointsEnglish(e.target.value)} rows={10} placeholder="Enter meeting discussion points..." /></div>
             <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label">Decisions (one per line)</label><textarea className="form-input form-textarea" value={decisions} onChange={(e) => setDecisions(e.target.value)} rows={4} placeholder="Decision 1&#10;Decision 2" /></div>

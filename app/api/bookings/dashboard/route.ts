@@ -51,41 +51,60 @@ export async function GET(request: NextRequest) {
     const totalExpected = bookings.reduce((sum, b) => sum + b.expectedAmount, 0);
     const totalReceived = allPayments.reduce((sum, p) => sum + p.amountPaid, 0);
     const pendingAmount = totalExpected - totalReceived;
+    const partialPaymentsCount = bookings.filter((booking) => booking.paymentStatus === 'partial').length;
 
-    const bankTransferTotal = allPayments
-      .filter(p => p.paymentMode === 'bank_transfer')
-      .reduce((sum, p) => sum + p.amountPaid, 0);
-
-    const cashTotal = allPayments
-      .filter(p => p.paymentMode === 'cash')
-      .reduce((sum, p) => sum + p.amountPaid, 0);
-
-    const partialPaymentsCount = bookings.filter(b => b.paymentStatus === 'partial').length;
-
-    // Cash holdings breakdown
+    let bankTransferTotal = 0;
+    let cashTotal = 0;
     const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {
       turf_owner: { total: 0, transactions: [] },
       arjo: { total: 0, transactions: [] },
       turf_staff: { total: 0, transactions: [] },
     };
 
-    const cashPayments = allPayments.filter(p => p.paymentMode === 'cash' && p.cashReceivedBy);
-    for (const payment of cashPayments) {
-      const holder = payment.cashReceivedBy;
-      if (holder && cashHoldings[holder]) {
-        cashHoldings[holder].total += payment.amountPaid;
-
-        // Find the parent booking for context
-        const parentBooking = bookings.find(b => b._id.toString() === payment.bookingId.toString());
-        cashHoldings[holder].transactions.push({
-          paymentId: payment._id,
-          bookingDate: parentBooking?.bookingDate,
-          timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
-          customerName: parentBooking?.customerName || 'Anonymous',
-          amount: payment.amountPaid,
-          paymentDate: payment.paymentDate,
-          referenceNote: payment.referenceNote,
-        });
+    for (const payment of allPayments) {
+      if (payment.splits && payment.splits.length > 0) {
+        for (const s of payment.splits) {
+          if (s.paymentMode === 'bank_transfer' || s.paymentMode === 'upi' || s.paymentMode === 'card') {
+            bankTransferTotal += s.amount;
+          } else if (s.paymentMode === 'cash') {
+            cashTotal += s.amount;
+            const holder = s.cashReceivedBy;
+            if (holder && cashHoldings[holder]) {
+              cashHoldings[holder].total += s.amount;
+              const parentBooking = bookings.find(b => b._id.toString() === payment.bookingId.toString());
+              cashHoldings[holder].transactions.push({
+                paymentId: payment._id,
+                bookingDate: parentBooking?.bookingDate,
+                timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+                customerName: parentBooking?.customerName || 'Anonymous',
+                amount: s.amount,
+                paymentDate: payment.paymentDate,
+                referenceNote: s.referenceNote || payment.referenceNote || '',
+              });
+            }
+          }
+        }
+      } else {
+        // Fallback for older single-mode payment entries
+        if (payment.paymentMode === 'bank_transfer' || payment.paymentMode === 'upi' || payment.paymentMode === 'card') {
+          bankTransferTotal += payment.amountPaid;
+        } else if (payment.paymentMode === 'cash') {
+          cashTotal += payment.amountPaid;
+          const holder = payment.cashReceivedBy;
+          if (holder && cashHoldings[holder]) {
+            cashHoldings[holder].total += payment.amountPaid;
+            const parentBooking = bookings.find(b => b._id.toString() === payment.bookingId.toString());
+            cashHoldings[holder].transactions.push({
+              paymentId: payment._id,
+              bookingDate: parentBooking?.bookingDate,
+              timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+              customerName: parentBooking?.customerName || 'Anonymous',
+              amount: payment.amountPaid,
+              paymentDate: payment.paymentDate,
+              referenceNote: payment.referenceNote || '',
+            });
+          }
+        }
       }
     }
 
@@ -95,7 +114,7 @@ export async function GET(request: NextRequest) {
         p => p.bookingId.toString() === booking._id.toString()
       );
       const totalPaidForBooking = bookingPayments.reduce((sum, p) => sum + p.amountPaid, 0);
-      const paymentModes = [...new Set(bookingPayments.map(p => p.paymentMode))];
+      const paymentModes = [...new Set(bookingPayments.flatMap(p => p.splits && p.splits.length > 0 ? p.splits.map(s => s.paymentMode) : [p.paymentMode]))];
 
       return {
         _id: booking._id,
@@ -150,40 +169,65 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
   const totalExpected = bookings.reduce((sum, booking) => sum + booking.expectedAmount, 0);
   const totalReceived = allPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
   const pendingAmount = totalExpected - totalReceived;
-  const bankTransferTotal = allPayments
-    .filter((payment) => payment.paymentMode === 'bank_transfer')
-    .reduce((sum, payment) => sum + payment.amountPaid, 0);
-  const cashTotal = allPayments
-    .filter((payment) => payment.paymentMode === 'cash')
-    .reduce((sum, payment) => sum + payment.amountPaid, 0);
   const partialPaymentsCount = bookings.filter((booking) => booking.paymentStatus === 'partial').length;
-
+  let bankTransferTotal = 0;
+  let cashTotal = 0;
   const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {
     turf_owner: { total: 0, transactions: [] },
     arjo: { total: 0, transactions: [] },
     turf_staff: { total: 0, transactions: [] },
   };
 
-  for (const payment of allPayments.filter((entry) => entry.paymentMode === 'cash' && entry.cashReceivedBy)) {
-    const holder = payment.cashReceivedBy;
-    if (!holder || !cashHoldings[holder]) continue;
-    const parentBooking = bookings.find((booking) => booking._id === payment.bookingId);
-    cashHoldings[holder].total += payment.amountPaid;
-    cashHoldings[holder].transactions.push({
-      paymentId: payment._id,
-      bookingDate: parentBooking?.bookingDate,
-      timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
-      customerName: parentBooking?.customerName || 'Anonymous',
-      amount: payment.amountPaid,
-      paymentDate: payment.paymentDate,
-      referenceNote: payment.referenceNote,
-    });
+  for (const payment of allPayments) {
+    if (payment.splits && payment.splits.length > 0) {
+      for (const s of payment.splits) {
+        if (s.paymentMode === 'bank_transfer' || s.paymentMode === 'upi' || s.paymentMode === 'card') {
+          bankTransferTotal += s.amount;
+        } else if (s.paymentMode === 'cash') {
+          cashTotal += s.amount;
+          const holder = s.cashReceivedBy;
+          if (holder && cashHoldings[holder]) {
+            cashHoldings[holder].total += s.amount;
+            const parentBooking = bookings.find((b) => b._id === payment.bookingId);
+            cashHoldings[holder].transactions.push({
+              paymentId: payment._id,
+              bookingDate: parentBooking?.bookingDate,
+              timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+              customerName: parentBooking?.customerName || 'Anonymous',
+              amount: s.amount,
+              paymentDate: payment.paymentDate,
+              referenceNote: s.referenceNote || payment.referenceNote || '',
+            });
+          }
+        }
+      }
+    } else {
+      if (payment.paymentMode === 'bank_transfer' || payment.paymentMode === 'upi' || payment.paymentMode === 'card') {
+        bankTransferTotal += payment.amountPaid;
+      } else if (payment.paymentMode === 'cash') {
+        cashTotal += payment.amountPaid;
+        const holder = payment.cashReceivedBy;
+        if (holder && cashHoldings[holder]) {
+          cashHoldings[holder].total += payment.amountPaid;
+          const parentBooking = bookings.find((b) => b._id === payment.bookingId);
+          cashHoldings[holder].transactions.push({
+            paymentId: payment._id,
+            bookingDate: parentBooking?.bookingDate,
+            timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+            customerName: parentBooking?.customerName || 'Anonymous',
+            amount: payment.amountPaid,
+            paymentDate: payment.paymentDate,
+            referenceNote: payment.referenceNote || '',
+          });
+        }
+      }
+    }
   }
 
   const bookingBreakdown = bookings.map((booking) => {
     const bookingPayments = allPayments.filter((payment) => payment.bookingId === booking._id);
     const totalPaidForBooking = bookingPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
-    const paymentModes = [...new Set(bookingPayments.map((payment) => payment.paymentMode))];
+    const paymentModes = [...new Set(bookingPayments.flatMap(p => p.splits && p.splits.length > 0 ? p.splits.map(s => s.paymentMode) : [p.paymentMode]))];
 
     return {
       _id: booking._id,

@@ -48,10 +48,10 @@ export async function PUT(
       payment.amountPaid = Number(amountPaid);
     }
     if (paymentMode !== undefined) {
-      if (!['bank_transfer', 'cash'].includes(paymentMode)) {
-        return errorResponse('Payment mode must be bank_transfer or cash');
+      if (!['bank_transfer', 'cash', 'upi', 'card', 'split'].includes(paymentMode)) {
+        return errorResponse('Payment mode must be bank_transfer, cash, upi, card, or split');
       }
-      payment.paymentMode = paymentMode;
+      payment.paymentMode = paymentMode as any;
     }
     if (paymentDate !== undefined) {
       payment.paymentDate = new Date(paymentDate);
@@ -89,9 +89,10 @@ export async function PUT(
       const totalPaid = allPayments.reduce((sum, p) => sum + p.amountPaid, 0);
 
       booking.totalPaid = totalPaid;
+      const finalPayable = booking.expectedAmount - (booking.discountAmount || 0);
       if (totalPaid === 0) {
         booking.paymentStatus = 'pending';
-      } else if (totalPaid >= booking.expectedAmount) {
+      } else if (totalPaid >= finalPayable) {
         booking.paymentStatus = 'paid';
       } else {
         booking.paymentStatus = 'partial';

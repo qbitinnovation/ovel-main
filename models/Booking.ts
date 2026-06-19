@@ -8,6 +8,8 @@ export interface IBooking extends Document {
   customerName: string;
   contactNumber: string;
   expectedAmount: number;
+  priceType: 'normal' | 'regular';
+  pricingSnapshot: unknown;
   notes: string;
   bookingStatus: 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'partial' | 'paid';
@@ -18,6 +20,9 @@ export interface IBooking extends Document {
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  bulkId: string | null;
+  discountAmount: number;
+  discountPercentage: number;
 }
 
 const BookingSchema = new Schema<IBooking>(
@@ -28,6 +33,8 @@ const BookingSchema = new Schema<IBooking>(
     customerName: { type: String, default: '', trim: true },
     contactNumber: { type: String, default: '', trim: true },
     expectedAmount: { type: Number, required: true, min: 1 },
+    priceType: { type: String, enum: ['normal', 'regular'], default: 'normal' },
+    pricingSnapshot: { type: Schema.Types.Mixed, default: null },
     notes: { type: String, default: '' },
     bookingStatus: {
       type: String,
@@ -46,6 +53,9 @@ const BookingSchema = new Schema<IBooking>(
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    bulkId: { type: String, default: null },
+    discountAmount: { type: Number, default: 0 },
+    discountPercentage: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
+import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 
 interface AuditEntry { _id: string; userId: string; userName: string; userType: string; action: string; module: string; description: string; oldValue: Record<string, unknown> | null; newValue: Record<string, unknown> | null; ipAddress: string; timestamp: string; }
 
@@ -46,9 +48,22 @@ export default function AuditLogPage() {
           <span className="search-icon">🔍</span>
           <input className="form-input search-input" placeholder="Search logs..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
-        <div className="select-wrapper"><select className="form-select" value={filterModule} onChange={(e) => { setFilterModule(e.target.value); setPage(1); }} style={{ minWidth: '160px' }}><option value="">All Modules</option>{Object.entries(MODULE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-        <input type="date" className="form-input" style={{ width: '160px' }} value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} />
-        <input type="date" className="form-input" style={{ width: '160px' }} value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); }} />
+        <div style={{ width: '160px' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Modules' },
+              ...Object.entries(MODULE_LABELS).map(([k, v]) => ({ value: k, label: v }))
+            ]}
+            value={filterModule}
+            onChange={(val) => { setFilterModule(val); setPage(1); }}
+          />
+        </div>
+        <div style={{ width: '160px' }}>
+          <CustomDatePicker value={startDate} onChange={(val) => { setStartDate(val); setPage(1); }} />
+        </div>
+        <div style={{ width: '160px' }}>
+          <CustomDatePicker value={endDate} onChange={(val) => { setEndDate(val); setPage(1); }} />
+        </div>
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : logs.length === 0 ? (

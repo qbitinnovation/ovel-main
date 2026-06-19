@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { X, Check, Package } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface TurfItem {
   _id: string;
@@ -257,13 +258,17 @@ export default function InventoryPage() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Condition</label>
-                  <div className="select-wrapper">
-                    <select className="form-select" value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value as TurfItem['condition'] })}>
-                      <option value="good">Good</option>
-                      <option value="needs_repair">Needs Repair</option>
-                      <option value="damaged">Damaged</option>
-                      <option value="missing">Missing</option>
-                    </select>
+                  <div style={{ width: '100%' }}>
+                    <CustomSelect
+                      options={[
+                        { value: 'good', label: 'Good' },
+                        { value: 'needs_repair', label: 'Needs Repair' },
+                        { value: 'damaged', label: 'Damaged' },
+                        { value: 'missing', label: 'Missing' }
+                      ]}
+                      value={form.condition}
+                      onChange={(val) => setForm({ ...form, condition: val as TurfItem['condition'] })}
+                    />
                   </div>
                 </div>
               </div>

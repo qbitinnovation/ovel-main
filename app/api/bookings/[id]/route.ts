@@ -27,8 +27,11 @@ export async function GET(
       const store = getDevStore();
       const booking = store.bookings.find((entry) => entry._id === id);
       if (!booking) return errorResponse('Booking not found', 404);
+      const bookingIds = booking.bulkId
+        ? store.bookings.filter((b) => b.bulkId === booking.bulkId).map((b) => b._id)
+        : [booking._id];
       const payments = store.payments
-        .filter((payment) => payment.bookingId === id)
+        .filter((payment) => bookingIds.includes(payment.bookingId))
         .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
         .map((payment) => ({ ...payment, createdBy: devUserRef(payment.createdBy) }));
       return successResponse({ booking: { ...booking, createdBy: devUserRef(booking.createdBy), cancelledBy: devUserRef(booking.cancelledBy) }, payments });
@@ -40,7 +43,11 @@ export async function GET(
 
     if (!booking) return errorResponse('Booking not found', 404);
 
-    const payments = await PaymentEntry.find({ bookingId: id })
+    const bookingIds = booking.bulkId
+      ? (await Booking.find({ bulkId: booking.bulkId })).map((b) => b._id)
+      : [booking._id];
+
+    const payments = await PaymentEntry.find({ bookingId: { $in: bookingIds } })
       .populate('createdBy', 'name')
       .sort({ paymentDate: -1 });
 
@@ -62,7 +69,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { customerName, contactNumber, expectedAmount, notes, bookingDate, startTime, endTime } = body;
+    const { customerName, contactNumber, notes, bookingDate, startTime, endTime, updateGroup } = body;
 
     try {
       await dbConnect();
@@ -72,19 +79,22 @@ export async function PUT(
       const booking = store.bookings.find((entry) => entry._id === id);
       if (!booking) return errorResponse('Booking not found', 404);
       if (booking.bookingStatus === 'cancelled') return errorResponse('Cannot edit a cancelled booking');
-      const paymentCount = store.payments.filter((payment) => payment.bookingId === id).length;
-      if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
-        return errorResponse('Cannot change booking date or time slot because payments have been recorded against this booking');
+      
+      const isGroupUpdate = updateGroup && booking.bulkId;
+      const bookingsToUpdate = isGroupUpdate
+        ? store.bookings.filter((b) => b.bulkId === booking.bulkId)
+        : [booking];
+
+      for (const b of bookingsToUpdate) {
+        const paymentCount = store.payments.filter((payment) => payment.bookingId === b._id).length;
+        if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
+          return errorResponse('Cannot change booking date or time slot because payments have been recorded against this booking');
+        }
+        if (customerName !== undefined) b.customerName = customerName.trim();
+        if (contactNumber !== undefined) b.contactNumber = contactNumber.trim();
+        if (notes !== undefined) b.notes = notes;
+        b.updatedAt = new Date().toISOString();
       }
-      if (customerName !== undefined) booking.customerName = customerName.trim();
-      if (contactNumber !== undefined) booking.contactNumber = contactNumber.trim();
-      if (expectedAmount !== undefined) {
-        if (expectedAmount <= 0) return errorResponse('Expected amount must be greater than 0');
-        booking.expectedAmount = Number(expectedAmount);
-        booking.paymentStatus = booking.totalPaid === 0 ? 'pending' : booking.totalPaid >= booking.expectedAmount ? 'paid' : 'partial';
-      }
-      if (notes !== undefined) booking.notes = notes;
-      booking.updatedAt = new Date().toISOString();
       return successResponse(booking, 'Booking updated successfully');
     }
 
@@ -95,12 +105,19 @@ export async function PUT(
       return errorResponse('Cannot edit a cancelled booking');
     }
 
-    // Check if payments exist — if so, block date/time changes
-    const paymentCount = await PaymentEntry.countDocuments({ bookingId: id });
-    if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
-      return errorResponse(
-        'Cannot change booking date or time slot because payments have been recorded against this booking'
-      );
+    const isGroupUpdate = updateGroup && booking.bulkId;
+    const bookingsToUpdate = isGroupUpdate
+      ? await Booking.find({ bulkId: booking.bulkId })
+      : [booking];
+
+    // Check if payments exist on any booking being updated if date/time is changing
+    for (const b of bookingsToUpdate) {
+      const paymentCount = await PaymentEntry.countDocuments({ bookingId: b._id });
+      if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
+        return errorResponse(
+          'Cannot change booking date or time slot because payments have been recorded against this booking'
+        );
+      }
     }
 
     // Store old values for audit
@@ -147,23 +164,17 @@ export async function PUT(
       booking.endTime = newEndTime;
     }
 
-    // Update editable fields
-    if (customerName !== undefined) booking.customerName = customerName.trim();
-    if (contactNumber !== undefined) booking.contactNumber = contactNumber.trim();
-    if (expectedAmount !== undefined) {
-      if (expectedAmount <= 0) return errorResponse('Expected amount must be greater than 0');
-      booking.expectedAmount = expectedAmount;
-
-      // Recalculate payment status if expected amount changed
-      if (booking.totalPaid === 0) {
-        booking.paymentStatus = 'pending';
-      } else if (booking.totalPaid >= expectedAmount) {
-        booking.paymentStatus = 'paid';
-      } else {
-        booking.paymentStatus = 'partial';
+    // Update editable fields for all bookings in group or just single booking
+    for (const b of bookingsToUpdate) {
+      if (customerName !== undefined) b.customerName = customerName.trim();
+      if (contactNumber !== undefined) b.contactNumber = contactNumber.trim();
+      if (notes !== undefined) b.notes = notes;
+      
+      // Save changes if it's not the main booking (main booking is saved below)
+      if (b._id.toString() !== booking._id.toString()) {
+        await b.save();
       }
     }
-    if (notes !== undefined) booking.notes = notes;
 
     await booking.save();
 
@@ -185,7 +196,7 @@ export async function PUT(
       action: 'edit_booking',
       module: 'bookings',
       recordId: booking._id,
-      description: `Edited booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}`,
+      description: `Edited booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Group update: ${!!isGroupUpdate}`,
       oldValue,
       newValue,
       ...meta,
@@ -215,14 +226,26 @@ export async function DELETE(
       await dbConnect();
     } catch (error) {
       if (!isDevFallbackEnabled()) throw error;
-      const booking = getDevStore().bookings.find((entry) => entry._id === id);
+      const store = getDevStore();
+      const booking = store.bookings.find((entry) => entry._id === id);
       if (!booking) return errorResponse('Booking not found', 404);
       if (booking.bookingStatus === 'cancelled') return errorResponse('Booking is already cancelled');
-      booking.bookingStatus = 'cancelled';
-      booking.cancelReason = reason || '';
-      booking.cancelledAt = new Date().toISOString();
-      booking.cancelledBy = session.user.id;
-      booking.updatedAt = booking.cancelledAt;
+
+      const isGroupDelete = booking.bulkId;
+      const bookingsToCancel = isGroupDelete
+        ? store.bookings.filter((b) => b.bulkId === booking.bulkId)
+        : [booking];
+
+      const now = new Date().toISOString();
+      for (const b of bookingsToCancel) {
+        if (b.bookingStatus !== 'cancelled') {
+          b.bookingStatus = 'cancelled';
+          b.cancelReason = reason || '';
+          b.cancelledAt = now;
+          b.cancelledBy = session.user.id;
+          b.updatedAt = now;
+        }
+      }
       return successResponse(booking, 'Booking cancelled successfully');
     }
 
@@ -233,10 +256,25 @@ export async function DELETE(
       return errorResponse('Booking is already cancelled');
     }
 
-    booking.bookingStatus = 'cancelled';
-    booking.cancelReason = reason || '';
-    booking.cancelledAt = new Date();
-    booking.cancelledBy = session.user.id as unknown as Types.ObjectId;
+    const isGroupDelete = booking.bulkId;
+    const bookingsToCancel = isGroupDelete
+      ? await Booking.find({ bulkId: booking.bulkId })
+      : [booking];
+
+    const now = new Date();
+    for (const b of bookingsToCancel) {
+      if (b.bookingStatus !== 'cancelled') {
+        b.bookingStatus = 'cancelled';
+        b.cancelReason = reason || '';
+        b.cancelledAt = now;
+        b.cancelledBy = session.user.id as unknown as Types.ObjectId;
+        
+        // Save other bookings if it's not the main booking (main booking is saved below)
+        if (b._id.toString() !== booking._id.toString()) {
+          await b.save();
+        }
+      }
+    }
 
     await booking.save();
 
@@ -248,7 +286,7 @@ export async function DELETE(
       action: 'cancel_booking',
       module: 'bookings',
       recordId: booking._id,
-      description: `Cancelled booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Reason: ${reason || 'No reason given'}`,
+      description: `Cancelled booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Reason: ${reason || 'No reason given'}. Group cancel: ${!!isGroupDelete}`,
       oldValue: { bookingStatus: 'confirmed' },
       newValue: { bookingStatus: 'cancelled', cancelReason: reason || '' },
       ...meta,

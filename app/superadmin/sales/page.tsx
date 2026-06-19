@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { X, Check, Package, Banknote, Inbox, User as UserIcon } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface Item { _id: string; name: string; unit: string; unitPrice?: number; currentStock: number; lowStockThreshold: number; }
 interface Txn { _id: string; itemId: { _id: string; name: string } | null; type: string; quantity: number; amount: number; supplier: string; date: string; enteredBy: { name: string } | null; createdAt: string; }
@@ -203,7 +204,16 @@ export default function SalesPage() {
         <div className="modal-backdrop" onClick={() => setShowTxn(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header"><h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{showTxn.type === 'sale' ? <><Banknote size={20} /> Log Sale</> : <><Inbox size={20} /> Add Restock</>}</h3><button className="modal-close" onClick={() => setShowTxn(null)}><X size={20} /></button></div>
           <div className="modal-body">
-            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}><label className="form-label required">Item</label><div className="select-wrapper"><select className="form-select" value={txnItemId} onChange={(e) => { setTxnItemId(e.target.value); if (showTxn.type === 'sale') setTxnAmount(getSaleAmount(e.target.value, txnQty)); }}>{items.map((i) => <option key={i._id} value={i._id}>{i.name} (Stock: {i.currentStock}, ₹{i.unitPrice || 0}/piece)</option>)}</select></div></div>
+            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+              <label className="form-label required">Item</label>
+              <div style={{ width: '100%' }}>
+                <CustomSelect
+                  options={items.map((i) => ({ value: i._id, label: `${i.name} (Stock: ${i.currentStock}, ₹${i.unitPrice || 0}/piece)` }))}
+                  value={txnItemId}
+                  onChange={(val) => { setTxnItemId(val); if (showTxn.type === 'sale') setTxnAmount(getSaleAmount(val, txnQty)); }}
+                />
+              </div>
+            </div>
             <div className={showTxn.type === 'sale' ? 'grid' : 'form-grid-2'} style={{ gap: 'var(--space-4)' }}>
               <div className="form-group">
                 <label className="form-label required">Quantity</label>

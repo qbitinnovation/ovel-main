@@ -1,101 +1,107 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { Wrench, Package, Bell, Globe, BarChart3, Home, X, Check, Save } from 'lucide-react';
 
-interface Setting { _id: string; key: string; value: unknown; label: string; category: string; }
+import Link from 'next/link';
+import { Wrench, Package, Bell, Globe, BarChart3, Home, Calendar, ArrowRight } from 'lucide-react';
 
-const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
-  operations: { label: 'Operations', icon: <Wrench size={16} /> },
-  inventory: { label: 'Inventory', icon: <Package size={16} /> },
-  notifications: { label: 'Notifications', icon: <Bell size={16} /> },
-  language: { label: 'Language', icon: <Globe size={16} /> },
-  reports: { label: 'Reports', icon: <BarChart3 size={16} /> },
-  general: { label: 'General', icon: <Home size={16} /> },
-};
+const CATEGORIES = [
+  {
+    key: 'bookings',
+    label: 'Booking Price Customization',
+    desc: 'Configure weekday slot rates, weekend configurations, and holiday flat rates.',
+    icon: <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/bookings',
+  },
+  {
+    key: 'general',
+    label: 'General Settings',
+    desc: 'Manage basic system profile details, contact information, and logo assets.',
+    icon: <Home size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/general',
+  },
+  {
+    key: 'operations',
+    label: 'Operations Settings',
+    desc: 'Configure operating hours, slot intervals, buffers, and operational rules.',
+    icon: <Wrench size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/operations',
+  },
+  {
+    key: 'inventory',
+    label: 'Inventory Settings',
+    desc: 'Manage turf equipment, stocks, alerts, and items catalog.',
+    icon: <Package size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/inventory',
+  },
+  {
+    key: 'notifications',
+    label: 'Notification Settings',
+    desc: 'Configure email alerts, SMS reminders, and system push notification triggers.',
+    icon: <Bell size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/notifications',
+  },
+  {
+    key: 'language',
+    label: 'Language Settings',
+    desc: 'Manage system language preferences, default locales, and translation sets.',
+    icon: <Globe size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/language',
+  },
+  {
+    key: 'reports',
+    label: 'Reports Settings',
+    desc: 'Configure system reports generation intervals and dashboard export properties.',
+    icon: <BarChart3 size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/reports',
+  },
+];
 
-export default function SettingsPage() {
-  const [settings, setSettings] = useState<Setting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [changes, setChanges] = useState<Record<string, unknown>>({});
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
-
-  const fetchSettings = useCallback(async () => {
-    try { const res = await fetch('/api/settings'); const d = await res.json(); if (d.success) setSettings(d.data); } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { fetchSettings(); }, [fetchSettings]);
-
-  const updateChange = (key: string, value: unknown) => setChanges((prev) => ({ ...prev, [key]: value }));
-  const getValue = (s: Setting) => changes[s.key] !== undefined ? changes[s.key] : s.value;
-  const hasChanges = Object.keys(changes).length > 0;
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const settingsArr = Object.entries(changes).map(([key, value]) => ({ key, value }));
-      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: settingsArr }) });
-      const d = await res.json();
-      if (d.success) { showToast('Settings saved'); setChanges({}); setSettings(d.data); }
-      else showToast(d.message, 'error');
-    } catch { showToast('Error', 'error'); } finally { setSaving(false); }
-  };
-
-  const categories = [...new Set(settings.map((s) => s.category))];
-
-  const renderInput = (s: Setting) => {
-    const val = getValue(s);
-    if (typeof s.value === 'boolean') {
-      return (
-        <div className="toggle-wrapper" onClick={() => updateChange(s.key, !val)} style={{ cursor: 'pointer' }}>
-          <div className={`toggle ${val ? 'active' : ''}`} />
-          <span className="toggle-label">{val ? 'Enabled' : 'Disabled'}</span>
-        </div>
-      );
-    }
-    if (typeof s.value === 'number') {
-      return <input type="number" className="form-input" value={val as number} onChange={(e) => updateChange(s.key, Number(e.target.value))} style={{ maxWidth: '120px' }} />;
-    }
-    if (Array.isArray(s.value)) {
-      return <input className="form-input" value={Array.isArray(val) ? (val as string[]).join(', ') : ''} onChange={(e) => updateChange(s.key, e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} placeholder="Comma-separated values" />;
-    }
-    return <input className="form-input" value={val as string} onChange={(e) => updateChange(s.key, e.target.value)} style={{ maxWidth: '200px' }} />;
-  };
-
+export default function SettingsDashboard() {
   return (
     <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
-        <div><h1>Settings</h1><p className="page-subtitle">Configure system-wide preferences and defaults</p></div>
-        {hasChanges && <button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Save size={16} /> Save Changes</button>}
+        <div>
+          <h1>Settings</h1>
+          <p className="page-subtitle">Select a module to customize system settings and preferences</p>
+        </div>
       </div>
 
-      {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-          {categories.map((cat) => {
-            const catSettings = settings.filter((s) => s.category === cat);
-            const catInfo = CATEGORY_LABELS[cat] || { label: cat, icon: <Wrench size={16} /> };
-            return (
-              <div key={cat} className="card">
-                <div className="card-header">
-                  <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    {catInfo.icon} <span>{catInfo.label}</span>
-                  </h3>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 'var(--space-4)',
+        marginTop: 'var(--space-4)'
+      }}>
+        {CATEGORIES.map((cat) => (
+          <div key={cat.key} className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', flexGrow: 1, padding: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--accent-primary-soft)',
+                  flexShrink: 0,
+                }}>
+                  {cat.icon}
                 </div>
-                <div className="card-body" style={{ padding: 0 }}>
-                  {catSettings.map((s) => (
-                    <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4) var(--space-6)', borderBottom: '1px solid var(--border-primary)' }}>
-                      <div><div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{s.label}</div><div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{s.key}</div></div>
-                      <div>{renderInput(s)}</div>
-                    </div>
-                  ))}
-                </div>
+                <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, margin: 0 }}>{cat.label}</h3>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 'var(--leading-normal)', margin: 0, flexGrow: 1 }}>
+                {cat.desc}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
+                <Link href={cat.href} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', padding: '4px 10px', height: '28px', fontSize: 'var(--text-xs)' }}>
+                  <span>Open Settings</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

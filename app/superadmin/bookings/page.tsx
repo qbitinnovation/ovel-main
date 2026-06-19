@@ -1,11 +1,18 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { Calendar, Clock, User as UserIcon, Phone, FileText, CheckCircle, AlertCircle, X, Check, Search, Filter } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
+import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import {
+  DEFAULT_TURF_PRICING_CONFIG,
+  type TurfPricingConfig,
+  type TurfPricingResult,
+} from '@/lib/turf-pricing';
 
 // ---- Types ----
 interface BookingData {
   _id: string;
-  bookingDate: string;
+  bookingDate: string | string[];
   startTime: string;
   endTime: string;
   customerName: string;
@@ -15,22 +22,36 @@ interface BookingData {
   bookingStatus: 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'partial' | 'paid';
   totalPaid: number;
+  discountAmount: number;
+  discountPercentage: number;
   cancelReason: string;
   cancelledAt: string | null;
   cancelledBy: { name: string } | null;
   createdBy: { name: string } | null;
   createdAt: string;
+  bulkId?: string | null;
+  priceType?: 'normal' | 'regular';
+  pricingSnapshot?: TurfPricingResult | null;
 }
 
 interface PaymentData {
   _id: string;
   bookingId: string;
   amountPaid: number;
-  paymentMode: 'bank_transfer' | 'cash';
+  paymentMode: 'bank_transfer' | 'upi' | 'cash';
   paymentDate: string;
   referenceNumber: string;
   cashReceivedBy: string;
   referenceNote: string;
+  discountAmount?: number;
+  discountPercentage?: number;
+  splits?: Array<{
+    amount: number;
+    paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash';
+    referenceNumber?: string;
+    cashReceivedBy?: string;
+    referenceNote?: string;
+  }>;
   createdBy: { name: string } | null;
   createdAt: string;
 }
@@ -73,8 +94,12 @@ interface BookingBreakdown {
 }
 
 // ---- Helpers ----
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+const fmt = (n: number) => {
+  if (n === undefined || n === null || Number.isNaN(n)) return '₹0';
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
+    .format(n)
+    .replace(/\s+/g, '');
+};
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -108,23 +133,24 @@ const CASH_HOLDER_LABELS: Record<string, string> = {
 
 const PAYMENT_MODE_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
+  upi: 'UPI',
+  card: 'Card',
   cash: 'Cash',
 };
 
-const TIME_SLOTS = [
-  { label: '6:00 PM', start: '18:00', end: '18:30' },
-  { label: '6:30 PM', start: '18:30', end: '19:00' },
-  { label: '7:00 PM', start: '19:00', end: '19:30' },
-  { label: '7:30 PM', start: '19:30', end: '20:00' },
-  { label: '8:00 PM', start: '20:00', end: '20:30' },
-  { label: '8:30 PM', start: '20:30', end: '21:00' },
-  { label: '9:00 PM', start: '21:00', end: '21:30' },
-  { label: '9:30 PM', start: '21:30', end: '22:00' },
-  { label: '10:00 PM', start: '22:00', end: '22:30' },
-  { label: '10:30 PM', start: '22:30', end: '23:00' },
-  { label: '11:00 PM', start: '23:00', end: '23:30' },
-  { label: '11:30 PM', start: '23:30', end: '23:59' },
-];
+const toTimeValue = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
+const TIME_SLOTS = Array.from({ length: 48 }, (_, idx) => {
+  const startMinutes = idx * 30;
+  const endMinutes = startMinutes + 30;
+  const start = toTimeValue(startMinutes);
+  const end = endMinutes >= 24 * 60 ? '23:59' : toTimeValue(endMinutes);
+  return { label: fmtTime(start), start, end };
+});
 
 const toISODateString = (dateInput: Date | string) => {
   if (typeof dateInput === 'string') {
@@ -147,7 +173,8 @@ const parseISODate = (str: string) => {
 const calculateDuration = (start: string, end: string) => {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
-  let diffMinutes = (eh * 60 + em) - (sh * 60 + sm);
+  const endMinutes = end === '23:59' ? 24 * 60 : eh * 60 + em;
+  let diffMinutes = endMinutes - (sh * 60 + sm);
   if (diffMinutes < 0) return '';
   const hours = Math.floor(diffMinutes / 60);
   const mins = diffMinutes % 60;
@@ -160,6 +187,194 @@ const calculateDuration = (start: string, end: string) => {
   }
 };
 
+type PricingLine = TurfPricingResult['appliedRules'][number];
+
+const getPricingLineAmount = (line: PricingLine) => {
+  if (typeof line.amount === 'number') return line.amount;
+  return Math.round((Number(line.rate || 0) * Number(line.minutes || 0)) / 60);
+};
+
+const getPricingBreakdownTotal = (pricing?: TurfPricingResult | null) => {
+  if (!pricing?.appliedRules?.length) return 0;
+  return pricing.appliedRules.reduce((sum, line) => sum + getPricingLineAmount(line), 0);
+};
+
+const combinePricingQuotes = (quotes: TurfPricingResult[], bookingDates: string[]): TurfPricingResult | null => {
+  if (!quotes.length) return null;
+
+  return {
+    ...quotes[0],
+    amount: quotes.reduce((sum, quote) => sum + Number(quote.amount || 0), 0),
+    durationHours: quotes.reduce((sum, quote) => sum + Number(quote.durationHours || 0), 0),
+    isHoliday: quotes.some((quote) => quote.isHoliday),
+    isWeekend: quotes.some((quote) => quote.isWeekend),
+    appliedRules: quotes.flatMap((quote, quoteIndex) => {
+      const dateLabel = bookingDates[quoteIndex] ? fmtDate(bookingDates[quoteIndex]) : '';
+      return (quote.appliedRules || []).map((line) => ({
+        ...line,
+        name: quotes.length > 1 && dateLabel
+          ? `${dateLabel} - ${line.name || 'Slot Rule'}`
+          : line.name || 'Slot Rule',
+      }));
+    }),
+  };
+};
+
+const PricingBreakdown = ({
+  pricing,
+  totalAmount,
+  title = 'Price Breakdown',
+}: {
+  pricing?: TurfPricingResult | null;
+  totalAmount?: number;
+  title?: string;
+}) => {
+  const lines = pricing?.appliedRules || [];
+  if (lines.length === 0) return null;
+
+  const total = totalAmount ?? (getPricingBreakdownTotal(pricing) || pricing?.amount || 0);
+
+  return (
+    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--surface-glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', display: 'grid', gap: 'var(--space-2)' }}>
+      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{title}</div>
+      {lines.map((line, index) => (
+        <div key={`${line.startTime}-${line.endTime}-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-3)', alignItems: 'center', paddingBottom: index < lines.length - 1 ? 'var(--space-2)' : 0, borderBottom: index < lines.length - 1 ? '1px dashed var(--surface-glass-border)' : 'none' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{fmtTime(line.startTime)} - {fmtTime(line.endTime)}</div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
+              {fmt(line.rate)}/hr
+              {line.minutes ? ` • ${line.minutes} min` : ''}
+              {line.name ? ` • ${line.name}` : ''}
+            </div>
+          </div>
+          <div style={{ fontWeight: 700, color: line.rate > 0 ? 'var(--text-primary)' : 'var(--status-danger)', whiteSpace: 'nowrap' }}>{fmt(getPricingLineAmount(line))}</div>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-2)', marginTop: 'var(--space-1)', fontWeight: 800 }}>
+        <span>Total Amount</span>
+        <span style={{ color: 'var(--status-success)', whiteSpace: 'nowrap' }}>{fmt(total)}</span>
+      </div>
+    </div>
+  );
+};
+
+const formatBookingDates = (dates: string[]) => {
+  if (!dates || dates.length === 0) return '';
+  if (dates.length === 1) {
+    return new Date(dates[0]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  // Sort dates
+  const sorted = [...dates].sort((a, b) => a.localeCompare(b));
+  const dateObjs = sorted.map(d => {
+    const [y, m, day] = d.split('T')[0].split('-').map(Number);
+    return new Date(y, m - 1, day);
+  });
+  
+  // Check if consecutive
+  let isConsecutive = true;
+  for (let i = 1; i < dateObjs.length; i++) {
+    const diff = dateObjs[i].getTime() - dateObjs[i - 1].getTime();
+    if (diff !== 24 * 60 * 60 * 1000) {
+      isConsecutive = false;
+      break;
+    }
+  }
+
+  const optDayMonth: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+
+  if (isConsecutive) {
+    const startStr = dateObjs[0].toLocaleDateString('en-IN', optDayMonth);
+    const endStr = dateObjs[dateObjs.length - 1].toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${startStr} – ${endStr}`;
+  } else {
+    const year = dateObjs[0].getFullYear();
+    const formattedDates = dateObjs.map(d => d.toLocaleDateString('en-IN', optDayMonth));
+    return `${formattedDates.join(', ')} (${year})`;
+  }
+};
+
+const formatSingleDate = (d: string | string[]) => {
+  const dateStr = Array.isArray(d) ? d[0] : d;
+  if (!dateStr) return '';
+  const dateObj = new Date(dateStr);
+  const day = dateObj.getDate();
+  const months = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'];
+  const monthsCorrect = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = monthsCorrect[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  return `${day} ${month} ${year}`;
+};
+
+const bookingDateKey = (date: string | string[]) => Array.isArray(date) ? date[0] : date;
+
+const getGroupedBookings = (bookingsList: BookingData[]) => {
+  const groups: Record<string, BookingData[]> = {};
+  const ungrouped: BookingData[] = [];
+
+  bookingsList.forEach((b) => {
+    if (b.bulkId) {
+      if (!groups[b.bulkId]) {
+        groups[b.bulkId] = [];
+      }
+      groups[b.bulkId].push(b);
+    } else {
+      ungrouped.push(b);
+    }
+  });
+
+  const groupedList: any[] = [...ungrouped.map((b) => ({ ...b, isGroup: false }))];
+
+  Object.entries(groups).forEach(([bulkId, groupBookings]) => {
+    const sorted = [...groupBookings].sort((a, b) => bookingDateKey(a.bookingDate).localeCompare(bookingDateKey(b.bookingDate)));
+    
+    const totalExpected = sorted.reduce((sum, b) => sum + b.expectedAmount, 0);
+    const totalPaid = sorted.reduce((sum, b) => sum + b.totalPaid, 0);
+    const totalDiscount = sorted.reduce((sum, b) => sum + (b.discountAmount || 0), 0);
+    const finalPayable = totalExpected - totalDiscount;
+    
+    let paymentStatus: 'pending' | 'partial' | 'paid' = 'pending';
+    if (totalPaid === 0) {
+      paymentStatus = 'pending';
+    } else if (totalPaid >= finalPayable) {
+      paymentStatus = 'paid';
+    } else {
+      paymentStatus = 'partial';
+    }
+
+    const isAnyConfirmed = sorted.some((b) => b.bookingStatus === 'confirmed');
+    const bookingStatus = isAnyConfirmed ? 'confirmed' : 'cancelled';
+
+    groupedList.push({
+      _id: sorted[0]._id,
+      bulkId,
+      isGroup: true,
+      bookings: sorted,
+      bookingDate: sorted.map((b) => b.bookingDate),
+      startTime: sorted[0].startTime,
+      endTime: sorted[0].endTime,
+      customerName: sorted[0].customerName,
+      contactNumber: sorted[0].contactNumber,
+      expectedAmount: totalExpected,
+      totalPaid: totalPaid,
+      discountAmount: totalDiscount,
+      notes: sorted.map(b => b.notes).filter(Boolean).join(' | ') || sorted[0].notes,
+      bookingStatus,
+      paymentStatus,
+      createdBy: sorted[0].createdBy,
+      createdAt: sorted[0].createdAt,
+    });
+  });
+
+  return groupedList.sort((a, b) => {
+    const aDate = a.isGroup ? a.bookings[0].bookingDate : a.bookingDate;
+    const bDate = b.isGroup ? b.bookings[0].bookingDate : b.bookingDate;
+    const dateCompare = bDate.localeCompare(aDate);
+    if (dateCompare !== 0) return dateCompare;
+    
+    return b.startTime.localeCompare(a.startTime);
+  });
+};
+
 // ---- Component ----
 export default function BookingsPage() {
   // --- State ---
@@ -167,6 +382,9 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<BookingData[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
+
+  // Pricing settings from Admin Settings
+  const [pricingSettings, setPricingSettings] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
 
   // Booking form
   const [showBookingForm, setShowBookingForm] = useState(false);
@@ -180,13 +398,30 @@ export default function BookingsPage() {
   const [bfError, setBfError] = useState('');
   const [bfSaving, setBfSaving] = useState(false);
   const [viewStartDate, setViewStartDate] = useState<Date>(new Date());
-  const [bookingMode, setBookingMode] = useState<'standard' | 'bulk'>('standard');
-  const [bulkPreset, setBulkPreset] = useState<'full_day' | 'evening_6h' | 'morning_6h' | 'custom'>('full_day');
-  const [bulkStartTime, setBulkStartTime] = useState('06:00');
-  const [bulkEndTime, setBulkEndTime] = useState('23:59');
-  const [bfBaseAmount, setBfBaseAmount] = useState('');
-  const [bfDiscountType, setBfDiscountType] = useState<'none' | 'percent' | 'flat'>('none');
-  const [bfDiscountValue, setBfDiscountValue] = useState('');
+  const [detectedRule, setDetectedRule] = useState<TurfPricingResult | null>(null);
+
+  // Rate Type Selection
+  const [bfPriceType, setBfPriceType] = useState<'normal' | 'regular' | null>(null);
+  const [bfDiscountType, setBfDiscountType] = useState<'fixed' | 'percentage'>('fixed');
+  const [bfDiscountValue, setBfDiscountValue] = useState<string>('');
+  const [normalQuote, setNormalQuote] = useState<any>(null);
+  const [regularQuote, setRegularQuote] = useState<any>(null);
+  const [normalTotalAmount, setNormalTotalAmount] = useState<number>(0);
+  const [regularTotalAmount, setRegularTotalAmount] = useState<number>(0);
+
+  // Booking type: standard or bulk/full-day
+  const [bookingType, setBookingType] = useState<'standard' | 'bulk'>('standard');
+
+  // Bulk mode: extra hours on a second day
+  const [bulkExtraEnabled, setBulkExtraEnabled] = useState(false);
+  const [bulkExtraDate, setBulkExtraDate] = useState('');
+  const [bulkExtraMode, setBulkExtraMode] = useState<'am' | 'pm'>('am');
+  const [bulkExtraQuote, setBulkExtraQuote] = useState<TurfPricingResult | null>(null);
+  const [bulkExtraAmount, setBulkExtraAmount] = useState<number>(0);
+
+  // Summary / review step
+  const [showSummary, setShowSummary] = useState(false);
+
 
   // View booking
   const [viewBooking, setViewBooking] = useState<BookingData | null>(null);
@@ -209,14 +444,42 @@ export default function BookingsPage() {
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentBooking, setPaymentBooking] = useState<BookingData | null>(null);
-  const [pfAmount, setPfAmount] = useState('');
-  const [pfMode, setPfMode] = useState<'bank_transfer' | 'cash'>('bank_transfer');
+  const [pfDiscountAmount, setPfDiscountAmount] = useState<number>(0);
+  const [pfDiscountPercentage, setPfDiscountPercentage] = useState<number>(0);
+  const [pfSplits, setPfSplits] = useState<any[]>([
+    { amount: 0, paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }
+  ]);
+  const [pfPreviousSplits, setPfPreviousSplits] = useState<any[]>([]);
   const [pfDate, setPfDate] = useState(today());
-  const [pfRefNumber, setPfRefNumber] = useState('');
-  const [pfCashBy, setPfCashBy] = useState('');
-  const [pfRefNote, setPfRefNote] = useState('');
   const [pfSaving, setPfSaving] = useState(false);
   const [pfError, setPfError] = useState('');
+
+  const addSplit = (finalPayable: number) => {
+    const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const totalCurrentNew = pfSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const remaining = Math.max(0, finalPayable - totalPreviousPaid - totalCurrentNew);
+    setPfSplits([...pfSplits, { amount: remaining, paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }]);
+  };
+
+  const removeSplit = (index: number) => {
+    setPfSplits(pfSplits.filter((_, i) => i !== index));
+  };
+
+  const updateSplit = (index: number, key: string, val: any) => {
+    if (key === 'amount') {
+      const finalPayable = paymentBooking ? paymentBooking.expectedAmount - pfDiscountAmount : 0;
+      const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+      const otherNewSplitsSum = pfSplits
+        .filter((_, i) => i !== index)
+        .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+      const maxAllowed = Math.max(0, finalPayable - totalPreviousPaid - otherNewSplitsSum);
+      const inputAmt = Number(val) || 0;
+      const cappedAmt = Math.min(inputAmt, maxAllowed);
+      setPfSplits(pfSplits.map((s, i) => i === index ? { ...s, amount: cappedAmt } : s));
+    } else {
+      setPfSplits(pfSplits.map((s, i) => i === index ? { ...s, [key]: val } : s));
+    }
+  };
 
   // Dashboard state
   const [dashLoading, setDashLoading] = useState(false);
@@ -269,9 +532,27 @@ export default function BookingsPage() {
     }
   }, [dashStartDate, dashEndDate, dashFilter]);
 
+  // Fetch pricing settings from Admin Settings
+  const fetchPricingSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/pricing');
+      const data = await res.json();
+      if (data.success) {
+        setPricingSettings(data.data.pricing);
+      }
+    } catch (err) {
+      console.error('Error fetching pricing settings:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchBookings();
-  }, [fetchBookings]);
+    fetchPricingSettings();
+  }, [fetchBookings, fetchPricingSettings]);
+
+  useEffect(() => {
+    if (showBookingForm) fetchPricingSettings();
+  }, [showBookingForm, fetchPricingSettings]);
 
   useEffect(() => {
     if (activeTab === 'payments') {
@@ -294,91 +575,296 @@ export default function BookingsPage() {
   }, [dashFilter]);
 
   // --- Actions ---
+
   const handleCreateBooking = async () => {
     setBfError('');
-    if (!bfDate || !bfStartTime || !bfEndTime || !bfAmount) {
-      setBfError('Please fill all required fields');
+
+    if (!bfPriceType) {
+      setBfError('Please select a Rate Type');
       return;
     }
-    if (Number(bfAmount) <= 0) {
-      setBfError('Expected amount must be greater than 0');
-      return;
-    }
-    if (bfStartTime >= bfEndTime) {
-      setBfError('Start time must be before end time');
-      return;
-    }
-    setBfSaving(true);
-    try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bookingDate: bfDate,
-          startTime: bfStartTime,
-          endTime: bfEndTime,
-          customerName: bfCustomer,
-          contactNumber: bfContact,
-          expectedAmount: Number(bfAmount),
-          notes: bfNotes,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast('Booking confirmed! ✅');
+
+    if (bookingType === 'standard') {
+      if (!bfDate || !bfStartTime || !bfEndTime) {
+        setBfError('Please select a date and time slots');
+        return;
+      }
+      if (bfStartTime >= bfEndTime) {
+        setBfError('Start time must be before end time');
+        return;
+      }
+      if (!bfAmount || Number(bfAmount) <= 0) {
+        setBfError('Expected amount must be greater than 0');
+        return;
+      }
+
+      setBfSaving(true);
+      try {
+        const res = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookingDate: bfDate,
+            startTime: bfStartTime,
+            endTime: bfEndTime,
+            customerName: bfCustomer,
+            contactNumber: bfContact,
+            notes: bfNotes,
+            bulkId: null,
+            priceType: bfPriceType,
+            discountAmount: 0,
+            discountPercentage: 0,
+          }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          setBfError(`${fmtDate(bfDate)}: ${data.message}`);
+          return;
+        }
+        showToast('Booking confirmed!');
         resetBookingForm();
         fetchBookings();
-      } else {
-        setBfError(data.message);
+      } catch {
+        setBfError('Network error');
+      } finally {
+        setBfSaving(false);
       }
-    } catch {
-      setBfError('Network error');
-    } finally {
-      setBfSaving(false);
+    } else {
+      // Bulk / Full-Day booking
+      if (!bfDate) {
+        setBfError('Please select a date');
+        return;
+      }
+
+      setBfSaving(true);
+      const generatedBulkId = `bulk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        // Day 1: Full day 00:00 – 23:59
+        const res1 = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookingDate: bfDate,
+            startTime: '00:00',
+            endTime: '23:59',
+            customerName: bfCustomer,
+            contactNumber: bfContact,
+            notes: bfNotes,
+            bulkId: generatedBulkId,
+            priceType: bfPriceType,
+            discountAmount: 0,
+            discountPercentage: 0,
+          }),
+        });
+        const data1 = await res1.json();
+        if (!data1.success) {
+          setBfError(`Day 1 (${fmtDate(bfDate)}): ${data1.message}`);
+          return;
+        }
+
+        // Day 2: Extra hours (if enabled)
+        if (bulkExtraEnabled && bulkExtraDate) {
+          const extraStart = bulkExtraMode === 'am' ? '06:00' : '14:00';
+          const extraEnd = bulkExtraMode === 'am' ? '14:00' : '22:00';
+          const res2 = await fetch('/api/bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              bookingDate: bulkExtraDate,
+              startTime: extraStart,
+              endTime: extraEnd,
+              customerName: bfCustomer,
+              contactNumber: bfContact,
+              notes: bfNotes ? `${bfNotes} (Extra hours)` : 'Extra hours',
+              bulkId: generatedBulkId,
+              priceType: bfPriceType,
+              discountAmount: 0,
+              discountPercentage: 0,
+            }),
+          });
+          const data2 = await res2.json();
+          if (!data2.success) {
+            setBfError(`Day 2 (${fmtDate(bulkExtraDate)}): ${data2.message}`);
+            return;
+          }
+        }
+
+        showToast('Bulk booking confirmed!');
+        resetBookingForm();
+        fetchBookings();
+      } catch {
+        setBfError('Network error');
+      } finally {
+        setBfSaving(false);
+      }
     }
   };
 
+  // When booking type switches to bulk, auto-set full-day times
   useEffect(() => {
-    if (bookingMode === 'bulk') {
-      if (bulkPreset === 'full_day') {
-        setBfStartTime('06:00');
-        setBfEndTime('23:59');
-      } else if (bulkPreset === 'evening_6h') {
-        setBfStartTime('18:00');
-        setBfEndTime('23:59');
-      } else if (bulkPreset === 'morning_6h') {
-        setBfStartTime('06:00');
-        setBfEndTime('12:00');
-      } else if (bulkPreset === 'custom') {
-        setBfStartTime(bulkStartTime);
-        setBfEndTime(bulkEndTime);
-      }
+    if (bookingType === 'bulk') {
+      setBfStartTime('00:00');
+      setBfEndTime('23:59');
+    } else {
+      setBfStartTime('');
+      setBfEndTime('');
     }
-  }, [bookingMode, bulkPreset, bulkStartTime, bulkEndTime]);
+  }, [bookingType]);
 
+  // Auto-calculate booking amount from Settings-driven slot rules.
   useEffect(() => {
-    if (bookingMode === 'bulk') {
-      const base = Number(bfBaseAmount) || 0;
-      if (bfDiscountType === 'none') {
-        setBfAmount(base > 0 ? base.toString() : '');
-      } else {
-        const val = Number(bfDiscountValue) || 0;
-        let discount = 0;
-        if (bfDiscountType === 'percent') {
-          discount = (base * val) / 100;
-        } else if (bfDiscountType === 'flat') {
-          discount = val;
-        }
-        const final = Math.max(0, base - discount);
-        setBfAmount(final > 0 ? final.toString() : '');
-      }
+    let ignore = false;
+    if (!bfStartTime || !bfEndTime) {
+      setNormalQuote(null);
+      setRegularQuote(null);
+      setNormalTotalAmount(0);
+      setRegularTotalAmount(0);
+      return;
     }
-  }, [bookingMode, bfBaseAmount, bfDiscountType, bfDiscountValue, setBfAmount]);
+
+    const bookingDates = [bfDate];
+
+    const fetchQuotes = async () => {
+      try {
+        const quotesNormal = await Promise.all(
+          bookingDates.map(async (date) => {
+            const params = new URLSearchParams({
+              bookingDate: date,
+              startTime: bfStartTime,
+              endTime: bfEndTime,
+              priceType: 'normal',
+            });
+            const res = await fetch(`/api/settings/pricing?${params}`);
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.message || 'No active pricing rule matches this slot');
+            }
+            const data = await res.json();
+            if (!data.success) {
+              throw new Error(data.message || 'Failed to calculate price');
+            }
+            return data.data.quote;
+          })
+        );
+
+        const quotesRegular = await Promise.all(
+          bookingDates.map(async (date) => {
+            const params = new URLSearchParams({
+              bookingDate: date,
+              startTime: bfStartTime,
+              endTime: bfEndTime,
+              priceType: 'regular',
+            });
+            const res = await fetch(`/api/settings/pricing?${params}`);
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.message || 'No active pricing rule matches this slot');
+            }
+            const data = await res.json();
+            if (!data.success) {
+              throw new Error(data.message || 'Failed to calculate price');
+            }
+            return data.data.quote;
+          })
+        );
+
+        if (ignore) return;
+
+        const normalAmount = quotesNormal.reduce((sum, q) => sum + q.amount, 0);
+        const regularAmount = quotesRegular.reduce((sum, q) => sum + q.amount, 0);
+
+        setNormalQuote(combinePricingQuotes(quotesNormal, bookingDates));
+        setRegularQuote(combinePricingQuotes(quotesRegular, bookingDates));
+        setNormalTotalAmount(normalAmount);
+        setRegularTotalAmount(regularAmount);
+        setBfError('');
+      } catch (error) {
+        if (ignore) return;
+        setNormalQuote(null);
+        setRegularQuote(null);
+        setNormalTotalAmount(0);
+        setRegularTotalAmount(0);
+        setBfError(error instanceof Error ? error.message : 'No active pricing rule matches this slot');
+      }
+    };
+
+    fetchQuotes();
+
+    return () => {
+      ignore = true;
+    };
+  }, [bfDate, bfStartTime, bfEndTime]);
+
+  // Update selected quote and expected amount
+  useEffect(() => {
+    let baseAmount = 0;
+    let quote = null;
+
+    if (bfPriceType === 'normal') {
+      baseAmount = normalTotalAmount;
+      quote = normalQuote;
+    } else if (bfPriceType === 'regular') {
+      baseAmount = regularTotalAmount;
+      quote = regularQuote;
+    }
+
+    if (!bfPriceType || baseAmount <= 0) {
+      setBfAmount('');
+      setDetectedRule(null);
+      return;
+    }
+
+    let finalAmt = baseAmount;
+
+    finalAmt = Math.max(0, Math.round(finalAmt));
+    setBfAmount(finalAmt.toString());
+    setDetectedRule(quote);
+  }, [bfPriceType, normalTotalAmount, regularTotalAmount, normalQuote, regularQuote]);
+
+  // Fetch pricing for bulk extra hours (Day 2)
+  useEffect(() => {
+    let ignore = false;
+    if (!bulkExtraEnabled || !bulkExtraDate || !bfPriceType) {
+      setBulkExtraQuote(null);
+      setBulkExtraAmount(0);
+      return;
+    }
+
+    const extraStart = bulkExtraMode === 'am' ? '06:00' : '14:00';
+    const extraEnd = bulkExtraMode === 'am' ? '14:00' : '22:00';
+
+    const fetchExtraQuote = async () => {
+      try {
+        const params = new URLSearchParams({
+          bookingDate: bulkExtraDate,
+          startTime: extraStart,
+          endTime: extraEnd,
+          priceType: bfPriceType,
+        });
+        const res = await fetch(`/api/settings/pricing?${params}`);
+        if (!res.ok) throw new Error('Failed to fetch extra hours pricing');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message);
+        if (ignore) return;
+        setBulkExtraQuote(data.data.quote);
+        setBulkExtraAmount(data.data.quote.amount || 0);
+      } catch {
+        if (ignore) return;
+        setBulkExtraQuote(null);
+        setBulkExtraAmount(0);
+      }
+    };
+
+    fetchExtraQuote();
+    return () => { ignore = true; };
+  }, [bulkExtraEnabled, bulkExtraDate, bulkExtraMode, bfPriceType]);
+
 
   const getOverlappingBookings = (dateStr: string, start: string, end: string) => {
     return bookings.filter((b) => {
       if (b.bookingStatus !== 'confirmed') return false;
-      const bDateStr = toISODateString(new Date(b.bookingDate));
+      const bDateStr = toISODateString(new Date(bookingDateKey(b.bookingDate)));
       if (bDateStr !== dateStr) return false;
       return b.startTime < end && start < b.endTime;
     });
@@ -395,13 +881,21 @@ export default function BookingsPage() {
     setBfNotes('');
     setBfError('');
     setViewStartDate(new Date());
-    setBookingMode('standard');
-    setBulkPreset('full_day');
-    setBulkStartTime('06:00');
-    setBulkEndTime('23:59');
-    setBfBaseAmount('');
-    setBfDiscountType('none');
+    setDetectedRule(null);
+    setBfPriceType(null);
+    setBfDiscountType('fixed');
     setBfDiscountValue('');
+    setNormalQuote(null);
+    setRegularQuote(null);
+    setNormalTotalAmount(0);
+    setRegularTotalAmount(0);
+    setBookingType('standard');
+    setBulkExtraEnabled(false);
+    setBulkExtraDate('');
+    setBulkExtraMode('am');
+    setBulkExtraQuote(null);
+    setBulkExtraAmount(0);
+    setShowSummary(false);
   };
 
   const getDaysRange = (start: Date) => {
@@ -429,7 +923,7 @@ export default function BookingsPage() {
   const isSlotBooked = (dateStr: string, slotStart: string, slotEnd: string) => {
     return bookings.some((b) => {
       if (b.bookingStatus !== 'confirmed') return false;
-      const bDateStr = toISODateString(new Date(b.bookingDate));
+      const bDateStr = toISODateString(new Date(bookingDateKey(b.bookingDate)));
       if (bDateStr !== dateStr) return false;
       return b.startTime < slotEnd && slotStart < b.endTime;
     });
@@ -493,7 +987,16 @@ export default function BookingsPage() {
       const res = await fetch(`/api/bookings/${booking._id}`);
       const data = await res.json();
       if (data.success) {
-        setViewBooking(data.data.booking);
+        const isGroup = (booking as any).isGroup;
+        setViewBooking(isGroup ? {
+          ...data.data.booking,
+          isGroup: true,
+          bookings: (booking as any).bookings,
+          bookingDate: (booking as any).bookingDate,
+          expectedAmount: (booking as any).expectedAmount,
+          totalPaid: (booking as any).totalPaid,
+          paymentStatus: (booking as any).paymentStatus,
+        } : data.data.booking);
         setViewPayments(data.data.payments);
       }
     } catch (err) {
@@ -514,27 +1017,25 @@ export default function BookingsPage() {
 
   const handleEditBooking = async () => {
     if (!viewBooking) return;
-    if (Number(efAmount) <= 0) {
-      showToast('Expected amount must be > 0', 'error');
-      return;
-    }
     setEfSaving(true);
     try {
+      const isGroup = (viewBooking as any).isGroup;
+
       const res = await fetch(`/api/bookings/${viewBooking._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerName: efCustomer,
           contactNumber: efContact,
-          expectedAmount: Number(efAmount),
           notes: efNotes,
+          updateGroup: isGroup,
         }),
       });
       const data = await res.json();
       if (data.success) {
         showToast('Booking updated ✅');
         setEditMode(false);
-        openViewBooking(data.data);
+        setViewBooking(null);
         fetchBookings();
       } else {
         showToast(data.message, 'error');
@@ -572,45 +1073,119 @@ export default function BookingsPage() {
     }
   };
 
-  const openPaymentForm = (booking: BookingData) => {
+  const openPaymentForm = async (booking: BookingData) => {
     setPaymentBooking(booking);
     setShowPaymentForm(true);
-    setPfAmount('');
-    setPfMode('bank_transfer');
     setPfDate(today());
-    setPfRefNumber('');
-    setPfCashBy('');
-    setPfRefNote('');
     setPfError('');
+    setPfSaving(false);
+
+    const initialDiscountAmount = booking.discountAmount || 0;
+    const initialDiscountPercentage = booking.discountPercentage || 0;
+    setPfDiscountAmount(initialDiscountAmount);
+    setPfDiscountPercentage(initialDiscountPercentage);
+
+    setPfPreviousSplits([]);
+    const finalPayable = booking.expectedAmount - initialDiscountAmount;
+    setPfSplits([
+      { amount: finalPayable, paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }
+    ]);
+
+    try {
+      const res = await fetch(`/api/bookings/${booking._id}/payments`);
+      const data = await res.json();
+      if (data.success && data.data.payments && data.data.payments.length > 0) {
+        const existingPayment = data.data.payments[0];
+        const existingDiscountAmount = existingPayment.discountAmount !== undefined ? existingPayment.discountAmount : initialDiscountAmount;
+        const existingDiscountPercentage = existingPayment.discountPercentage !== undefined ? existingPayment.discountPercentage : initialDiscountPercentage;
+        
+        setPfDiscountAmount(existingDiscountAmount);
+        setPfDiscountPercentage(existingDiscountPercentage);
+
+        const currentFinalPayable = booking.expectedAmount - existingDiscountAmount;
+        
+        let loadedSplits = [];
+        if (existingPayment.splits && existingPayment.splits.length > 0) {
+          loadedSplits = existingPayment.splits;
+        } else if (existingPayment.amountPaid > 0) {
+          loadedSplits = [{
+            amount: existingPayment.amountPaid,
+            paymentMode: existingPayment.paymentMode,
+            referenceNumber: existingPayment.referenceNumber || '',
+            cashReceivedBy: existingPayment.cashReceivedBy || '',
+            referenceNote: existingPayment.referenceNote || '',
+          }];
+        }
+
+        setPfPreviousSplits(loadedSplits);
+
+        const totalPreviousPaid = loadedSplits.reduce((sum: number, s: any) => sum + Number(s.amount || 0), 0);
+        const remaining = Math.max(0, currentFinalPayable - totalPreviousPaid);
+
+        if (remaining > 0) {
+          setPfSplits([
+            { amount: remaining, paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }
+          ]);
+        } else {
+          setPfSplits([]);
+        }
+
+        if (existingPayment.paymentDate) {
+          setPfDate(existingPayment.paymentDate.split('T')[0]);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching existing payments:', err);
+    }
   };
 
   const handleAddPayment = async () => {
     setPfError('');
     if (!paymentBooking) return;
-    if (!pfAmount || Number(pfAmount) <= 0) {
-      setPfError('Amount must be greater than 0');
-      return;
-    }
     if (!pfDate) {
       setPfError('Payment date is required');
       return;
     }
-    if (pfMode === 'cash' && !pfCashBy) {
-      setPfError('Cash Received By is required for cash payments');
+
+    const finalPayable = paymentBooking.expectedAmount - pfDiscountAmount;
+    const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const totalNewSplitsAmount = pfSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const totalPaidAmount = totalPreviousPaid + totalNewSplitsAmount;
+
+    if (totalNewSplitsAmount <= 0) {
+      setPfError('Please enter a payment amount greater than 0');
       return;
     }
+
+    if (totalPaidAmount > finalPayable) {
+      setPfError(`Total paid (₹${totalPaidAmount}) cannot exceed the final payable amount (₹${finalPayable})`);
+      return;
+    }
+
+    for (let i = 0; i < pfSplits.length; i++) {
+      const s = pfSplits[i];
+      if (s.amount <= 0) {
+        setPfError(`Split #${i + 1} amount must be greater than 0`);
+        return;
+      }
+      if (s.paymentMode === 'cash' && !s.cashReceivedBy) {
+        setPfError(`Cash Received By is required for Split #${i + 1}`);
+        return;
+      }
+    }
+
+    const mergedSplits = [...pfPreviousSplits, ...pfSplits];
+
     setPfSaving(true);
     try {
       const res = await fetch(`/api/bookings/${paymentBooking._id}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amountPaid: Number(pfAmount),
-          paymentMode: pfMode,
+          discountAmount: pfDiscountAmount,
+          discountPercentage: pfDiscountPercentage,
+          splits: mergedSplits,
           paymentDate: pfDate,
-          referenceNumber: pfRefNumber,
-          cashReceivedBy: pfMode === 'cash' ? pfCashBy : '',
-          referenceNote: pfRefNote,
         }),
       });
       const data = await res.json();
@@ -622,7 +1197,7 @@ export default function BookingsPage() {
           openViewBooking(paymentBooking);
         }
       } else {
-        setPfError(data.message);
+        setPfError(data.message || 'Error saving payment');
       }
     } catch {
       setPfError('Network error');
@@ -659,7 +1234,7 @@ export default function BookingsPage() {
   const statusBadge = (status: string) => {
     const map: Record<string, { cls: string; label: string }> = {
       pending: { cls: 'badge-warning', label: 'Pending' },
-      partial: { cls: 'badge-info', label: 'Partial' },
+      partial: { cls: 'badge-info', label: 'Partial Payment' },
       paid: { cls: 'badge-success', label: 'Paid' },
       confirmed: { cls: 'badge-success', label: 'Confirmed' },
       cancelled: { cls: 'badge-danger', label: 'Cancelled' },
@@ -735,10 +1310,10 @@ export default function BookingsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {bookings.map(b => (
+                      {getGroupedBookings(bookings).map(b => (
                         <tr key={`desk-${b._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)', opacity: b.bookingStatus === 'cancelled' ? 0.55 : 1 }}>
                           <td style={{ padding: 'var(--space-4)', whiteSpace: 'nowrap', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {new Date(b.bookingDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {formatBookingDates(b.isGroup ? b.bookingDate : [b.bookingDate])}
                           </td>
                           <td style={{ padding: 'var(--space-4)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                             {fmtTime(b.startTime)} - {fmtTime(b.endTime)}
@@ -746,10 +1321,30 @@ export default function BookingsPage() {
                           <td style={{ padding: 'var(--space-4)' }}>
                             <span style={{ fontStyle: b.customerName ? 'normal' : 'italic', color: b.customerName ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: 500 }}>
                               {b.customerName || 'Anonymous'}
+                              {b.isGroup && (
+                                <span style={{ color: 'var(--accent-primary)', fontSize: 'var(--text-xs)', marginLeft: 'var(--space-2)' }}>
+                                  ({b.bookings.length} Days Bulk)
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{b.contactNumber || '—'}</td>
-                          <td style={{ padding: 'var(--space-4)' }}><span className="badge badge-neutral" style={{ padding: '4px 8px' }}>{b.paymentStatus}</span></td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              {statusBadge(b.paymentStatus)}
+                              {b.paymentStatus !== 'pending' && (
+                                <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                                  Paid: {fmt(b.totalPaid)}
+                                  {b.paymentStatus === 'partial' && (
+                                    <>
+                                      <br />
+                                      Bal: {fmt((b.expectedAmount - (b.discountAmount || 0)) - b.totalPaid)}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                           </td>
                           <td style={{ padding: 'var(--space-4)' }}>{statusBadge(b.bookingStatus)}</td>
                           <td style={{ padding: 'var(--space-4)' }}>
                             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
@@ -765,30 +1360,44 @@ export default function BookingsPage() {
                   </table>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--surface-glass-border)' }}>
-                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Showing {bookings.length} of {bookings.length} bookings</div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Showing {getGroupedBookings(bookings).length} items of {bookings.length} total bookings</div>
                   <div className="select-wrapper" style={{ width: '130px' }}>
-                    <select className="form-select form-select-sm" style={{ height: '36px', fontSize: 'var(--text-sm)' }}>
-                      <option>10 per page</option>
-                      <option>25 per page</option>
-                      <option>50 per page</option>
-                    </select>
+                    <CustomSelect
+                      options={[
+                        { value: '10', label: '10 per page' },
+                        { value: '25', label: '25 per page' },
+                        { value: '50', label: '50 per page' }
+                      ]}
+                      value="10"
+                      onChange={() => {}}
+                    />
                   </div>
                 </div>
               </div>
 
               {/* MOBILE CARDS VIEW */}
               <div className="cards-grid mobile-only">
-              {bookings.map(b => (
+              {getGroupedBookings(bookings).map(b => (
                 <div key={b._id} className="card" style={{ padding: 'var(--space-4)', opacity: b.bookingStatus === 'cancelled' ? 0.55 : 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {/* Header: Date + Status Badges */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                      <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />
-                      <span style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>
-                        {new Date(b.bookingDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
+                      <Calendar size={18} style={{ color: 'var(--accent-primary)', marginTop: '2px' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {b.isGroup ? (
+                          b.bookingDate.map((date: string) => (
+                            <span key={date} style={{ fontWeight: 700, fontSize: 'var(--text-md)', lineHeight: '1.2' }}>
+                              {formatSingleDate(date)}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ fontWeight: 700, fontSize: 'var(--text-md)', lineHeight: '1.2' }}>
+                            {formatSingleDate(b.bookingDate)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-1)', marginTop: '2px' }}>
                       {statusBadge(b.paymentStatus)}
                       {statusBadge(b.bookingStatus)}
                     </div>
@@ -802,7 +1411,9 @@ export default function BookingsPage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <UserIcon size={12} style={{ color: 'var(--accent-primary)' }} />
-                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.customerName || 'Anonymous'}</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                        {b.customerName || 'Anonymous'}
+                      </span>
                       {b.contactNumber && (
                         <>
                           <span style={{ color: 'var(--text-muted)' }}>•</span>
@@ -810,6 +1421,15 @@ export default function BookingsPage() {
                         </>
                       )}
                     </div>
+                    {b.paymentStatus !== 'pending' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '10px' }}>💰</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                          Paid: {fmt(b.totalPaid)}
+                          {b.paymentStatus === 'partial' && ` • Bal: ${fmt((b.expectedAmount - (b.discountAmount || 0)) - b.totalPaid)}`}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -845,9 +1465,13 @@ export default function BookingsPage() {
               ))}
               {dashFilter === 'custom' && (
                 <>
-                  <input type="date" className="form-input" value={dashStartDate} onChange={e => setDashStartDate(e.target.value)} style={{ width: 160, height: 36, fontSize: 'var(--text-sm)' }} />
+                  <div style={{ width: 160 }}>
+                    <CustomDatePicker value={dashStartDate} onChange={setDashStartDate} />
+                  </div>
                   <span style={{ color: 'var(--text-tertiary)' }}>to</span>
-                  <input type="date" className="form-input" value={dashEndDate} onChange={e => setDashEndDate(e.target.value)} style={{ width: 160, height: 36, fontSize: 'var(--text-sm)' }} />
+                  <div style={{ width: 160 }}>
+                    <CustomDatePicker value={dashEndDate} onChange={setDashEndDate} />
+                  </div>
                 </>
               )}
             </div>
@@ -1038,362 +1662,348 @@ export default function BookingsPage() {
                   ⚠️ {bfError}
                 </div>
               )}
-              
-              <div className="booking-modal-grid form-grid-responsive" style={{ gap: 'var(--space-6)' }}>
-                {/* Left Side: Scheduling UI */}
+              {!showSummary ? (
+                <div className="booking-modal-grid form-grid-responsive" style={{ gap: 'var(--space-6)' }}>
+                  {/* Left Side: Scheduling UI */}
                 <div>
-                  {/* Booking Mode Selector */}
-                  <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '4px', marginBottom: 'var(--space-4)' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBookingMode('standard');
-                        setBfStartTime('');
-                        setBfEndTime('');
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: 'var(--space-2) 0',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        background: bookingMode === 'standard' ? 'white' : 'transparent',
-                        color: bookingMode === 'standard' ? 'var(--text-primary)' : 'var(--text-muted)',
-                        fontWeight: bookingMode === 'standard' ? 600 : 500,
-                        fontSize: 'var(--text-xs)',
-                        cursor: 'pointer',
-                        boxShadow: bookingMode === 'standard' ? 'var(--shadow-sm)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      📅 Standard Booking
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBookingMode('bulk');
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: 'var(--space-2) 0',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        background: bookingMode === 'bulk' ? 'white' : 'transparent',
-                        color: bookingMode === 'bulk' ? 'var(--text-primary)' : 'var(--text-muted)',
-                        fontWeight: bookingMode === 'bulk' ? 600 : 500,
-                        fontSize: 'var(--text-xs)',
-                        cursor: 'pointer',
-                        boxShadow: bookingMode === 'bulk' ? 'var(--shadow-sm)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      🏆 Bulk/Tournament Booking
-                    </button>
-                  </div>
-
                   {/* Calendar Date Selector */}
                   <div style={{ marginBottom: 'var(--space-5)' }}>
                     <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
                       Select Date
                     </div>
-                    <input 
-                      type="date"
-                      className="form-input"
-                      value={bfDate}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          setBfDate(e.target.value);
-                          try {
-                            // Keep viewStartDate in sync just in case
-                            setViewStartDate(new Date(e.target.value));
-                          } catch (err) {}
-                        }
-                      }}
-                      style={{ 
-                        width: '100%',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--font-sans)',
-                        fontWeight: 500,
-                        color: 'var(--text-primary)'
-                      }}
-                    />
+                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                      <CustomDatePicker
+                        value={bfDate}
+                        onChange={(val) => {
+                          if (val) {
+                            setBfDate(val);
+                            try {
+                              setViewStartDate(new Date(val));
+                            } catch (err) {}
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
 
-                  {bookingMode === 'standard' ? (
-                    <>
-                      {/* Available Slots Title */}
-                      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
-                        Available Slots
-                      </div>
+                  {/* Quick Time Presets */}
+                  <div style={{ marginBottom: 'var(--space-5)' }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                      Quick Select
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBfStartTime('00:00');
+                          setBfEndTime('23:59');
+                        }}
+                        style={{
+                          flex: 1, padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--surface-glass-border)', background: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                      >
+                        📅 Full Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBfStartTime('06:00');
+                          setBfEndTime('14:00');
+                        }}
+                        style={{
+                          flex: 1, padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--surface-glass-border)', background: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                      >
+                        ⏱️ Half Day (Morning)
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Available Slots Title */}
+                  <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+                    Available Slots
+                  </div>
 
-                      {/* Slots Grid */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-3)' }}>
-                        {TIME_SLOTS.map((slot, idx) => {
+                  {/* Slots Grid */}
+                  {bookingType === 'standard' ? (
+                    <>
+                      <div id="mobile_slot_four_column_grid" className="mobile-slot-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-3)' }}>
+                        {TIME_SLOTS.map((slot) => {
                           const isBooked = isSlotBooked(bfDate, slot.start, slot.end);
                           const isSelected = bfStartTime && bfEndTime && slot.start >= bfStartTime && slot.end <= bfEndTime;
-                          
-                          let bg = '#f1f3f5';
-                          let text = '#00a65a';
-                          let cursor = 'pointer';
-                          
-                          if (isBooked) {
-                            bg = '#e60000';
-                            text = 'white';
-                            cursor = 'not-allowed';
-                          } else if (isSelected) {
-                            bg = '#00a65a';
-                            text = 'white';
-                          }
-                          
                           return (
                             <button
-                              key={idx}
+                              key={slot.start}
+                              type="button"
+                              className={`slot-pill ${isBooked ? 'booked' : isSelected ? 'selected' : 'available'}`}
                               onClick={() => handleSlotClick(slot)}
                               disabled={isBooked}
-                              style={{
-                                height: '44px',
-                                borderRadius: '8px',
-                                background: bg,
-                                color: text,
-                                border: 'none',
-                                cursor: cursor,
-                                fontSize: 'var(--text-sm)',
-                                fontWeight: 500,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.15s ease',
-                                boxShadow: isSelected ? '0 4px 12px rgba(0, 166, 90, 0.2)' : 'none',
-                              }}
                             >
-                              {slot.label}
+                              {isBooked ? 'Booked' : slot.label}
                             </button>
                           );
                         })}
                       </div>
                     </>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                      {/* Presets Header */}
-                      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Tournament / Bulk Presets
-                      </div>
-                      
-                      {/* Preset Selectors */}
-                      <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
-                        {[
-                          { id: 'full_day', label: 'Full Day Event', time: '6:00 AM - 12:00 AM', desc: '18 hours reservation' },
-                          { id: 'evening_6h', label: 'Evening Session', time: '6:00 PM - 12:00 AM', desc: '6 hours reservation' },
-                          { id: 'morning_6h', label: 'Morning Session', time: '6:00 AM - 12:00 PM', desc: '6 hours reservation' },
-                          { id: 'custom', label: 'Custom Bulk Hours', time: 'Select times manually', desc: 'Any duration slot' }
-                        ].map(preset => {
-                          const isSel = bulkPreset === preset.id;
-                          return (
-                            <div
-                              key={preset.id}
-                              onClick={() => {
-                                setBulkPreset(preset.id as any);
-                                if (preset.id === 'full_day') setBfBaseAmount('25000');
-                                else if (preset.id === 'evening_6h') setBfBaseAmount('9000');
-                                else if (preset.id === 'morning_6h') setBfBaseAmount('7500');
-                              }}
-                              style={{
-                                border: isSel ? '1.5px solid #00a65a' : '1px solid var(--surface-glass-border)',
-                                borderRadius: '12px',
-                                padding: 'var(--space-3) var(--space-4)',
-                                cursor: 'pointer',
-                                background: isSel ? 'color-mix(in srgb, #00a65a 6%, transparent)' : 'white',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              <div style={{ fontWeight: 600, color: isSel ? '#00a65a' : 'var(--text-primary)', fontSize: 'var(--text-sm)' }}>
-                                {preset.label}
-                              </div>
-                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px', fontWeight: 500 }}>
-                                {preset.time}
-                              </div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                {preset.desc}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Custom Time inputs */}
-                      {bulkPreset === 'custom' && (
-                        <div className="form-grid-2" style={{ gap: 'var(--space-3)', background: 'var(--bg-tertiary)', padding: 'var(--space-4)', borderRadius: '12px' }}>
-                          <div className="form-group">
-                            <label className="form-label required">Start Time</label>
-                            <input 
-                              type="time" 
-                              className="form-input" 
-                              value={bulkStartTime} 
-                              onChange={e => setBulkStartTime(e.target.value)} 
-                              style={{ height: '38px', fontSize: 'var(--text-sm)' }}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label required">End Time</label>
-                            <input 
-                              type="time" 
-                              className="form-input" 
-                              value={bulkEndTime} 
-                              onChange={e => setBulkEndTime(e.target.value)} 
-                              style={{ height: '38px', fontSize: 'var(--text-sm)' }}
-                            />
-                          </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        {/* Day 1 - Full Day Locked */}
+                        <div className="full-day-bar">
+                          <span className="full-day-icon">🔒</span>
+                          Full Day — 24 Hours (00:00 – 23:59)
                         </div>
-                      )}
-
-                      {/* Real-time availability indicator / conflict card */}
-                      {bfStartTime && bfEndTime && (
-                        <div style={{ marginTop: 'var(--space-2)' }}>
-                          {hasConflict ? (
-                            <div style={{ background: 'var(--status-danger-soft)', border: '1px solid var(--status-danger-border)', borderRadius: '12px', padding: 'var(--space-4)', color: 'var(--status-danger)' }}>
-                              <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                <span>⚠️ Slot Conflict Detected</span>
+                        
+                        {/* Day 2 - Extra Hours Expander */}
+                        <div className="extra-hours-expander">
+                          <button 
+                            type="button" 
+                            className="extra-hours-toggle"
+                            onClick={() => setBulkExtraEnabled(!bulkExtraEnabled)}
+                          >
+                            {bulkExtraEnabled ? '▼ Remove Extra Hours (Day 2)' : '▶ + Add Extra Hours (Day 2)'}
+                          </button>
+                          
+                          {bulkExtraEnabled && (
+                            <div className="extra-hours-content">
+                              <div className="form-group">
+                                <label className="form-label required">Day 2 Date</label>
+                                <input 
+                                  type="date" 
+                                  className="form-input" 
+                                  value={bulkExtraDate} 
+                                  onChange={(e) => setBulkExtraDate(e.target.value)}
+                                  min={bfDate ? new Date(new Date(bfDate).getTime() + 86400000).toISOString().split('T')[0] : today()}
+                                />
                               </div>
-                              <div style={{ fontSize: 'var(--text-xs)', marginTop: '4px', opacity: 0.9 }}>
-                                This date already has bookings in the selected time range:
+                              <div className="form-group">
+                                <label className="form-label required">Time Block</label>
+                                <div className="pill-toggle-group">
+                                  <button 
+                                    type="button"
+                                    className={`pill-toggle ${bulkExtraMode === 'am' ? 'active' : ''}`}
+                                    onClick={() => setBulkExtraMode('am')}
+                                  >
+                                    🌅 Morning (06:00 – 14:00)
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    className={`pill-toggle ${bulkExtraMode === 'pm' ? 'active' : ''}`}
+                                    onClick={() => setBulkExtraMode('pm')}
+                                  >
+                                    🌇 Evening (14:00 – 22:00)
+                                  </button>
+                                </div>
                               </div>
-                              <ul style={{ paddingLeft: 'var(--space-4)', marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', display: 'grid', gap: '4px' }}>
-                                {overlaps.map((o) => (
-                                  <li key={o._id}>
-                                    <strong>{o.customerName || 'Anonymous'}</strong> ({fmtTime(o.startTime)} – {fmtTime(o.endTime)})
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : (
-                            <div style={{ background: 'var(--status-success-soft)', border: '1px solid var(--status-success-border)', borderRadius: '12px', padding: 'var(--space-4)', color: 'var(--status-success)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontWeight: 600 }}>
-                              <span>✅ Time slot is available for bulk reservation!</span>
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Side: Form Details */}
-                <div className="booking-modal-form-side" style={{ borderLeft: '1px solid var(--surface-glass-border)', paddingLeft: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                  
-                  {/* Selected Time slot info */}
-                  <div style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)' }}>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Selected Time</div>
-                    <div style={{ fontWeight: 600, marginTop: '2px' }}>
-                      {bfStartTime && bfEndTime ? (
-                        <>
-                          {fmtTime(bfStartTime)} – {fmtTime(bfEndTime)}
-                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-muted)', marginLeft: 'var(--space-2)' }}>
-                            ({calculateDuration(bfStartTime, bfEndTime)})
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 400 }}>No slot selected</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Customer Name</label>
-                    <input className="form-input" placeholder="Leave blank if unknown" value={bfCustomer} onChange={e => setBfCustomer(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Contact Number</label>
-                    <input className="form-input" type="tel" placeholder="Phone number" value={bfContact} onChange={e => setBfContact(e.target.value)} />
-                  </div>
-                  
-                  {bookingMode === 'standard' ? (
-                    <div className="form-group">
-                      <label className="form-label required">Expected Amount (₹)</label>
-                      <input className="form-input" type="number" placeholder="e.g. 4400" value={bfAmount} onChange={e => setBfAmount(e.target.value)} min="1" />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="form-group">
-                        <label className="form-label required">Base Price (₹)</label>
-                        <input className="form-input" type="number" placeholder="Base turf rate" value={bfBaseAmount} onChange={e => setBfBaseAmount(e.target.value)} min="1" />
                       </div>
-                      
-                      <div className="form-group">
-                        <label className="form-label">Offer / Discount</label>
-                        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '3px', marginBottom: 'var(--space-2)' }}>
-                          {(['none', 'percent', 'flat'] as const).map((type) => (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => {
-                                setBfDiscountType(type);
-                                setBfDiscountValue('');
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: 'var(--space-1) 0',
-                                border: 'none',
-                                borderRadius: 'var(--radius-sm)',
-                                background: bfDiscountType === type ? 'white' : 'transparent',
-                                color: bfDiscountType === type ? 'var(--text-primary)' : 'var(--text-muted)',
-                                fontWeight: bfDiscountType === type ? 600 : 500,
-                                fontSize: '11px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              {type === 'none' ? 'None' : type === 'percent' ? 'Percent (%)' : 'Flat (₹)'}
-                            </button>
-                          ))}
-                        </div>
-                        {bfDiscountType !== 'none' && (
-                          <input 
-                            className="form-input" 
-                            type="number" 
-                            placeholder={bfDiscountType === 'percent' ? "Discount % (e.g. 10)" : "Discount Value ₹ (e.g. 500)"} 
-                            value={bfDiscountValue} 
-                            onChange={e => setBfDiscountValue(e.target.value)} 
-                            min="0"
-                            style={{ height: '38px', marginTop: 'var(--space-1)' }}
-                          />
+                    )}
+                  </div>
+
+                  {/* MODULE 5: Live Pricing Panel */}
+                  <div className="pricing-panel">
+                    <div className="pricing-panel-header">
+                      <div className="pricing-panel-title">Pricing Breakdown</div>
+                    </div>
+                    
+                    {(!bfPriceType || !bfStartTime || !bfEndTime || !bfAmount) ? (
+                      <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 'var(--text-sm)', textAlign: 'center', padding: 'var(--space-2) 0' }}>
+                        Select a rate type and time slots to see pricing.
+                      </div>
+                    ) : (
+                      <div className="pricing-table">
+                        {/* Day 1 Items */}
+                        {(bookingType === 'bulk' && bulkExtraEnabled) && (
+                          <div className="pricing-day-label">Day 1 ({fmtDate(bfDate)})</div>
                         )}
-                      </div>
-
-                      {/* Display price calculation breakdown */}
-                      <div style={{ padding: 'var(--space-2) var(--space-1)', fontSize: 'var(--text-xs)', borderTop: '1px dashed var(--surface-glass-border)', marginTop: 'var(--space-1)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                          <span>Base Price:</span>
-                          <span>₹{Number(bfBaseAmount) || 0}</span>
-                        </div>
-                        {bfDiscountType !== 'none' && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-danger)', marginTop: '2px' }}>
-                            <span>Discount ({bfDiscountType === 'percent' ? `${bfDiscountValue || 0}%` : 'Flat'}):</span>
-                            <span>
-                              -₹{bfDiscountType === 'percent' 
-                                ? Math.round((Number(bfBaseAmount) || 0) * (Number(bfDiscountValue) || 0) / 100)
-                                : (Number(bfDiscountValue) || 0)
-                              }
-                            </span>
+                        {detectedRule?.appliedRules?.map((rule, idx) => (
+                          <div key={idx} className="pricing-row">
+                            <div className="pricing-row-slot">
+                              {fmtTime(rule.start)} – {fmtTime(rule.end)}
+                            </div>
+                            <div className="pricing-row-rate">
+                              {rule.rate ? `${fmt(rule.rate)}/hr` : '—'}
+                            </div>
+                            <div className="pricing-row-subtotal">
+                              {fmt(getPricingLineAmount(rule))}
+                            </div>
                           </div>
+                        ))}
+
+                        {/* Day 2 Items (if Bulk Extra) */}
+                        {(bookingType === 'bulk' && bulkExtraEnabled && bulkExtraQuote) && (
+                          <>
+                            <div className="pricing-day-label" style={{ marginTop: 'var(--space-4)' }}>
+                              Day 2 ({bulkExtraDate ? fmtDate(bulkExtraDate) : 'Select Date'})
+                            </div>
+                            {bulkExtraQuote.appliedRules?.map((rule, idx) => (
+                              <div key={`d2-${idx}`} className="pricing-row">
+                                <div className="pricing-row-slot">
+                                  {fmtTime(rule.start)} – {fmtTime(rule.end)}
+                                </div>
+                                <div className="pricing-row-rate">
+                                  {rule.rate ? `${fmt(rule.rate)}/hr` : '—'}
+                                </div>
+                                <div className="pricing-row-subtotal">
+                                  {fmt(getPricingLineAmount(rule))}
+                                </div>
+                              </div>
+                            ))}
+                          </>
                         )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-success)', fontWeight: 700, fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-1)' }}>
-                          <span>Final Expected:</span>
-                          <span>₹{bfAmount || 0}</span>
+                        
+                        {/* Grand Total Row */}
+                        <div className="pricing-total-row">
+                          <div className="pricing-total-hours">
+                            {bookingType === 'bulk' 
+                              ? `Total: ${bulkExtraEnabled ? '32 hours' : '24 hours'}`
+                              : `Total: ${calculateDuration(bfStartTime, bfEndTime)}`}
+                          </div>
+                          <div className="pricing-grand-total">
+                            {fmt(Number(bfAmount) + (bulkExtraEnabled ? Number(bulkExtraAmount) : 0))}
+                          </div>
                         </div>
                       </div>
-                    </>
+                    )}
+                  </div>
+
+                  {/* MODULE 6: Customer Details */}
+                  <div className="booking-section">
+                    <div className="booking-section-label">5. Customer Details</div>
+                    <div className="form-grid-2">
+                      <div className="form-group">
+                        <label className="form-label">Customer Name</label>
+                        <input className="form-input" placeholder="Leave blank if unknown" value={bfCustomer} onChange={e => setBfCustomer(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Contact Number</label>
+                        <input className="form-input" type="tel" placeholder="Phone number" value={bfContact} onChange={e => setBfContact(e.target.value)} />
+                      </div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label">Notes</label>
+                        <input className="form-input" placeholder="Any additional information..." value={bfNotes} onChange={e => setBfNotes(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+                /* -------------------------------------------------------------
+                   STEP 2: SUMMARY / REVIEW
+                   ------------------------------------------------------------- */
+                <div className="summary-card">
+                  <div style={{ textAlign: 'center', marginBottom: 'var(--space-2)' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: 'var(--space-2)' }}>📝</div>
+                    <h3 style={{ fontSize: 'var(--text-xl)', fontWeight: 800 }}>Review Booking</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>Please verify the details below before saving.</p>
+                  </div>
+
+                  <div className="summary-customer-info">
+                    <div className="summary-customer-field">
+                      <span className="label">Customer</span>
+                      <span className="value">{bfCustomer || 'Walk-in / Anonymous'}</span>
+                    </div>
+                    <div className="summary-customer-field">
+                      <span className="label">Contact</span>
+                      <span className="value">{bfContact || '—'}</span>
+                    </div>
+                    <div className="summary-customer-field">
+                      <span className="label">Rate Type</span>
+                      <span className="value">{bfPriceType === 'regular' ? '⭐ Regular Rate' : '🏷️ Normal Rate'}</span>
+                    </div>
+                    <div className="summary-customer-field">
+                      <span className="label">Booking Type</span>
+                      <span className="value">{bookingType === 'bulk' ? '📦 Bulk / Full-Day' : '🎯 Standard'}</span>
+                    </div>
+                  </div>
+
+                  <hr style={{ border: 'none', borderTop: '1px dashed var(--surface-glass-border)' }} />
+
+                  {/* Day 1 Summary */}
+                  <div className="summary-day-block">
+                    <div className="summary-day-title">
+                      📅 {fmtDate(bfDate)}
+                    </div>
+                    <div className="summary-detail-row">
+                      <span className="label">Time</span>
+                      <span className="value">{bookingType === 'bulk' ? 'Full Day (24 hrs)' : `${fmtTime(bfStartTime)} – ${fmtTime(bfEndTime)}`}</span>
+                    </div>
+                    <div className="summary-detail-row">
+                      <span className="label">Subtotal</span>
+                      <span className="value">{fmt(Number(bfAmount))}</span>
+                    </div>
+                  </div>
+
+                  {/* Day 2 Summary (if bulk extra) */}
+                  {(bookingType === 'bulk' && bulkExtraEnabled && bulkExtraDate) && (
+                    <div className="summary-day-block">
+                      <div className="summary-day-title">
+                        📅 {fmtDate(bulkExtraDate)} <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 'normal' }}>(Extra Hours)</span>
+                      </div>
+                      <div className="summary-detail-row">
+                        <span className="label">Time</span>
+                        <span className="value">{bulkExtraMode === 'am' ? '06:00 AM – 02:00 PM (8 hrs)' : '02:00 PM – 10:00 PM (8 hrs)'}</span>
+                      </div>
+                      <div className="summary-detail-row">
+                        <span className="label">Subtotal</span>
+                        <span className="value">{fmt(Number(bulkExtraAmount))}</span>
+                      </div>
+                    </div>
                   )}
 
-                  <div className="form-group">
-                    <label className="form-label">Notes</label>
-                    <textarea className="form-input form-textarea" placeholder="Any additional information..." value={bfNotes} onChange={e => setBfNotes(e.target.value)} rows={3} />
+                  <div className="summary-grand-total">
+                    <span className="label">Grand Total</span>
+                    <span className="value">{fmt(Number(bfAmount) + (bulkExtraEnabled ? Number(bulkExtraAmount) : 0))}</span>
                   </div>
+                  
+                  {bfNotes && (
+                    <div style={{ padding: 'var(--space-3)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                      <strong>Notes:</strong> {bfNotes}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary btn-md" onClick={() => resetBookingForm()}>Cancel</button>
-              <button className={`btn btn-primary btn-md ${bfSaving ? 'btn-loading' : ''}`} onClick={handleCreateBooking} disabled={bfSaving || hasConflict}>
-                ✅ Confirm Booking
-              </button>
+
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--surface-glass-border)', background: 'var(--bg-secondary)', borderRadius: '0 0 var(--radius-xl) var(--radius-xl)' }}>
+              {!showSummary ? (
+                <>
+                  <button className="btn btn-secondary btn-md" onClick={() => resetBookingForm()}>Cancel</button>
+                  <button 
+                    className="btn btn-primary btn-md" 
+                    onClick={() => {
+                      if (!bfPriceType) return setBfError('Please select a Rate Type');
+                      if (bookingType === 'standard' && (!bfStartTime || !bfEndTime)) return setBfError('Please select time slots');
+                      if (bookingType === 'bulk' && bulkExtraEnabled && !bulkExtraDate) return setBfError('Please select Day 2 date for extra hours');
+                      setBfError('');
+                      setShowSummary(true);
+                    }}
+                    disabled={(bookingType === 'standard' && hasConflict) || !bfPriceType || (bookingType === 'standard' && (!bfStartTime || !bfEndTime))}
+                  >
+                    Review & Continue →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-secondary btn-md" onClick={() => setShowSummary(false)}>← Back to Edit</button>
+                  <button
+                    className={`btn btn-primary btn-md ${bfSaving ? 'btn-loading' : ''}`}
+                    onClick={handleCreateBooking}
+                    disabled={bfSaving}
+                  >
+                    ✓ Confirm & Save Booking
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1429,8 +2039,11 @@ export default function BookingsPage() {
                       <input className="form-input" value={efContact} onChange={e => setEfContact(e.target.value)} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label required">Expected Amount (₹)</label>
-                      <input className="form-input" type="number" value={efAmount} onChange={e => setEfAmount(e.target.value)} min="1" />
+                      <label className="form-label">Expected Amount (₹)</label>
+                      <div style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {fmt(Number(efAmount) || 0)}
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400, marginTop: '2px' }}>Price calculated from Settings</div>
+                      </div>
                     </div>
                   </div>
                   <div className="form-group">
@@ -1450,11 +2063,14 @@ export default function BookingsPage() {
                   {/* Booking Info Grid */}
                   <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
                     {[
-                      { label: 'Date', value: fmtDate(viewBooking.bookingDate) },
+                      { label: 'Date', value: Array.isArray(viewBooking.bookingDate) ? formatBookingDates(viewBooking.bookingDate) : fmtDate(viewBooking.bookingDate) },
                       { label: 'Time Slot', value: `${fmtTime(viewBooking.startTime)} – ${fmtTime(viewBooking.endTime)}` },
                       { label: 'Customer', value: viewBooking.customerName || 'Anonymous' },
                       { label: 'Contact', value: viewBooking.contactNumber || '—' },
-                      { label: 'Expected Amount', value: fmt(viewBooking.expectedAmount) },
+                      { label: 'Rate Type', value: viewBooking.priceType === 'regular' ? 'Regular Rate' : 'Normal Rate' },
+                      { label: 'Original Amount', value: fmt(viewBooking.expectedAmount) },
+                      { label: 'Discount', value: viewBooking.discountAmount > 0 ? `${fmt(viewBooking.discountAmount)} (${viewBooking.discountPercentage}%)` : '—' },
+                      { label: 'Final Payable', value: fmt(viewBooking.expectedAmount - (viewBooking.discountAmount || 0)) },
                       { label: 'Total Paid', value: fmt(viewBooking.totalPaid) },
                     ].map((item, i) => (
                       <div key={i}>
@@ -1464,15 +2080,23 @@ export default function BookingsPage() {
                     ))}
                   </div>
 
-                  {viewBooking.totalPaid > viewBooking.expectedAmount && (
+                  {viewBooking.pricingSnapshot?.appliedRules && viewBooking.pricingSnapshot.appliedRules.length > 0 && (
+                    <PricingBreakdown
+                      pricing={viewBooking.pricingSnapshot}
+                      totalAmount={viewBooking.expectedAmount}
+                      title="Invoice Price Breakdown"
+                    />
+                  )}
+
+                  {viewBooking.totalPaid > viewBooking.expectedAmount - (viewBooking.discountAmount || 0) && (
                     <div style={{ background: 'var(--status-info-soft)', border: '1px solid var(--status-info-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--status-info)' }}>
-                      💡 Overpayment of {fmt(viewBooking.totalPaid - viewBooking.expectedAmount)} recorded
+                      💡 Overpayment of {fmt(viewBooking.totalPaid - (viewBooking.expectedAmount - (viewBooking.discountAmount || 0)))} recorded
                     </div>
                   )}
 
-                  {viewBooking.expectedAmount > viewBooking.totalPaid && viewBooking.totalPaid > 0 && (
+                  {viewBooking.expectedAmount - (viewBooking.discountAmount || 0) > viewBooking.totalPaid && viewBooking.totalPaid > 0 && (
                     <div style={{ background: 'var(--status-warning-soft)', border: '1px solid var(--status-warning-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--status-warning)' }}>
-                      ⏳ Remaining balance: {fmt(viewBooking.expectedAmount - viewBooking.totalPaid)}
+                      ⏳ Remaining balance: {fmt((viewBooking.expectedAmount - (viewBooking.discountAmount || 0)) - viewBooking.totalPaid)}
                     </div>
                   )}
 
@@ -1503,19 +2127,45 @@ export default function BookingsPage() {
                     ) : (
                       <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
                         {viewPayments.map(p => (
-                          <div key={p._id} style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                            <div>
-                              <div style={{ fontWeight: 600, color: 'var(--status-success)' }}>{fmt(p.amountPaid)}</div>
-                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                                {fmtDate(p.paymentDate)} · {PAYMENT_MODE_LABELS[p.paymentMode]}
-                                {p.cashReceivedBy && ` · ${CASH_HOLDER_LABELS[p.cashReceivedBy] || p.cashReceivedBy}`}
+                          <div key={p._id} style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: p.splits && p.splits.length > 0 ? '1px dashed var(--surface-glass-border)' : 'none', paddingBottom: p.splits && p.splits.length > 0 ? 'var(--space-2)' : '0' }}>
+                              <div>
+                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Total Paid</div>
+                                <div style={{ fontWeight: 700, color: 'var(--status-success)', fontSize: 'var(--text-md)' }}>{fmt(p.amountPaid)}</div>
+                              </div>
+                              <div style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 10, color: 'var(--text-tertiary)', textAlign: 'right' }}>
+                                <div>{fmtDate(p.paymentDate)}</div>
+                                <div>by {p.createdBy?.name || '—'}</div>
                               </div>
                             </div>
-                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textAlign: 'right' }}>
-                              {p.referenceNumber && <div>Ref: {p.referenceNumber}</div>}
-                              {p.referenceNote && <div>{p.referenceNote}</div>}
-                              <div>by {p.createdBy?.name || '—'}</div>
-                            </div>
+                            {p.splits && p.splits.length > 0 ? (
+                              <div style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-1)' }}>
+                                {p.splits.map((s: any, idx: number) => (
+                                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', borderBottom: idx < p.splits!.length - 1 ? '1px solid var(--surface-glass-border)' : 'none', paddingBottom: idx < p.splits!.length - 1 ? '4px' : '0' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>
+                                      {idx + 1}. {PAYMENT_MODE_LABELS[s.paymentMode] || s.paymentMode}
+                                      {s.cashReceivedBy && ` (Rec: ${CASH_HOLDER_LABELS[s.cashReceivedBy] || s.cashReceivedBy})`}
+                                    </span>
+                                    <span style={{ fontWeight: 600, textAlign: 'right' }}>
+                                      {fmt(s.amount)}
+                                      {s.referenceNumber && ` (Ref: ${s.referenceNumber})`}
+                                      {s.referenceNote && ` [Note: ${s.referenceNote}]`}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 'var(--space-1)' }}>
+                                <span>
+                                  {PAYMENT_MODE_LABELS[p.paymentMode] || p.paymentMode}
+                                  {p.cashReceivedBy && ` (Rec: ${CASH_HOLDER_LABELS[p.cashReceivedBy] || p.cashReceivedBy})`}
+                                </span>
+                                <span>
+                                  {p.referenceNumber && `Ref: ${p.referenceNumber}`}
+                                  {p.referenceNote && ` — ${p.referenceNote}`}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1566,11 +2216,11 @@ export default function BookingsPage() {
               <h2 className="modal-title">💰 Add Payment</h2>
               <button className="modal-close" onClick={() => setShowPaymentForm(false)}>×</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Booking Context */}
               <div className="grid-4" style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-5)', gap: 'var(--space-3)' }}>
                 {[
-                  { label: 'Date', value: fmtDate(paymentBooking.bookingDate) },
+                  { label: 'Date', value: Array.isArray(paymentBooking.bookingDate) ? formatBookingDates(paymentBooking.bookingDate) : fmtDate(paymentBooking.bookingDate) },
                   { label: 'Time', value: `${fmtTime(paymentBooking.startTime)} – ${fmtTime(paymentBooking.endTime)}` },
                   { label: 'Customer', value: paymentBooking.customerName || 'Anonymous' },
                   { label: 'Expected', value: fmt(paymentBooking.expectedAmount) },
@@ -1582,60 +2232,291 @@ export default function BookingsPage() {
                 ))}
               </div>
 
+              {paymentBooking.pricingSnapshot?.appliedRules && paymentBooking.pricingSnapshot.appliedRules.length > 0 && (
+                <div style={{ marginBottom: 'var(--space-5)' }}>
+                  <PricingBreakdown
+                    pricing={paymentBooking.pricingSnapshot}
+                    totalAmount={paymentBooking.expectedAmount}
+                    title="Payment Price Breakdown"
+                  />
+                </div>
+              )}
+
               {pfError && (
                 <div style={{ background: 'var(--status-danger-soft)', border: '1px solid var(--status-danger-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', marginBottom: 'var(--space-4)', color: 'var(--status-danger)', fontSize: 'var(--text-sm)' }}>
                   ⚠️ {pfError}
                 </div>
               )}
 
-              <div className="form-grid-2" style={{ gap: 'var(--space-4)' }}>
-                <div className="form-group">
-                  <label className="form-label required">Amount Paid (₹)</label>
-                  <input className="form-input" type="number" placeholder="e.g. 4400" value={pfAmount} onChange={e => setPfAmount(e.target.value)} min="1" />
-                  {paymentBooking.totalPaid > 0 && (
-                    <span className="form-helper">Already paid: {fmt(paymentBooking.totalPaid)} / {fmt(paymentBooking.expectedAmount)}</span>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label required">Payment Mode</label>
-                  <div className="select-wrapper">
-                    <select className="form-select" value={pfMode} onChange={e => setPfMode(e.target.value as 'bank_transfer' | 'cash')}>
-                      <option value="bank_transfer">🏦 Bank Transfer</option>
-                      <option value="cash">💵 Cash</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label required">Payment Date</label>
-                  <input type="date" className="form-input" value={pfDate} onChange={e => setPfDate(e.target.value)} />
-                </div>
-
-                {pfMode === 'bank_transfer' && (
-                  <div className="form-group">
-                    <label className="form-label">Reference / UTR Number</label>
-                    <input className="form-input" placeholder="Bank reference" value={pfRefNumber} onChange={e => setPfRefNumber(e.target.value)} />
-                  </div>
-                )}
-
-                {pfMode === 'cash' && (
-                  <>
-                    <div className="form-group">
-                      <label className="form-label required">Cash Received By</label>
-                      <div className="select-wrapper">
-                        <select className="form-select" value={pfCashBy} onChange={e => setPfCashBy(e.target.value)}>
-                          <option value="">— Select —</option>
-                          <option value="turf_staff">Turf Staff</option>
-                          <option value="turf_owner">Turf Owner</option>
-                          <option value="arjo">Arjo</option>
-                        </select>
+              {/* Discounts & Final Payable */}
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--surface-glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
+                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)', color: 'var(--text-secondary)' }}>Discount & Final Payable</div>
+                {pfPreviousSplits.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', fontSize: 'var(--text-sm)', paddingBottom: 'var(--space-3)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-tertiary)' }}>Original Amount:</span>
+                      <div style={{ fontWeight: 600 }}>{fmt(paymentBooking.expectedAmount)}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-tertiary)' }}>Discount Applied:</span>
+                      <div style={{ fontWeight: 600 }}>
+                        {pfDiscountAmount > 0 ? `${fmt(pfDiscountAmount)} (${pfDiscountPercentage}%)` : 'None'}
                       </div>
                     </div>
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                      <label className="form-label">Reference Note</label>
-                      <input className="form-input" placeholder="Any note about this cash transaction" value={pfRefNote} onChange={e => setPfRefNote(e.target.value)} />
+                  </div>
+                ) : (
+                  <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                    <div className="form-group">
+                      <label className="form-label">Discount Amount (₹)</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        placeholder="e.g. 200"
+                        value={pfDiscountAmount || ''}
+                        onChange={(e) => {
+                          const amt = Math.min(paymentBooking.expectedAmount, Math.max(0, Number(e.target.value) || 0));
+                          setPfDiscountAmount(amt);
+                          const pct = paymentBooking.expectedAmount > 0 ? Math.round((amt / paymentBooking.expectedAmount) * 100) : 0;
+                          setPfDiscountPercentage(pct);
+                          
+                          const currentFinalPayable = paymentBooking.expectedAmount - amt;
+                          const totalPreviousPaid = pfPreviousSplits.reduce((sum: number, s: any) => sum + Number(s.amount || 0), 0);
+                          const remaining = Math.max(0, currentFinalPayable - totalPreviousPaid);
+
+                          if (pfSplits.length <= 1) {
+                            if (remaining > 0) {
+                              setPfSplits([{ ...(pfSplits[0] || { paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }), amount: remaining }]);
+                            } else {
+                              setPfSplits([]);
+                            }
+                          }
+                        }}
+                      />
                     </div>
-                  </>
+                    <div className="form-group">
+                      <label className="form-label">Discount Percentage (%)</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        placeholder="e.g. 10"
+                        value={pfDiscountPercentage || ''}
+                        onChange={(e) => {
+                          const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                          setPfDiscountPercentage(pct);
+                          const amt = Math.round(paymentBooking.expectedAmount * (pct / 100));
+                          setPfDiscountAmount(amt);
+                          
+                          const currentFinalPayable = paymentBooking.expectedAmount - amt;
+                          const totalPreviousPaid = pfPreviousSplits.reduce((sum: number, s: any) => sum + Number(s.amount || 0), 0);
+                          const remaining = Math.max(0, currentFinalPayable - totalPreviousPaid);
+
+                          if (pfSplits.length <= 1) {
+                            if (remaining > 0) {
+                              setPfSplits([{ ...(pfSplits[0] || { paymentMode: 'bank_transfer', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }), amount: remaining }]);
+                            } else {
+                              setPfSplits([]);
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                 )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--surface-glass-border)', paddingTop: 'var(--space-3)' }}>
+                  <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Final Payable Amount:</span>
+                  <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--accent-primary)' }}>
+                    {fmt(paymentBooking.expectedAmount - pfDiscountAmount)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Previous Payments */}
+              {pfPreviousSplits.length > 0 && (
+                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--surface-glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)', color: 'var(--text-secondary)' }}>Previous Payments</div>
+                  <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+                    {pfPreviousSplits.map((split, index) => (
+                      <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-sm)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <span style={{ color: 'var(--status-success)', fontWeight: 'bold' }}>✓</span>
+                          <span style={{ fontWeight: 500 }}>
+                            {PAYMENT_MODE_LABELS[split.paymentMode] || split.paymentMode}
+                            {split.cashReceivedBy && ` (Rec: ${CASH_HOLDER_LABELS[split.cashReceivedBy] || split.cashReceivedBy})`}
+                          </span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontWeight: 700 }}>{fmt(split.amount)}</span>
+                          {split.referenceNumber && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Ref: {split.referenceNumber}</div>}
+                          {split.referenceNote && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{split.referenceNote}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const finalPayable = paymentBooking.expectedAmount - pfDiscountAmount;
+                    const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                    const remaining = Math.max(0, finalPayable - totalPreviousPaid);
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--surface-glass-border)', marginTop: 'var(--space-3)', paddingTop: 'var(--space-2)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Paid: {fmt(totalPreviousPaid)}</span>
+                        <span style={{ color: remaining > 0 ? 'var(--status-warning)' : 'var(--text-muted)' }}>Remaining: {fmt(remaining)}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Payment Date */}
+              <div className="form-group" style={{ marginBottom: 'var(--space-5)' }}>
+                <label className="form-label required">Payment Date</label>
+                <CustomDatePicker
+                  value={pfDate}
+                  onChange={(val) => setPfDate(val)}
+                />
+              </div>
+
+              {/* Splits */}
+              <div style={{ marginBottom: 'var(--space-5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                    {pfPreviousSplits.length > 0 ? 'New Payment Splits' : 'Payment Splits'}
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => addSplit(paymentBooking.expectedAmount - pfDiscountAmount)}
+                  >
+                    ➕ Add Split Mode
+                  </button>
+                </div>
+
+                {pfSplits.map((split, index) => (
+                  <div key={index} style={{ border: '1px solid var(--surface-glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', background: 'var(--bg-tertiary)', marginBottom: 'var(--space-3)', position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                      <span style={{ fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Split Mode #{index + 1}</span>
+                      {pfSplits.length > 1 && (
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => removeSplit(index)} style={{ padding: '2px 6px', color: 'var(--status-danger)', fontSize: 'var(--text-xs)' }}>
+                          ✕ Remove
+                        </button>
+                      )}
+                    </div>
+                    <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
+                      <div className="form-group">
+                        <label className="form-label required">Amount (₹)</label>
+                        <input
+                          className="form-input"
+                          type="number"
+                          value={split.amount || ''}
+                          onChange={(e) => updateSplit(index, 'amount', Number(e.target.value))}
+                          placeholder="e.g. 500"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label required">Payment Mode</label>
+                        <CustomSelect
+                          options={[
+                            { value: 'bank_transfer', label: 'Bank Transfer', icon: <span>🏦</span> },
+                            { value: 'upi', label: 'UPI', icon: <span>📱</span> },
+                            { value: 'card', label: 'Card', icon: <span>💳</span> },
+                            { value: 'cash', label: 'Cash', icon: <span>💵</span> }
+                          ]}
+                          value={split.paymentMode}
+                          onChange={(val) => updateSplit(index, 'paymentMode', val)}
+                        />
+                      </div>
+
+                      {split.paymentMode === 'cash' && (
+                        <>
+                          <div className="form-group">
+                            <label className="form-label required">Cash Received By</label>
+                            <CustomSelect
+                              options={[
+                                { value: '', label: '— Select —' },
+                                { value: 'turf_staff', label: 'Turf Staff' },
+                                { value: 'turf_owner', label: 'Turf Owner' },
+                                { value: 'arjo', label: 'Arjo' }
+                              ]}
+                              value={split.cashReceivedBy}
+                              onChange={(val) => updateSplit(index, 'cashReceivedBy', val)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Reference Note</label>
+                            <input
+                              className="form-input"
+                              value={split.referenceNote || ''}
+                              onChange={(e) => updateSplit(index, 'referenceNote', e.target.value)}
+                              placeholder="e.g. Received in envelope"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {split.paymentMode !== 'cash' && (
+                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                          <label className="form-label">Reference / UTR Number</label>
+                          <input
+                            className="form-input"
+                            value={split.referenceNumber || ''}
+                            onChange={(e) => updateSplit(index, 'referenceNumber', e.target.value)}
+                            placeholder={split.paymentMode === 'upi' ? 'UPI Transaction ID / UTR' : split.paymentMode === 'card' ? 'Card Transaction ID' : 'Bank Reference ID'}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {(() => {
+                      const finalPayable = paymentBooking.expectedAmount - pfDiscountAmount;
+                      const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                      const sumUpToThis = totalPreviousPaid + pfSplits.slice(0, index + 1).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                      const remainingAfterThis = Math.max(0, finalPayable - sumUpToThis);
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)', borderTop: '1px dashed var(--surface-glass-border)', paddingTop: 'var(--space-2)' }}>
+                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-tertiary)' }}>
+                            Remaining Balance: {fmt(remainingAfterThis)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ))}
+
+                {/* Validation Status Indicator */}
+                {(() => {
+                  const finalPayable = paymentBooking.expectedAmount - pfDiscountAmount;
+                  const totalPreviousPaid = pfPreviousSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                  const totalNewSplitsAmount = pfSplits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                  const totalPaidAmount = totalPreviousPaid + totalNewSplitsAmount;
+                  
+                  const isExceeded = totalPaidAmount > finalPayable;
+                  const isMatched = totalPaidAmount === finalPayable;
+                  let bg = 'var(--status-warning-soft)';
+                  let border = 'var(--status-warning-border)';
+                  let color = 'var(--status-warning)';
+                  let msg = `ℹ️ Total paid (₹${totalPaidAmount}) is less than Final Payable (₹${finalPayable}). This will be saved as a Partial Payment.`;
+
+                  if (isMatched) {
+                    bg = 'var(--status-success-soft)';
+                    border = 'var(--status-success-border)';
+                    color = 'var(--status-success)';
+                    msg = '✓ Total paid matches Final Payable perfectly';
+                  } else if (isExceeded) {
+                    bg = 'var(--status-danger-soft)';
+                    border = 'var(--status-danger-border)';
+                    color = 'var(--status-danger)';
+                    msg = `✕ Total paid (₹${totalPaidAmount}) exceeds Final Payable (₹${finalPayable})!`;
+                  }
+
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: bg, border: `1px solid ${border}`, color: color, fontSize: 'var(--text-sm)', fontWeight: 600 }}>
+                      <span>
+                        {msg}
+                      </span>
+                      <span>
+                        ₹{totalPaidAmount} / ₹{finalPayable}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             <div className="modal-footer">

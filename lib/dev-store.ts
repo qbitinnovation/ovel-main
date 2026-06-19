@@ -30,6 +30,7 @@ export interface DevUser {
 interface DevStore {
   users: DevUser[];
   positions: DevPosition[];
+  settings: DevSetting[];
   inventoryItems: DevInventoryItem[];
   inventoryTransactions: DevInventoryTransaction[];
   turfInventoryItems: DevTurfInventoryItem[];
@@ -39,6 +40,17 @@ interface DevStore {
   momRecords: DevMomRecord[];
   bookings: DevBooking[];
   payments: DevPayment[];
+}
+
+export interface DevSetting {
+  _id: string;
+  key: string;
+  value: unknown;
+  label: string;
+  category: string;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DevInventoryItem {
@@ -158,27 +170,41 @@ export interface DevBooking {
   customerName: string;
   contactNumber: string;
   expectedAmount: number;
+  priceType?: 'normal' | 'regular';
+  pricingSnapshot?: unknown;
   notes: string;
   bookingStatus: 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'partial' | 'paid';
   totalPaid: number;
+  discountAmount?: number;
+  discountPercentage?: number;
   cancelReason: string;
   cancelledAt: string | null;
   cancelledBy: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  bulkId?: string | null;
 }
 
 export interface DevPayment {
   _id: string;
   bookingId: string;
   amountPaid: number;
-  paymentMode: 'bank_transfer' | 'cash';
+  paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash' | 'split';
   paymentDate: string;
   referenceNumber: string;
   cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
   referenceNote: string;
+  discountAmount?: number;
+  discountPercentage?: number;
+  splits?: {
+    amount: number;
+    paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash';
+    referenceNumber: string;
+    cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
+    referenceNote: string;
+  }[];
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +226,7 @@ export function getDevStore() {
     global.omsDevStore = {
       users: demoUsers,
       positions: [],
+      settings: [],
       inventoryItems: [],
       inventoryTransactions: [],
       turfInventoryItems: [],
@@ -213,6 +240,7 @@ export function getDevStore() {
   }
 
   global.omsDevStore.inventoryItems ||= [];
+  global.omsDevStore.settings ||= [];
   global.omsDevStore.inventoryTransactions ||= [];
   global.omsDevStore.turfInventoryItems ||= [];
   global.omsDevStore.maintenanceTasks ||= [];

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { X, Check, Search, Users, Pencil, Key, Pause, Play, Inbox, Upload, CheckCircle, AlertTriangle, ChevronUp, ChevronDown, Briefcase, Globe, Clock, User as UserIcon } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface UserPosition {
   _id: string;
@@ -250,28 +251,38 @@ export default function UsersPage() {
           <span className="search-icon"><Search size={16} /></span>
           <input type="text" className="form-input search-input" placeholder="Search by name, email, or phone..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div className="select-wrapper" style={{ flex: '0 0 auto' }}>
-          <select className="form-select" value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ minWidth: '140px' }}>
-            <option value="">All Types</option>
-            <option value="management">Management</option>
-            <option value="staff">Staff</option>
-          </select>
+        <div style={{ width: '140px', flex: '0 0 auto' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Types' },
+              { value: 'management', label: 'Management' },
+              { value: 'staff', label: 'Staff' }
+            ]}
+            value={filterType}
+            onChange={(val) => setFilterType(val)}
+          />
         </div>
-        <div className="select-wrapper" style={{ flex: '0 0 auto' }}>
-          <select className="form-select" value={filterPortal} onChange={(e) => setFilterPortal(e.target.value)} style={{ minWidth: '160px' }}>
-            <option value="">All Portals</option>
-            {portalOptions.map((portal) => (
-              <option key={portal.value} value={portal.value}>{portal.label}</option>
-            ))}
-          </select>
+        <div style={{ width: '160px', flex: '0 0 auto' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Portals' },
+              ...portalOptions.map((portal) => ({ value: portal.value, label: portal.label }))
+            ]}
+            value={filterPortal}
+            onChange={(val) => setFilterPortal(val)}
+          />
         </div>
-        <div className="select-wrapper" style={{ flex: '0 0 auto' }}>
-          <select className="form-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ minWidth: '130px' }}>
-            <option value="">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="archived">Archived</option>
-          </select>
+        <div style={{ width: '130px', flex: '0 0 auto' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Status' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+              { value: 'archived', label: 'Archived' }
+            ]}
+            value={filterStatus}
+            onChange={(val) => setFilterStatus(val)}
+          />
         </div>
       </div>
 
@@ -458,12 +469,12 @@ export default function UsersPage() {
                     <>
                       <div className="form-group">
                         <label className="form-label required">Portal Type</label>
-                        <div className="select-wrapper">
-                          <select className="form-select" value={form.portalType} onChange={(e) => setForm({ ...form, portalType: e.target.value, positionName: e.target.value === 'committee' ? form.positionName : '' })}>
-                            {portalOptions.map((portal) => (
-                              <option key={portal.value} value={portal.value}>{portal.label}</option>
-                            ))}
-                          </select>
+                        <div style={{ width: '100%' }}>
+                          <CustomSelect
+                            options={portalOptions.map(p => ({ value: p.value, label: p.label }))}
+                            value={form.portalType}
+                            onChange={(val) => setForm({ ...form, portalType: val, positionName: val === 'committee' ? form.positionName : '' })}
+                          />
                         </div>
                       </div>
                       {form.portalType === 'committee' && (
@@ -481,12 +492,12 @@ export default function UsersPage() {
                     <>
                       <div className="form-group">
                         <label className="form-label">Portal Type</label>
-                        <div className="select-wrapper">
-                          <select className="form-select" value={form.portalType} onChange={(e) => setForm({ ...form, portalType: e.target.value, positionName: e.target.value === 'committee' ? form.positionName : '' })}>
-                            {portalOptions.map((portal) => (
-                              <option key={portal.value} value={portal.value}>{portal.label}</option>
-                            ))}
-                          </select>
+                        <div style={{ width: '100%' }}>
+                          <CustomSelect
+                            options={portalOptions.map(p => ({ value: p.value, label: p.label }))}
+                            value={form.portalType}
+                            onChange={(val) => setForm({ ...form, portalType: val, positionName: val === 'committee' ? form.positionName : '' })}
+                          />
                         </div>
                       </div>
                       {form.portalType === 'committee' && (

@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
+import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 
 interface Task { _id: string; title: string; description: string; location: string; priority: string; dueDate: string; assigneeId: { _id: string; name: string } | null; creatorId: { _id: string; name: string } | null; status: string; resolutionNote: string; createdAt: string; }
 interface User { _id: string; name: string; }
@@ -57,8 +59,32 @@ export default function MaintenancePage() {
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
-        <div className="select-wrapper"><select className="form-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ minWidth: '140px' }}><option value="">All Status</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="closed">Closed</option></select></div>
-        <div className="select-wrapper"><select className="form-select" value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} style={{ minWidth: '140px' }}><option value="">All Priority</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+        <div style={{ width: '140px' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Status' },
+              { value: 'open', label: 'Open' },
+              { value: 'in_progress', label: 'In Progress' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'closed', label: 'Closed' }
+            ]}
+            value={filterStatus}
+            onChange={(val) => setFilterStatus(val)}
+          />
+        </div>
+        <div style={{ width: '140px' }}>
+          <CustomSelect
+            options={[
+              { value: '', label: 'All Priority' },
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'urgent', label: 'Urgent' }
+            ]}
+            value={filterPriority}
+            onChange={(val) => setFilterPriority(val)}
+          />
+        </div>
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : tasks.length === 0 ? (
@@ -102,9 +128,38 @@ export default function MaintenancePage() {
               <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label required">Title</label><input className="form-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Issue title" autoFocus /></div>
               <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label">Description</label><textarea className="form-input form-textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} /></div>
               <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="On premises" /></div>
-              <div className="form-group"><label className="form-label required">Priority</label><div className="select-wrapper"><select className="form-select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div></div>
-              <div className="form-group"><label className="form-label required">Due Date</label><input type="date" className="form-input" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label required">Assign To</label><div className="select-wrapper"><select className="form-select" value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}><option value="">Select user...</option>{users.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}</select></div></div>
+              <div className="form-group">
+                <label className="form-label required">Priority</label>
+                <div style={{ width: '100%' }}>
+                  <CustomSelect
+                    options={[
+                      { value: 'low', label: 'Low' },
+                      { value: 'medium', label: 'Medium' },
+                      { value: 'high', label: 'High' },
+                      { value: 'urgent', label: 'Urgent' }
+                    ]}
+                    value={form.priority}
+                    onChange={(val) => setForm({ ...form, priority: val })}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Due Date</label>
+                <CustomDatePicker value={form.dueDate} onChange={(val) => setForm({ ...form, dueDate: val })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Assign To</label>
+                <div style={{ width: '100%' }}>
+                  <CustomSelect
+                    options={[
+                      { value: '', label: 'Select user...' },
+                      ...users.map((u) => ({ value: u._id, label: u.name }))
+                    ]}
+                    value={form.assigneeId}
+                    onChange={(val) => setForm({ ...form, assigneeId: val })}
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary btn-md" onClick={() => setShowModal(false)}>Cancel</button><button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleCreate} disabled={saving}>Create Task</button></div>
