@@ -1,10 +1,18 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
+export interface IBookingSlot {
+  bookingDate: Date;
+  startTime: string;
+  endTime: string;
+}
+
 export interface IBooking extends Document {
   _id: Types.ObjectId;
-  bookingDate: Date;
-  startTime: string; // HH:mm format e.g. "06:00"
-  endTime: string;   // HH:mm format e.g. "08:00"
+  bookingType: 'standard' | 'bulk';
+  bookingDate?: Date; // Optional for bulk bookings, or acts as the primary date
+  startTime?: string;
+  endTime?: string;
+  slots: IBookingSlot[]; // Array of slots for bulk bookings
   customerName: string;
   contactNumber: string;
   expectedAmount: number;
@@ -25,11 +33,22 @@ export interface IBooking extends Document {
   discountPercentage: number;
 }
 
-const BookingSchema = new Schema<IBooking>(
+const BookingSlotSchema = new Schema<IBookingSlot>(
   {
     bookingDate: { type: Date, required: true },
-    startTime: { type: String, required: true }, // "06:00"
-    endTime: { type: String, required: true },   // "08:00"
+    startTime: { type: String, required: true },
+    endTime: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const BookingSchema = new Schema<IBooking>(
+  {
+    bookingType: { type: String, enum: ['standard', 'bulk'], default: 'standard' },
+    bookingDate: { type: Date }, // No longer strictly required if it's a bulk booking
+    startTime: { type: String },
+    endTime: { type: String },
+    slots: { type: [BookingSlotSchema], default: [] },
     customerName: { type: String, default: '', trim: true },
     contactNumber: { type: String, default: '', trim: true },
     expectedAmount: { type: Number, required: true, min: 1 },
@@ -63,6 +82,7 @@ const BookingSchema = new Schema<IBooking>(
 // Indexes
 BookingSchema.index({ bookingDate: -1 });
 BookingSchema.index({ bookingDate: 1, startTime: 1, endTime: 1 });
+BookingSchema.index({ 'slots.bookingDate': 1, 'slots.startTime': 1, 'slots.endTime': 1 });
 BookingSchema.index({ paymentStatus: 1 });
 BookingSchema.index({ bookingStatus: 1 });
 BookingSchema.index({ createdBy: 1 });

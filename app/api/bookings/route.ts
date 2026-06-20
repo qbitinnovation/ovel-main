@@ -45,9 +45,14 @@ export async function GET(request: NextRequest) {
     const filter: Record<string, unknown> = {};
 
     if (startDate || endDate) {
-      filter.bookingDate = {};
-      if (startDate) (filter.bookingDate as Record<string, Date>).$gte = new Date(startDate);
-      if (endDate) (filter.bookingDate as Record<string, Date>).$lte = new Date(endDate);
+      const dateFilter: Record<string, Date> = {};
+      if (startDate) dateFilter.$gte = new Date(startDate);
+      if (endDate) dateFilter.$lte = new Date(endDate);
+      
+      filter.$or = [
+        { bookingDate: dateFilter },
+        { 'slots.bookingDate': dateFilter }
+      ];
     }
     if (status) filter.paymentStatus = status;
     if (bookingStatus) filter.bookingStatus = bookingStatus;
@@ -169,10 +174,23 @@ export async function POST(request: NextRequest) {
     dateEnd.setHours(23, 59, 59, 999);
 
     const conflicts = await Booking.find({
-      bookingDate: { $gte: dateStart, $lte: dateEnd },
       bookingStatus: 'confirmed',
-      startTime: { $lt: endTime },
-      endTime: { $gt: startTime },
+      $or: [
+        {
+          bookingDate: { $gte: dateStart, $lte: dateEnd },
+          startTime: { $lt: endTime },
+          endTime: { $gt: startTime },
+        },
+        {
+          slots: {
+            $elemMatch: {
+              bookingDate: { $gte: dateStart, $lte: dateEnd },
+              startTime: { $lt: endTime },
+              endTime: { $gt: startTime },
+            }
+          }
+        }
+      ]
     });
 
     if (conflicts.length > 0) {

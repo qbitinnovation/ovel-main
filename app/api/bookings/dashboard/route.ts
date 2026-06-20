@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
               cashHoldings[holder].transactions.push({
                 paymentId: payment._id,
                 bookingDate: parentBooking?.bookingDate,
-                timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+                timeSlot: parentBooking ? (parentBooking.bookingType === 'bulk' ? 'Bulk Booking' : `${parentBooking.startTime} - ${parentBooking.endTime}`) : '',
                 customerName: parentBooking?.customerName || 'Anonymous',
                 amount: s.amount,
                 paymentDate: payment.paymentDate,
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
             cashHoldings[holder].transactions.push({
               paymentId: payment._id,
               bookingDate: parentBooking?.bookingDate,
-              timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+              timeSlot: parentBooking ? (parentBooking.bookingType === 'bulk' ? 'Bulk Booking' : `${parentBooking.startTime} - ${parentBooking.endTime}`) : '',
               customerName: parentBooking?.customerName || 'Anonymous',
               amount: payment.amountPaid,
               paymentDate: payment.paymentDate,
@@ -118,9 +118,11 @@ export async function GET(request: NextRequest) {
 
       return {
         _id: booking._id,
+        bookingType: booking.bookingType,
         bookingDate: booking.bookingDate,
         startTime: booking.startTime,
         endTime: booking.endTime,
+        slotsCount: booking.slots?.length || 0,
         customerName: booking.customerName || 'Anonymous',
         expectedAmount: booking.expectedAmount,
         totalPaid: totalPaidForBooking,
@@ -192,7 +194,7 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
             cashHoldings[holder].transactions.push({
               paymentId: payment._id,
               bookingDate: parentBooking?.bookingDate,
-              timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+              timeSlot: parentBooking ? (parentBooking.bulkId ? 'Bulk Booking' : `${parentBooking.startTime} - ${parentBooking.endTime}`) : '',
               customerName: parentBooking?.customerName || 'Anonymous',
               amount: s.amount,
               paymentDate: payment.paymentDate,
@@ -213,7 +215,7 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
           cashHoldings[holder].transactions.push({
             paymentId: payment._id,
             bookingDate: parentBooking?.bookingDate,
-            timeSlot: parentBooking ? `${parentBooking.startTime} - ${parentBooking.endTime}` : '',
+            timeSlot: parentBooking ? (parentBooking.bulkId ? 'Bulk Booking' : `${parentBooking.startTime} - ${parentBooking.endTime}`) : '',
             customerName: parentBooking?.customerName || 'Anonymous',
             amount: payment.amountPaid,
             paymentDate: payment.paymentDate,
@@ -231,9 +233,11 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
 
     return {
       _id: booking._id,
+      bookingType: booking.bulkId ? 'bulk' : 'standard',
       bookingDate: booking.bookingDate,
       startTime: booking.startTime,
       endTime: booking.endTime,
+      slotsCount: (booking as any).slots?.length || 0,
       customerName: booking.customerName || 'Anonymous',
       expectedAmount: booking.expectedAmount,
       totalPaid: totalPaidForBooking,

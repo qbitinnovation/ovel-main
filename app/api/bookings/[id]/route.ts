@@ -142,9 +142,9 @@ export async function PUT(
       if (endTime && !timeRegex.test(endTime)) return errorResponse('Invalid end time format');
       if (newStartTime >= newEndTime) return errorResponse('Start time must be before end time');
 
-      const dateStart = new Date(newBookingDate);
+      const dateStart = new Date(newBookingDate as Date);
       dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(newBookingDate);
+      const dateEnd = new Date(newBookingDate as Date);
       dateEnd.setHours(23, 59, 59, 999);
 
       const conflicts = await Booking.find({
@@ -196,7 +196,7 @@ export async function PUT(
       action: 'edit_booking',
       module: 'bookings',
       recordId: booking._id,
-      description: `Edited booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Group update: ${!!isGroupUpdate}`,
+      description: `Edited booking for ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}. Group update: ${!!isGroupUpdate}`,
       oldValue,
       newValue,
       ...meta,
@@ -286,7 +286,7 @@ export async function DELETE(
       action: 'cancel_booking',
       module: 'bookings',
       recordId: booking._id,
-      description: `Cancelled booking for ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Reason: ${reason || 'No reason given'}. Group cancel: ${!!isGroupDelete}`,
+      description: `Cancelled booking for ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}. Reason: ${reason || 'No reason given'}. Group cancel: ${!!isGroupDelete}`,
       oldValue: { bookingStatus: 'confirmed' },
       newValue: { bookingStatus: 'cancelled', cancelReason: reason || '' },
       ...meta,

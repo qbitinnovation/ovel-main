@@ -329,7 +329,7 @@ export async function POST(
       action: 'add_payment_entry',
       module: 'bookings',
       recordId: payment._id,
-      description: `Recorded payment ₹${totalPaidAmount} (Discount: ₹${finalDiscountAmount}) via [${modesDesc}] for booking ${booking.bookingDate.toLocaleDateString('en-IN')} ${booking.startTime}-${booking.endTime}. Status: ${booking.paymentStatus}`,
+      description: `Recorded payment ₹${totalPaidAmount} (Discount: ₹${finalDiscountAmount}) via [${modesDesc}] for booking ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}. Status: ${booking.paymentStatus}`,
       newValue: {
         amountPaid: totalPaidAmount,
         discountAmount: finalDiscountAmount,

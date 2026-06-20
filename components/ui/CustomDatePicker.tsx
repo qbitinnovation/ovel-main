@@ -9,9 +9,10 @@ interface CustomDatePickerProps {
   className?: string;
   style?: React.CSSProperties;
   disabled?: boolean;
+  placeholder?: string;
 }
 
-export function CustomDatePicker({ value, onChange, className = '', style, disabled = false }: CustomDatePickerProps) {
+export function CustomDatePicker({ value, onChange, className = '', style, disabled = false, placeholder = 'Select Date' }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -63,9 +64,9 @@ export function CustomDatePicker({ value, onChange, className = '', style, disab
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   
   const formatDateForDisplay = (isoStr: string) => {
-    if (!isoStr) return 'Select Date';
+    if (!isoStr) return placeholder;
     const [y, m, d] = isoStr.split('-').map(Number);
-    if (!y || !m || !d) return 'Select Date';
+    if (!y || !m || !d) return placeholder;
     const dateObj = new Date(y, m - 1, d);
     return dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   };
