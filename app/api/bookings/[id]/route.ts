@@ -134,7 +134,7 @@ export async function PUT(
     // If changing time slot on a booking without payments, check for conflicts
     const newStartTime = startTime || booking.startTime;
     const newEndTime = endTime || booking.endTime;
-    const newBookingDate = bookingDate ? new Date(bookingDate) : booking.bookingDate;
+    const newBookingDate = bookingDate ? parseDateOnly(bookingDate) : booking.bookingDate;
 
     if (startTime || endTime || bookingDate) {
       const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -142,9 +142,9 @@ export async function PUT(
       if (endTime && !timeRegex.test(endTime)) return errorResponse('Invalid end time format');
       if (newStartTime >= newEndTime) return errorResponse('Start time must be before end time');
 
-      const dateStart = new Date(newBookingDate as Date);
+      const dateStart = parseDateOnly(newBookingDate as Date);
       dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(newBookingDate as Date);
+      const dateEnd = parseDateOnly(newBookingDate as Date);
       dateEnd.setHours(23, 59, 59, 999);
 
       const conflicts = await Booking.find({
@@ -297,4 +297,10 @@ export async function DELETE(
     console.error('DELETE /api/bookings/[id] error:', error);
     return errorResponse('Failed to cancel booking', 500);
   }
+}
+
+function parseDateOnly(dateInput: string | Date) {
+  if (dateInput instanceof Date) return new Date(dateInput);
+  const [year, month, day] = dateInput.split('T')[0].split('-').map(Number);
+  return new Date(year, month - 1, day);
 }

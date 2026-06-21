@@ -7,6 +7,8 @@ export interface IInventoryTransaction extends Document {
   quantity: number;
   amount: number;
   supplier: string;
+  customerName: string;
+  customerContact: string;
   date: Date;
   enteredBy: Types.ObjectId;
   createdAt: Date;
@@ -19,6 +21,8 @@ const InventoryTransactionSchema = new Schema<IInventoryTransaction>(
     quantity: { type: Number, required: true, min: 1 },
     amount: { type: Number, default: 0, min: 0 },
     supplier: { type: String, default: '' },
+    customerName: { type: String, default: '' },
+    customerContact: { type: String, default: '' },
     date: { type: Date, required: true },
     enteredBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },

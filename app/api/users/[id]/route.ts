@@ -235,7 +235,70 @@ export async function PATCH(
     const body = await request.json();
     const { action } = body;
 
-    await dbConnect();
+    let useDevStore = false;
+    try {
+      await dbConnect();
+    } catch (error) {
+      if (!isDevFallbackEnabled()) throw error;
+      useDevStore = true;
+    }
+
+    if (useDevStore) {
+      const store = getDevStore();
+      const user = store.users.find((item) => item._id === id);
+      if (!user) return errorResponse('User not found', 404);
+
+      let description = '';
+
+      switch (action) {
+        case 'deactivate':
+          user.isActive = false;
+          description = `Deactivated user ${user.name}`;
+          break;
+        case 'reactivate':
+          user.isActive = true;
+          user.isArchived = false;
+          description = `Reactivated user ${user.name}`;
+          break;
+        case 'archive':
+          user.isArchived = true;
+          user.isActive = false;
+          description = `Archived user ${user.name}`;
+          break;
+        case 'unarchive':
+          user.isArchived = false;
+          user.isActive = true;
+          description = `Unarchived user ${user.name}`;
+          break;
+        case 'reset-password': {
+          const newPassword = body.password || Math.random().toString(36).slice(-8) + 'A1!';
+          user.passwordHash = newPassword;
+          user.mustChangePassword = true;
+          user.updatedAt = new Date().toISOString();
+          return successResponse({ tempPassword: body.password ? undefined : newPassword }, 'Password reset');
+        }
+        case 'assign-position': {
+          const { positionId } = body;
+          if (positionId === null || positionId === '') {
+            user.positionId = null;
+            description = `Removed position from ${user.name}`;
+          } else {
+            const position = store.positions.find((p) => p._id === positionId);
+            if (!position) return errorResponse('Position not found', 404);
+            if (!position.isActive) return errorResponse('Cannot assign an inactive position');
+            user.positionId = position._id;
+            description = `Assigned ${position.name} position to ${user.name}`;
+          }
+          break;
+        }
+        default:
+          return errorResponse('Invalid action');
+      }
+
+      user.updatedAt = new Date().toISOString();
+      return successResponse(populateDevUserPosition(user), description);
+    }
+
     const user = await User.findById(id);
     if (!user) return errorResponse('User not found', 404);
 

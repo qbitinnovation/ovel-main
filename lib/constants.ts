@@ -142,10 +142,11 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     displayOrder: 6,
     availableActions: [
       'view_checklist',
-      'submit_checklist_item',
-      'resubmit_rejected_item',
-      'approve_checklist_item',
-      'reject_checklist_item',
+      'upload_checklist',
+      'verify_checklist',
+      'approve_checklist',
+      'reject_checklist',
+      'edit_checklist',
     ],
   },
   {
@@ -265,10 +266,11 @@ export const ACTION_LABELS: Record<string, string> = {
   view_all_tasks: 'View All Tasks',
   // Daily Operations
   view_checklist: 'View Checklist',
-  submit_checklist_item: 'Submit Checklist Item',
-  resubmit_rejected_item: 'Resubmit Rejected Item',
-  approve_checklist_item: 'Approve Checklist Item',
-  reject_checklist_item: 'Reject Checklist Item',
+  upload_checklist: 'Upload Checklist',
+  verify_checklist: 'Verify Checklist',
+  approve_checklist: 'Approve Checklist',
+  reject_checklist: 'Reject Checklist',
+  edit_checklist: 'Edit Checklist',
   // Notifications
   configure_notification_rules: 'Configure Notification Rules',
   manage_channels: 'Manage Channels',

@@ -1,5 +1,5 @@
-type PortalType = 'committee' | 'turf' | 'shareholder';
-type UserType = 'management' | 'staff';
+type PortalType = 'superadmin' | 'committee' | 'turf' | 'shareholder';
+type UserType = 'superadmin' | 'management' | 'staff';
 
 export interface DevPosition {
   _id: string;
@@ -36,10 +36,30 @@ interface DevStore {
   turfInventoryItems: DevTurfInventoryItem[];
   maintenanceTasks: DevMaintenanceTask[];
   moduleMappings: DevModuleMapping[];
+  portalMappings: DevPortalMapping[];
   checklists: DevChecklist[];
   momRecords: DevMomRecord[];
   bookings: DevBooking[];
   payments: DevPayment[];
+  accountTransactions: DevAccountTransaction[];
+}
+
+export interface DevAccountTransaction {
+  _id: string;
+  type: 'income' | 'expense';
+  source: string;
+  amount: number;
+  paymentMode: string;
+  customerName: string;
+  customerContact: string;
+  summary: string;
+  referenceNumber: string;
+  date: string;
+  createdBy: string;
+  bookingId?: string;
+  inventoryTransactionId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DevSetting {
@@ -112,6 +132,17 @@ export interface DevMaintenanceTask {
 export interface DevModuleMapping {
   _id: string;
   positionId: string;
+  moduleKey: string;
+  accessLevel: 'view' | 'edit' | 'full_control';
+  enabledActions: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevPortalMapping {
+  _id: string;
+  portalType: 'turf' | 'shareholder';
   moduleKey: string;
   accessLevel: 'view' | 'edit' | 'full_control';
   enabledActions: string[];
@@ -220,22 +251,125 @@ export function isDevFallbackEnabled() {
 }
 
 export function getDevStore() {
-  const demoUsers: DevUser[] = [];
+  const demoUsers: DevUser[] = [
+    {
+      _id: '000000000000000000000001',
+      name: 'Super Admin (Demo)',
+      email: 'admin@ovalturf.com',
+      phone: '+910000000001',
+      userType: 'superadmin',
+      portalType: 'superadmin',
+      positionId: null,
+      isActive: true,
+      isArchived: false,
+      mustChangePassword: false,
+      lastLogin: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      _id: '000000000000000000000002',
+      name: 'Committee Member (Demo)',
+      email: 'committee@ovalturf.com',
+      phone: '+910000000002',
+      userType: 'management',
+      portalType: 'committee',
+      positionId: 'demo-position',
+      isActive: true,
+      isArchived: false,
+      mustChangePassword: false,
+      lastLogin: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      _id: '000000000000000000000004',
+      name: 'Shareholder (Demo)',
+      email: 'shareholder@ovalturf.com',
+      phone: '+910000000004',
+      userType: 'management',
+      portalType: 'shareholder',
+      positionId: null,
+      isActive: true,
+      isArchived: false,
+      mustChangePassword: false,
+      lastLogin: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
 
   if (!global.omsDevStore) {
     global.omsDevStore = {
       users: demoUsers,
-      positions: [],
+      positions: [
+        {
+          _id: 'demo-position',
+          name: 'Committee Member',
+          description: 'Demo Committee Position',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      ],
       settings: [],
       inventoryItems: [],
       inventoryTransactions: [],
       turfInventoryItems: [],
       maintenanceTasks: [],
-      moduleMappings: [],
+      moduleMappings: [
+        {
+          _id: 'dev-module-map-committee-ops',
+          positionId: 'demo-position',
+          moduleKey: 'daily_operations',
+          accessLevel: 'full_control',
+          enabledActions: ['view_checklist', 'upload_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist', 'edit_checklist'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          _id: 'dev-module-map-committee-users',
+          positionId: 'demo-position',
+          moduleKey: 'user_permission',
+          accessLevel: 'full_control',
+          enabledActions: [
+            'create_user', 'archive_user', 'edit_user', 'create_position', 'edit_position',
+            'deactivate_position', 'map_module_to_position', 'remove_module_from_position',
+            'assign_position_to_user', 'remove_position_from_user', 'add_individual_override', 'remove_override',
+          ],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      ],
+      portalMappings: [
+        {
+          _id: 'dev-portal-map-turf-ops',
+          portalType: 'turf',
+          moduleKey: 'daily_operations',
+          accessLevel: 'edit',
+          enabledActions: ['view_checklist', 'upload_checklist'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          _id: 'dev-portal-map-shareholder-ops',
+          portalType: 'shareholder',
+          moduleKey: 'daily_operations',
+          accessLevel: 'view',
+          enabledActions: ['view_checklist'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      ],
       checklists: [],
       momRecords: [],
       bookings: [],
       payments: [],
+      accountTransactions: [],
     };
   }
 
@@ -245,10 +379,23 @@ export function getDevStore() {
   global.omsDevStore.turfInventoryItems ||= [];
   global.omsDevStore.maintenanceTasks ||= [];
   global.omsDevStore.moduleMappings ||= [];
+  global.omsDevStore.portalMappings ||= [];
   global.omsDevStore.checklists ||= [];
   global.omsDevStore.momRecords ||= [];
   global.omsDevStore.bookings ||= [];
   global.omsDevStore.payments ||= [];
+  global.omsDevStore.accountTransactions ||= [];
+
+  if (global.omsDevStore.users) {
+    global.omsDevStore.users = global.omsDevStore.users.filter(
+      (user) => user._id !== '000000000000000000000003'
+    );
+  }
+  if (global.omsDevStore.checklists) {
+    global.omsDevStore.checklists = global.omsDevStore.checklists.filter(
+      (checklist) => checklist.staffId !== '000000000000000000000003'
+    );
+  }
 
   for (const demoUser of demoUsers) {
     if (!global.omsDevStore.users.some((user) => user._id === demoUser._id)) {

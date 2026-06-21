@@ -5,6 +5,7 @@ import Checklist from '@/models/Checklist';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { devUserRef, getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export async function PATCH(
   request: NextRequest,
@@ -16,6 +17,17 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
     const { action } = body;
+
+    let permissionAction = '';
+    if (action === 'submit-item') permissionAction = 'upload_checklist';
+    else if (action === 'approve-item') permissionAction = 'approve_checklist';
+    else if (action === 'reject-item') permissionAction = 'reject_checklist';
+
+    if (permissionAction) {
+      const permission = await checkPermission(session.user.id, 'daily_operations', permissionAction);
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+    }
+
     try {
       await dbConnect();
     } catch (error) {

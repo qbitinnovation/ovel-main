@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === 'log-sale' || action === 'add-restock') {
-        const { itemId, quantity, amount, supplier, date } = body;
+        const { itemId, quantity, amount, supplier, date, customerName, customerContact } = body;
         if (!itemId || !quantity) return errorResponse('Item and quantity required');
         const item = store.inventoryItems.find((entry) => entry._id === itemId);
         if (!item) return errorResponse('Item not found', 404);
@@ -120,10 +120,12 @@ export async function POST(request: NextRequest) {
           quantity: qty,
           amount: Number(amount || 0),
           supplier: supplier || '',
+          customerName: customerName || '',
+          customerContact: customerContact || '',
           date: date ? new Date(date).toISOString() : now,
           enteredBy: userId,
           createdAt: now,
-        };
+        } as DevInventoryTransaction;
         store.inventoryTransactions.unshift(txn);
         return successResponse({ item, transaction: { ...txn, itemId: item, enteredBy: devUserRef(userId) } }, action === 'log-sale' ? 'Sale logged' : 'Restock logged');
       }
@@ -155,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'log-sale') {
-      const { itemId, quantity, amount, date } = body;
+      const { itemId, quantity, amount, date, customerName, customerContact } = body;
       if (!itemId || !quantity) return errorResponse('Item and quantity required');
       const item = await InventoryItem.findById(itemId);
       if (!item) return errorResponse('Item not found', 404);
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
       if (item.currentStock < qty) return errorResponse(`Insufficient stock. Current: ${item.currentStock}`);
       item.currentStock -= qty;
       await item.save();
-      const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: userId });
+      const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: userId, customerName: customerName || '', customerContact: customerContact || '' });
       await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'log_sale', module: 'inventory_sales', recordId: txn._id, description: `Sold ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
       // Check threshold
       if (item.currentStock <= item.lowStockThreshold) {

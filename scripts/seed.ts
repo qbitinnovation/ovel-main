@@ -103,7 +103,7 @@ const MODULE_DEFINITIONS = [
     description: 'Daily verification of ground-level duties with live photo proof and supervisor approval.',
     icon: '✅',
     displayOrder: 6,
-    availableActions: ['view_checklist', 'submit_checklist_item', 'resubmit_rejected_item', 'approve_checklist_item', 'reject_checklist_item'],
+    availableActions: ['view_checklist', 'upload_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist', 'edit_checklist'],
   },
   {
     moduleKey: 'notifications',

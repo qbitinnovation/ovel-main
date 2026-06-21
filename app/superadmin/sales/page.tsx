@@ -22,6 +22,8 @@ export default function SalesPage() {
   const [txnQty, setTxnQty] = useState(1);
   const [txnAmount, setTxnAmount] = useState(0);
   const [txnSupplier, setTxnSupplier] = useState('');
+  const [txnCustomerName, setTxnCustomerName] = useState('');
+  const [txnCustomerContact, setTxnCustomerContact] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
@@ -45,6 +47,8 @@ export default function SalesPage() {
     setTxnQty(1);
     setTxnAmount(type === 'sale' ? getSaleAmount(firstItemId, 1) : 0);
     setTxnSupplier('');
+    setTxnCustomerName('');
+    setTxnCustomerContact('');
   };
 
   const updateTxnQty = (quantity: number) => {
@@ -64,7 +68,7 @@ export default function SalesPage() {
     setSaving(true);
     const act = showTxn?.type === 'sale' ? 'log-sale' : 'add-restock';
     const amount = showTxn?.type === 'sale' ? getSaleAmount(txnItemId, txnQty) : txnAmount;
-    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount, supplier: txnSupplier }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount, supplier: txnSupplier, customerName: txnCustomerName, customerContact: txnCustomerContact }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); setTxnCustomerName(''); setTxnCustomerContact(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
   };
 
   return (
@@ -226,6 +230,12 @@ export default function SalesPage() {
               {showTxn.type === 'restock' && <div className="form-group"><label className="form-label">Cost (₹)</label><input className="form-input" type="number" value={txnAmount} onChange={(e) => setTxnAmount(Number(e.target.value))} /></div>}
             </div>
             {showTxn.type === 'sale' && <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--surface-secondary)' }}><div className="stat-label">Sale Amount</div><div className="stat-value">Rs. {getSaleAmount(txnItemId, txnQty)}</div></div>}
+            {showTxn.type === 'sale' && (
+              <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+                <div className="form-group"><label className="form-label">Customer Name</label><input className="form-input" value={txnCustomerName} onChange={(e) => setTxnCustomerName(e.target.value)} placeholder="e.g. John Doe" /></div>
+                <div className="form-group"><label className="form-label">Customer Contact</label><input className="form-input" value={txnCustomerContact} onChange={(e) => setTxnCustomerContact(e.target.value)} placeholder="Phone number" /></div>
+              </div>
+            )}
             {showTxn.type === 'restock' && <div className="form-group" style={{ marginTop: 'var(--space-4)' }}><label className="form-label">Supplier</label><input className="form-input" value={txnSupplier} onChange={(e) => setTxnSupplier(e.target.value)} placeholder="Supplier name" /></div>}
           </div>
           <div className="modal-footer"><button className="btn btn-secondary btn-md" onClick={() => setShowTxn(null)}>Cancel</button><button className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} onClick={handleTxn} disabled={saving}>{showTxn.type === 'sale' ? 'Log Sale' : 'Add Restock'}</button></div>

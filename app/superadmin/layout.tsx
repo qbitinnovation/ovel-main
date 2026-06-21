@@ -8,7 +8,7 @@ import { getInitials } from '@/lib/utils';
 
 import {
   LayoutDashboard, Users, Link as LinkIcon, Wallet, Package, ShoppingCart, Wrench, CheckSquare, FileText, Calendar,
-  BarChart3, Bell, ClipboardList, Settings, Building2
+  BarChart3, Bell, ClipboardList, Settings, Building2, Camera, Receipt
 } from 'lucide-react';
 
 const navItems = [

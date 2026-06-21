@@ -11,7 +11,8 @@ interface Position {
 
 interface Mapping {
   _id: string;
-  positionId: string | { _id: string; name: string; isActive: boolean };
+  positionId?: string | { _id: string; name: string; isActive: boolean };
+  portalType?: string;
   moduleKey: string;
   accessLevel: string;
   enabledActions: string[];
@@ -38,9 +39,17 @@ const MODULE_DEFS: ModuleDef[] = MODULE_DEFINITIONS
   .sort((a, b) => a.displayOrder - b.displayOrder);
 
 export default function ModuleMappingPage() {
+  const [activeTab, setActiveTab] = useState<'committee' | 'portal'>('committee');
+
+  // Committee State
   const [positions, setPositions] = useState<Position[]>([]);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
+
+  // Portal State
+  const [portalMappings, setPortalMappings] = useState<Mapping[]>([]);
+  const [selectedPortal, setSelectedPortal] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
 
   // Config panel state
@@ -85,22 +94,47 @@ export default function ModuleMappingPage() {
     }
   }, []);
 
-  useEffect(() => {
-    Promise.all([fetchPositions(), fetchMappings()]).finally(() => setLoading(false));
-  }, [fetchPositions, fetchMappings]);
+  const fetchPortalMappings = useCallback(async (portal?: string) => {
+    try {
+      const url = portal ? `/api/portal-mappings?portalType=${portal}` : '/api/portal-mappings';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setPortalMappings(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch portal mappings:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    if (selectedPosition) fetchMappings(selectedPosition);
-  }, [selectedPosition, fetchMappings]);
+    Promise.all([fetchPositions(), fetchMappings(), fetchPortalMappings()]).finally(() => setLoading(false));
+  }, [fetchPositions, fetchMappings, fetchPortalMappings]);
+
+  useEffect(() => {
+    if (selectedPosition && activeTab === 'committee') fetchMappings(selectedPosition);
+  }, [selectedPosition, activeTab, fetchMappings]);
+
+  useEffect(() => {
+    if (selectedPortal && activeTab === 'portal') fetchPortalMappings(selectedPortal);
+  }, [selectedPortal, activeTab, fetchPortalMappings]);
 
   const getMappingForModule = (moduleKey: string): Mapping | undefined => {
-    return mappings.find(
-      (m) =>
-        m.moduleKey === moduleKey &&
-        (typeof m.positionId === 'string'
-          ? m.positionId === selectedPosition
-          : m.positionId._id === selectedPosition)
-    );
+    if (activeTab === 'committee') {
+      return mappings.find(
+        (m) =>
+          m.moduleKey === moduleKey &&
+          (typeof m.positionId === 'string'
+            ? m.positionId === selectedPosition
+            : m.positionId?._id === selectedPosition)
+      );
+    } else {
+      return portalMappings.find(
+        (m) =>
+          m.moduleKey === moduleKey &&
+          m.portalType === selectedPortal
+      );
+    }
   };
 
   const openConfig = (mod: ModuleDef, existingMapping?: Mapping) => {
@@ -130,14 +164,22 @@ export default function ModuleMappingPage() {
   };
 
   const handleSaveMapping = async () => {
-    if (!selectedPosition || !configModule) return;
+    const isCommittee = activeTab === 'committee';
+    const targetId = isCommittee ? selectedPosition : selectedPortal;
+
+    if (!targetId || !configModule) return;
     setSaving(true);
     const actionsToSave = configAccessLevel === 'full_control' ? configModule.availableActions : configActions;
 
     try {
+      const baseUrl = isCommittee ? '/api/module-mappings' : '/api/portal-mappings';
+      const payload = isCommittee
+        ? { positionId: targetId, moduleKey: configModule.moduleKey, accessLevel: configAccessLevel, enabledActions: actionsToSave }
+        : { portalType: targetId, moduleKey: configModule.moduleKey, accessLevel: configAccessLevel, enabledActions: actionsToSave };
+
       if (editingMappingId) {
         // Update existing
-        const res = await fetch(`/api/module-mappings/${editingMappingId}`, {
+        const res = await fetch(`${baseUrl}/${editingMappingId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accessLevel: configAccessLevel, enabledActions: actionsToSave }),
@@ -150,15 +192,10 @@ export default function ModuleMappingPage() {
         }
       } else {
         // Create new
-        const res = await fetch('/api/module-mappings', {
+        const res = await fetch(baseUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            positionId: selectedPosition,
-            moduleKey: configModule.moduleKey,
-            accessLevel: configAccessLevel,
-            enabledActions: actionsToSave,
-          }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (data.success) {
@@ -168,7 +205,8 @@ export default function ModuleMappingPage() {
         }
       }
       setConfigModule(null);
-      fetchMappings(selectedPosition);
+      if (isCommittee) fetchMappings(targetId);
+      else fetchPortalMappings(targetId);
     } catch {
       showToast('Network error', 'error');
     } finally {
@@ -178,12 +216,15 @@ export default function ModuleMappingPage() {
 
   const handleDeleteMapping = async () => {
     if (!deleteMapping) return;
+    const isCommittee = activeTab === 'committee';
+    const baseUrl = isCommittee ? '/api/module-mappings' : '/api/portal-mappings';
     try {
-      const res = await fetch(`/api/module-mappings/${deleteMapping._id}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/${deleteMapping._id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         showToast('Mapping removed');
-        fetchMappings(selectedPosition || undefined);
+        if (isCommittee) fetchMappings(selectedPosition || undefined);
+        else fetchPortalMappings(selectedPortal || undefined);
       } else {
         showToast(data.message || 'Failed', 'error');
       }
@@ -197,7 +238,9 @@ export default function ModuleMappingPage() {
     return ACCESS_LEVELS.find((a) => a.value === level)?.label || level;
   };
 
-  const selectedPosName = positions.find((p) => p._id === selectedPosition)?.name || '';
+  const selectedPosName = activeTab === 'committee'
+    ? positions.find((p) => p._id === selectedPosition)?.name || ''
+    : selectedPortal === 'turf' ? 'Turf Manager Portal' : selectedPortal === 'shareholder' ? 'Shareholder Portal' : '';
 
   if (loading) {
     return (
@@ -225,11 +268,26 @@ export default function ModuleMappingPage() {
       <div className="page-header">
         <div>
           <h1>Module Mapping</h1>
-          <p className="page-subtitle">Connect modules to positions with custom access levels and actions</p>
+          <p className="page-subtitle">Connect modules to positions or entire portals with custom access levels</p>
         </div>
       </div>
 
-      {positions.length === 0 ? (
+      <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)' }}>
+        <button
+          className={`btn ${activeTab === 'committee' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+          onClick={() => setActiveTab('committee')}
+        >
+          Committee Positions
+        </button>
+        <button
+          className={`btn ${activeTab === 'portal' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+          onClick={() => setActiveTab('portal')}
+        >
+          Portal Mapping
+        </button>
+      </div>
+
+      {activeTab === 'committee' && positions.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-state-icon">🔗</div>
@@ -244,41 +302,74 @@ export default function ModuleMappingPage() {
         </div>
       ) : (
         <div className="mapping-layout">
-          {/* Left Panel — Committee Positions List */}
+          {/* Left Panel — Sidebar */}
           <div className="card mapping-sidebar" style={{ alignSelf: 'start', position: 'sticky', top: 'calc(var(--topbar-height) + var(--space-6))' }}>
             <div className="card-header">
-              <h3 style={{ fontSize: 'var(--text-sm)' }}>Committee Positions</h3>
-              <span className="badge badge-neutral">{positions.length}</span>
+              <h3 style={{ fontSize: 'var(--text-sm)' }}>
+                {activeTab === 'committee' ? 'Committee Positions' : 'Portals'}
+              </h3>
+              {activeTab === 'committee' && <span className="badge badge-neutral">{positions.length}</span>}
             </div>
             <div style={{ padding: 'var(--space-2)' }}>
-              {positions.map((pos) => (
-                <button
-                  key={pos._id}
-                  className={`sidebar-link ${selectedPosition === pos._id ? 'active' : ''}`}
-                  onClick={() => setSelectedPosition(pos._id)}
-                  style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPosition === pos._id ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
-                >
-                  <span className="sidebar-link-icon">🏷️</span>
-                  <span>{pos.name}</span>
-                  {selectedPosition === pos._id && (
-                    <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
-                      {mappings.length} mapped
-                    </span>
-                  )}
-                </button>
-              ))}
+              {activeTab === 'committee' ? (
+                positions.map((pos) => (
+                  <button
+                    key={pos._id}
+                    className={`sidebar-link ${selectedPosition === pos._id ? 'active' : ''}`}
+                    onClick={() => setSelectedPosition(pos._id)}
+                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPosition === pos._id ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                  >
+                    <span className="sidebar-link-icon">🏷️</span>
+                    <span>{pos.name}</span>
+                    {selectedPosition === pos._id && (
+                      <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
+                        {mappings.length} mapped
+                      </span>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <>
+                  <button
+                    className={`sidebar-link ${selectedPortal === 'turf' ? 'active' : ''}`}
+                    onClick={() => setSelectedPortal('turf')}
+                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'turf' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                  >
+                    <span className="sidebar-link-icon">🌱</span>
+                    <span>Turf Manager Portal</span>
+                    {selectedPortal === 'turf' && (
+                      <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
+                        {portalMappings.filter(m => m.portalType === 'turf').length} mapped
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    className={`sidebar-link ${selectedPortal === 'shareholder' ? 'active' : ''}`}
+                    onClick={() => setSelectedPortal('shareholder')}
+                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'shareholder' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                  >
+                    <span className="sidebar-link-icon">📈</span>
+                    <span>Shareholder Portal</span>
+                    {selectedPortal === 'shareholder' && (
+                      <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
+                        {portalMappings.filter(m => m.portalType === 'shareholder').length} mapped
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
           {/* Right Panel — Modules */}
           <div>
-            {!selectedPosition ? (
+            {!(activeTab === 'committee' ? selectedPosition : selectedPortal) ? (
               <div className="card">
                 <div className="empty-state" style={{ padding: 'var(--space-12)' }}>
                   <div className="empty-state-icon">👈</div>
-                  <div className="empty-state-title">Select a position</div>
+                  <div className="empty-state-title">Select a {activeTab === 'committee' ? 'position' : 'portal'}</div>
                   <div className="empty-state-description">
-                    Choose a position from the left panel to view and manage its module mappings.
+                    Choose from the left panel to view and manage its module mappings.
                   </div>
                 </div>
               </div>
@@ -450,7 +541,9 @@ export default function ModuleMappingPage() {
               <div className="confirm-icon danger">✕</div>
               <div className="confirm-title">Remove Module Mapping?</div>
               <div className="confirm-message">
-                All users holding the <strong>{selectedPosName}</strong> position will lose access to this module immediately.
+        {activeTab === 'committee'
+          ? `All users holding the ${selectedPosName} position will lose access to this module immediately.`
+          : `All users in the ${selectedPosName} will lose access to this module immediately.`}
               </div>
             </div>
             <div className="modal-footer">

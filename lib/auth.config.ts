@@ -157,15 +157,7 @@ export const authConfig: NextAuthConfig = {
     async session({ session, token }) {
       if (session.user) {
         let tokenId = token.id as string;
-        if (process.env.NODE_ENV === 'development' && !/^[0-9a-fA-F]{24}$/.test(tokenId)) {
-          if (tokenId.includes('superadmin')) tokenId = '000000000000000000000001';
-          else if (tokenId.includes('committee')) tokenId = '000000000000000000000002';
-          else if (tokenId.includes('turf')) tokenId = '000000000000000000000003';
-          else if (tokenId.includes('shareholder')) tokenId = '000000000000000000000004';
-          else tokenId = '000000000000000000000001';
-        }
-
-        session.user.id = tokenId;
+        session.user.id = token.id as string;
         session.user.userType = token.userType as string;
         session.user.portalType = token.portalType as string;
         session.user.role = token.role as string;

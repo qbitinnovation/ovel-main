@@ -31,8 +31,16 @@ export async function GET(request: NextRequest) {
 
     if (startDate || endDate) {
       bookingFilter.bookingDate = {};
-      if (startDate) (bookingFilter.bookingDate as Record<string, Date>).$gte = new Date(startDate);
-      if (endDate) (bookingFilter.bookingDate as Record<string, Date>).$lte = new Date(endDate);
+      if (startDate) {
+        const start = parseDateOnly(startDate);
+        start.setHours(0, 0, 0, 0);
+        (bookingFilter.bookingDate as Record<string, Date>).$gte = start;
+      }
+      if (endDate) {
+        const end = parseDateOnly(endDate);
+        end.setHours(23, 59, 59, 999);
+        (bookingFilter.bookingDate as Record<string, Date>).$lte = end;
+      }
     }
 
     // Fetch confirmed bookings for the period
@@ -155,8 +163,8 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
   const store = getDevStore();
   let bookings = store.bookings.filter((booking) => booking.bookingStatus === 'confirmed');
 
-  if (startDate) bookings = bookings.filter((booking) => new Date(booking.bookingDate) >= new Date(startDate));
-  if (endDate) bookings = bookings.filter((booking) => new Date(booking.bookingDate) <= new Date(endDate));
+  if (startDate) bookings = bookings.filter((booking) => toDateKey(booking.bookingDate) >= startDate);
+  if (endDate) bookings = bookings.filter((booking) => toDateKey(booking.bookingDate) <= endDate);
 
   bookings = bookings
     .slice()
@@ -260,4 +268,15 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
     cashHoldings,
     bookingBreakdown,
   };
+}
+
+function parseDateOnly(dateInput: string | Date) {
+  if (dateInput instanceof Date) return new Date(dateInput);
+  const [year, month, day] = dateInput.split('T')[0].split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateKey(value: string | Date) {
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  return value.includes('T') ? value.split('T')[0] : value;
 }

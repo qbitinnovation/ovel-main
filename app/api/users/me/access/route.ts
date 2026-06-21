@@ -26,7 +26,7 @@ export async function GET() {
           enabledActions: mod.availableActions,
           source: 'position',
         }));
-      } else if (user?.positionId) {
+      } else if (user?.portalType === 'committee' && user?.positionId) {
         access = store.moduleMappings
           .filter((mapping) => mapping.positionId === user.positionId && mapping.isActive)
           .map((mapping) => ({
@@ -34,6 +34,15 @@ export async function GET() {
             accessLevel: mapping.accessLevel,
             enabledActions: mapping.enabledActions,
             source: 'position',
+          }));
+      } else if (user?.portalType === 'turf' || user?.portalType === 'shareholder') {
+        access = store.portalMappings
+          .filter((mapping) => mapping.portalType === user.portalType && mapping.isActive)
+          .map((mapping) => ({
+            moduleKey: mapping.moduleKey,
+            accessLevel: mapping.accessLevel,
+            enabledActions: mapping.enabledActions,
+            source: 'portal',
           }));
       } else {
         access = [];

@@ -8,7 +8,7 @@ import { getInitials } from '@/lib/utils';
 
 import { ReactNode } from 'react';
 import {
-  LayoutDashboard, Wallet, Package, ShoppingCart, Wrench, CheckSquare, BarChart3, FileText, Calendar, Bell, Building2, UserCircle
+  LayoutDashboard, Wallet, Package, ShoppingCart, Wrench, CheckSquare, BarChart3, FileText, Calendar, Bell, Building2, UserCircle, Camera
 } from 'lucide-react';
 
 interface NavItem {
@@ -16,6 +16,8 @@ interface NavItem {
   href: string;
   icon: ReactNode;
   moduleKey?: string;
+  requiredAction?: string;
+  alternativeActions?: string[];
 }
 
 // Dashboard is always visible. Module-specific items are shown based on user's access.
@@ -28,7 +30,7 @@ const moduleNavItems: NavItem[] = [
   { label: 'Inventory', href: '/committee/inventory', icon: <Package size={20} />, moduleKey: 'inventory' },
   { label: 'Sales', href: '/committee/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
   { label: 'Maintenance', href: '/committee/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
-  { label: 'Checklists', href: '/committee/checklists', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
+  { label: 'Checklists', href: '/committee/checklists', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations', alternativeActions: ['upload_checklist', 'view_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist'] },
   { label: 'Reports', href: '/committee/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
   { label: 'MOM', href: '/committee/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/committee/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
@@ -39,7 +41,7 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [accessibleModules, setAccessibleModules] = useState<string[]>([]);
+  const [moduleAccessMap, setModuleAccessMap] = useState<Record<string, { accessLevel: string; enabledActions: string[] }>>({});
 
   // Fetch user's accessible modules
   useEffect(() => {
@@ -48,7 +50,11 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
         const res = await fetch('/api/users/me/access');
         if (res.ok) {
           const data = await res.json();
-          setAccessibleModules(data.data?.map((m: { moduleKey: string }) => m.moduleKey) || []);
+          const accessMap: Record<string, { accessLevel: string; enabledActions: string[] }> = {};
+          data.data?.forEach((m: any) => {
+            accessMap[m.moduleKey] = { accessLevel: m.accessLevel, enabledActions: m.enabledActions || [] };
+          });
+          setModuleAccessMap(accessMap);
         }
       } catch (error) {
         console.error('Failed to fetch module access:', error);
@@ -59,7 +65,14 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
 
   const visibleNavItems = [
     ...defaultNav,
-    ...moduleNavItems.filter((item) => accessibleModules.includes(item.moduleKey!)),
+    ...moduleNavItems.filter((item) => {
+      const access = moduleAccessMap[item.moduleKey!];
+      if (!access) return false;
+      if (access.accessLevel === 'full_control') return true;
+      if (item.requiredAction && !access.enabledActions.includes(item.requiredAction)) return false;
+      if (item.alternativeActions && !item.alternativeActions.some(a => access.enabledActions.includes(a))) return false;
+      return true;
+    }),
   ];
 
   // Bottom nav items for mobile (max 5)

@@ -2,9 +2,10 @@ import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import FinanceEntry from '@/models/FinanceEntry';
+import AccountTransaction from '@/models/AccountTransaction';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
-import { isDevFallbackEnabled } from '@/lib/dev-store';
+import { isDevFallbackEnabled, getDevStore } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,21 +57,49 @@ export async function POST(request: NextRequest) {
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
     const body = await request.json();
-    const { date, income, expenses, electricity, otherPayments } = body;
+    const { date, type, source, amount, paymentMode, category, description, referenceNumber } = body;
 
     if (!date) return errorResponse('Date is required');
+    if (!amount) return errorResponse('Amount is required');
+    if (!type || !['income', 'expense'].includes(type)) return errorResponse('Valid type is required');
 
-    await dbConnect();
+    try {
+      await dbConnect();
+    } catch (error) {
+      if (!isDevFallbackEnabled()) throw error;
+      
+      const store = getDevStore();
+      const entry = {
+        _id: 'dev_mock_' + Date.now(),
+        type: type as 'income' | 'expense',
+        source: source || 'manual',
+        amount: Number(amount),
+        paymentMode: paymentMode || 'cash',
+        customerName: 'Manual Entry',
+        customerContact: '',
+        summary: `${category || 'Manual Entry'} - ${description || ''}`.trim(),
+        referenceNumber: referenceNumber || '',
+        date: new Date(date).toISOString(),
+        createdBy: session.user.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      store.accountTransactions.unshift(entry);
+      return successResponse(entry, 'Transaction submitted (Dev Mode)', 201);
+    }
 
-    const entry = await FinanceEntry.create({
+    const entry = await AccountTransaction.create({
+      type,
+      source: source || 'manual',
+      amount: Number(amount),
+      paymentMode: paymentMode || 'cash',
+      customerName: 'Manual Entry',
+      customerContact: '',
+      summary: `${category || 'Manual Entry'} - ${description || ''}`.trim(),
+      referenceNumber: referenceNumber || '',
       date: new Date(date),
-      income: income || [],
-      expenses: expenses || [],
-      electricity: electricity || [],
-      otherPayments: otherPayments || [],
-      submittedBy: session.user.id,
-      isLocked: true,
-      lockedAt: new Date(),
+      createdBy: session.user.id,
     });
 
     const meta = getRequestMeta(request.headers);
@@ -78,17 +107,20 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
       userName: session.user.name || '',
       userType: session.user.userType,
-      action: 'submit_daily_entry',
-      module: 'accounts_finance',
+      action: 'submit_account_transaction',
+      module: 'accounts',
       recordId: entry._id,
-      description: `Submitted daily finance entry for ${new Date(date).toLocaleDateString()}. Net: ₹${entry.netAmount}. Record locked.`,
-      newValue: { totalIncome: entry.totalIncome, totalExpenses: entry.totalExpenses, netAmount: entry.netAmount },
+      description: `Submitted ${type} transaction for ${new Date(date).toLocaleDateString()}. Amount: ₹${amount}.`,
+      newValue: { type, amount, summary: entry.summary },
       ...meta,
     }, request.headers);
 
-    return successResponse(entry, 'Finance entry submitted and locked', 201);
-  } catch (error) {
+    return successResponse(entry, 'Transaction created successfully', 201);
+  } catch (error: any) {
     console.error('POST /api/accounts error:', error);
-    return errorResponse('Failed to submit entry', 500);
+    if (!isDevFallbackEnabled() && error.name === 'MongooseServerSelectionError') {
+      return errorResponse('Database connection failed', 500);
+    }
+    return errorResponse(error?.message || 'Failed to submit entry', 500);
   }
 }

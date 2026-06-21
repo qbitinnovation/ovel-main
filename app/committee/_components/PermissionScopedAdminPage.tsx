@@ -11,6 +11,7 @@ type ModuleAccess = {
 
 type Props = {
   moduleKey: string;
+  requiredAction?: string;
   children: React.ReactNode;
 };
 
@@ -51,10 +52,10 @@ const ACTION_MATCHERS: Record<string, string[]> = {
   close_task: ['close'],
   reopen_task: ['reopen'],
   delete_task: ['delete'],
-  submit_checklist_item: ['submit item'],
-  resubmit_rejected_item: ['resubmit'],
-  approve_checklist_item: ['approve'],
-  reject_checklist_item: ['reject'],
+  upload_checklist: ['submit item', 'retake', 'open camera'],
+  verify_checklist: ['verify'],
+  approve_checklist: ['approve'],
+  reject_checklist: ['reject'],
   create_mom_entry: ['new mom'],
   convert_to_malayalam: ['convert to malayalam'],
   edit_translation: ['translation'],

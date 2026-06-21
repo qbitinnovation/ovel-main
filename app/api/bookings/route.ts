@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
       if (!isDevFallbackEnabled()) throw error;
       const store = getDevStore();
       let bookings = store.bookings;
-      if (startDate) bookings = bookings.filter((booking) => new Date(booking.bookingDate) >= new Date(startDate));
-      if (endDate) bookings = bookings.filter((booking) => new Date(booking.bookingDate) <= new Date(endDate));
+      if (startDate) bookings = bookings.filter((booking) => toDateKey(booking.bookingDate) >= startDate);
+      if (endDate) bookings = bookings.filter((booking) => toDateKey(booking.bookingDate) <= endDate);
       if (status) bookings = bookings.filter((booking) => booking.paymentStatus === status);
       if (bookingStatus) bookings = bookings.filter((booking) => booking.bookingStatus === bookingStatus);
       const total = bookings.length;
@@ -46,8 +46,16 @@ export async function GET(request: NextRequest) {
 
     if (startDate || endDate) {
       const dateFilter: Record<string, Date> = {};
-      if (startDate) dateFilter.$gte = new Date(startDate);
-      if (endDate) dateFilter.$lte = new Date(endDate);
+      if (startDate) {
+        const start = parseDateOnly(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      }
+      if (endDate) {
+        const end = parseDateOnly(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
+      }
       
       filter.$or = [
         { bookingDate: dateFilter },
@@ -129,10 +137,10 @@ export async function POST(request: NextRequest) {
 
     if (useDevStore) {
       const store = getDevStore();
-      const requestedDate = new Date(bookingDate).toDateString();
+      const requestedDateKey = toDateKey(bookingDate);
       const conflict = store.bookings.find((booking) =>
         booking.bookingStatus === 'confirmed' &&
-        new Date(booking.bookingDate).toDateString() === requestedDate &&
+        toDateKey(booking.bookingDate) === requestedDateKey &&
         booking.startTime < endTime &&
         startTime < booking.endTime
       );
@@ -140,7 +148,7 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const booking: DevBooking = {
         _id: createDevId('booking'),
-        bookingDate: new Date(bookingDate).toISOString(),
+        bookingDate: parseDateOnly(bookingDate).toISOString(),
         startTime,
         endTime,
         customerName: customerName?.trim() || '',
@@ -168,9 +176,9 @@ export async function POST(request: NextRequest) {
 
     // Check for overlapping confirmed bookings on the same date
     // Overlap: existingStart < newEnd AND newStart < existingEnd
-    const dateStart = new Date(bookingDate);
+    const dateStart = parseDateOnly(bookingDate);
     dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(bookingDate);
+    const dateEnd = parseDateOnly(bookingDate);
     dateEnd.setHours(23, 59, 59, 999);
 
     const conflicts = await Booking.find({
@@ -201,7 +209,7 @@ export async function POST(request: NextRequest) {
     }
 
     const booking = await Booking.create({
-      bookingDate: new Date(bookingDate),
+      bookingDate: parseDateOnly(bookingDate),
       startTime,
       endTime,
       customerName: customerName?.trim() || '',
@@ -245,4 +253,15 @@ export async function POST(request: NextRequest) {
     console.error('POST /api/bookings error:', error);
     return errorResponse('Failed to create booking', 500);
   }
+}
+
+function parseDateOnly(dateInput: string | Date) {
+  if (dateInput instanceof Date) return new Date(dateInput);
+  const [year, month, day] = dateInput.split('T')[0].split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateKey(value: string | Date) {
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  return value.includes('T') ? value.split('T')[0] : value;
 }

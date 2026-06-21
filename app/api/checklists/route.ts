@@ -4,6 +4,7 @@ import dbConnect from '@/lib/db';
 import Checklist from '@/models/Checklist';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
+import { SUPERVISOR_CHECKLIST_ITEMS } from '@/lib/supervisor-checklist';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevChecklist } from '@/lib/dev-store';
 import {
   getChecklistDayRange,
@@ -13,6 +14,7 @@ import {
   startChecklistMaintenanceScheduler,
   startOfChecklistDay,
 } from '@/lib/checklist-maintenance';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +24,10 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'daily_operations', 'view_checklist');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     const sp = request.nextUrl.searchParams;
     const staffId = sp.get('staffId');
     const date = sp.get('date');
@@ -37,6 +43,7 @@ export async function GET(request: NextRequest) {
       if (staffId) checklists = checklists.filter((checklist) => checklist.staffId === staffId);
       if (date) checklists = checklists.filter((checklist) => isSameChecklistDay(checklist.date, date));
       if (status) checklists = checklists.filter((checklist) => checklist.overallStatus === status);
+
       return successResponse(
         checklists
           .slice()
@@ -58,10 +65,11 @@ export async function GET(request: NextRequest) {
       .populate('verifiedBy', 'name')
       .sort({ date: -1 })
       .limit(100);
+
     return successResponse(checklists);
-  } catch (error) {
+  } catch (error: any) {
     console.error('GET /api/checklists error:', error);
-    return errorResponse('Failed to fetch checklists', 500);
+    return errorResponse(error.message || 'Failed to fetch checklists', 500);
   }
 }
 
@@ -69,6 +77,10 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'daily_operations', 'upload_checklist');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     const body = await request.json();
     const { action } = body;
     let useDevStore = false;
@@ -144,9 +156,9 @@ export async function POST(request: NextRequest) {
     }
 
     return errorResponse('Invalid action');
-  } catch (error) {
+  } catch (error: any) {
     console.error('POST /api/checklists error:', error);
-    return errorResponse('Failed', 500);
+    return errorResponse(error.message || 'Failed', 500);
   }
 }
 

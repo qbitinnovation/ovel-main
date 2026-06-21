@@ -83,8 +83,6 @@ function getDevDemoUser(email: string, password: string, requestedPortal: Return
     demoId = '000000000000000000000001';
   } else if (demoUser.portalType === 'committee') {
     demoId = '000000000000000000000002';
-  } else if (demoUser.portalType === 'turf') {
-    demoId = '000000000000000000000003';
   } else if (demoUser.portalType === 'shareholder') {
     demoId = '000000000000000000000004';
   }

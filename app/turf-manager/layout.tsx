@@ -3,22 +3,54 @@
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
 
-import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu, Wallet, Package, ShoppingCart, BarChart3, FileText, Calendar, ClipboardList } from 'lucide-react';
 
-const navItems = [
+const defaultNav = [
   { label: 'Dashboard', href: '/turf-manager/dashboard', icon: <LayoutDashboard size={20} /> },
-  { label: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} /> },
-  { label: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} /> },
-  { label: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} /> },
+];
+
+const moduleNavItems = [
+  { label: 'User Management', href: '/turf-manager/users', icon: <Building2 size={20} />, moduleKey: 'user_permission' },
+  { label: 'Accounts', href: '/turf-manager/accounts', icon: <Wallet size={20} />, moduleKey: 'accounts_finance' },
+  { label: 'Inventory', href: '/turf-manager/inventory', icon: <Package size={20} />, moduleKey: 'inventory' },
+  { label: 'Sales', href: '/turf-manager/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
+  { label: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
+  { label: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
+  { label: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} />, moduleKey: 'safety_checklist' },
+  { label: 'Reports', href: '/turf-manager/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
+  { label: 'MOM', href: '/turf-manager/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
+  { label: 'Bookings', href: '/turf-manager/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
+  { label: 'Notifications', href: '/turf-manager/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
+  { label: 'Audit Log', href: '/turf-manager/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
 ];
 
 export default function TurfManagerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [accessibleModules, setAccessibleModules] = useState<string[]>([]);
+  const [loadingAccess, setLoadingAccess] = useState(true);
+
+  useEffect(() => {
+    async function fetchAccess() {
+      try {
+        const res = await fetch('/api/users/me/access');
+        if (res.ok) {
+          const data = await res.json();
+          setAccessibleModules(data.data?.map((m: { moduleKey: string }) => m.moduleKey) || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch module access:', error);
+      } finally {
+        setLoadingAccess(false);
+      }
+    }
+    if (session?.user && pathname !== '/turf-manager/login') fetchAccess();
+    else setLoadingAccess(false);
+  }, [session, pathname]);
 
   if (pathname === '/turf-manager/login') {
     return <>{children}</>;
@@ -27,6 +59,19 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
   const handleSignOut = () => {
     signOut({ callbackUrl: '/turf-manager/login' });
   };
+
+  const visibleNavItems = [
+    ...defaultNav,
+    ...moduleNavItems.filter((item) => accessibleModules.includes(item.moduleKey)),
+  ];
+
+  if (loadingAccess) {
+    return (
+      <div className="app-layout">
+        <div className="loading-screen"><div className="spinner spinner-lg" /></div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-layout">
@@ -44,7 +89,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
             return (
               <Link
@@ -86,7 +131,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
               <span>Turf Manager</span>
               <span>/</span>
               <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                {navItems.find((n) => pathname?.startsWith(n.href))?.label || 'Dashboard'}
+                {visibleNavItems.find((n) => pathname?.startsWith(n.href))?.label || 'Dashboard'}
               </span>
             </div>
           </div>
@@ -102,7 +147,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
 
       <nav className="bottom-nav">
         <ul className="bottom-nav-items">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
             return (
               <li key={item.href}>

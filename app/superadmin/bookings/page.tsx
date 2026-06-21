@@ -1,11 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   AlertCircle,
   Calendar,
   Check,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   FileText,
   Lock,
@@ -86,6 +89,10 @@ const RATE_OPTIONS: Array<{ value: TurfPriceType; label: string }> = [
 ];
 
 export default function BookingsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const portalBase = pathname?.split('/')[1] || 'superadmin';
+  const manageUrl = `/${portalBase}/bookings/manage`;
   const [pricing, setPricing] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
   const [pricingLoading, setPricingLoading] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
@@ -107,6 +114,7 @@ export default function BookingsPage() {
   const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -136,6 +144,14 @@ export default function BookingsPage() {
   useEffect(() => {
     setSelectedNormalSlots([]);
     setAppliedDiscount(null);
+    setBulkSelections((prev) => {
+      if (prev.length === 0) return [{ date: selectedDate, isFullDay: true, slots: [] }];
+      if (prev[0].date === selectedDate) return prev;
+      
+      const newSelections = [...prev];
+      newSelections[0] = { ...newSelections[0], date: selectedDate };
+      return newSelections.filter((sel, idx) => idx === 0 || sel.date !== selectedDate);
+    });
   }, [selectedDate]);
 
   const visibleDates = useMemo(() => {
@@ -248,7 +264,7 @@ export default function BookingsPage() {
   const switchMode = (mode: BookingMode) => {
     setBookingMode(mode);
     setSelectedNormalSlots([]);
-    setBulkSelections([{ date: todayKey(), isFullDay: true, slots: [] }]);
+    setBulkSelections([{ date: selectedDate, isFullDay: true, slots: [] }]);
     setAppliedDiscount(null);
   };
 
@@ -312,6 +328,7 @@ export default function BookingsPage() {
     setNotes('');
     setDiscountInput('');
     setAppliedDiscount(null);
+    setCurrentStep(1);
   };
 
   const confirmBooking = async () => {
@@ -341,9 +358,10 @@ export default function BookingsPage() {
       const data = await res.json() as ApiResponse<unknown>;
       if (!data.success) throw new Error(data.message || 'Failed to confirm booking');
 
-      showToast('Booking confirmed');
+      showToast('Booking confirmed! Redirecting...');
       resetCheckout();
       await Promise.all([fetchPricing(), fetchBookedSlots()]);
+      router.push(manageUrl);
     } catch (error) {
       console.error(error);
       showToast(error instanceof Error ? error.message : 'Failed to confirm booking', 'error');
@@ -363,16 +381,34 @@ export default function BookingsPage() {
         </div>
       )}
 
-      <div className="page-header">
-        <div>
-          <h1>Bookings</h1>
-          <p className="page-subtitle">Create turf bookings and grouped invoices</p>
+      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+          <div>
+            <h1>Bookings</h1>
+            <p className="page-subtitle">Create turf bookings and grouped invoices</p>
+          </div>
+          <div className="pill-toggle-group" style={{ background: 'var(--surface-secondary)', padding: '4px', borderRadius: '30px' }}>
+            <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+              New Booking
+            </button>
+            <button className="pill-toggle" onClick={() => router.push(manageUrl)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+              Manage Bookings
+            </button>
+          </div>
+        </div>
+        
+        {/* Wizard Progress Indicator */}
+        <div style={{ display: 'flex', gap: 'var(--space-2)', width: '100%', maxWidth: '600px', margin: '0 auto', padding: 'var(--space-4) 0' }}>
+          {[1, 2, 3].map(step => (
+            <div key={step} style={{ flex: 1, height: '4px', borderRadius: '2px', background: currentStep >= step ? 'var(--primary)' : 'var(--border-primary)', transition: 'background 0.3s ease' }} />
+          ))}
         </div>
       </div>
 
-      <div className="booking-checkout-layout">
-        <div className="booking-panel">
-          <section className="card">
+      <div className="booking-wizard-container" style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: 'var(--space-8)' }}>
+        {currentStep === 1 && (
+          <div className="wizard-step" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+            <section className="card">
             <div className="card-body" style={{ display: 'grid', gap: 'var(--space-5)' }}>
               <div className="form-grid-2">
                 <div className="form-group">
@@ -503,8 +539,22 @@ export default function BookingsPage() {
               </div>
             </section>
           )}
+          
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
+              <button 
+                className="btn btn-primary btn-lg" 
+                disabled={cartItems.length === 0} 
+                onClick={() => setCurrentStep(2)}
+              >
+                Next: Customer Details <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
 
-          <section className="card">
+        {currentStep === 2 && (
+          <div className="wizard-step" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+            <section className="card">
             <div className="card-header">
               <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
                 <UserIcon size={16} /> Customer
@@ -542,8 +592,24 @@ export default function BookingsPage() {
               </div>
             </div>
           </section>
+          
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)' }}>
+              <button className="btn btn-secondary btn-lg" onClick={() => setCurrentStep(1)}>
+                <ChevronLeft size={18} /> Back
+              </button>
+              <button 
+                className="btn btn-primary btn-lg" 
+                onClick={() => setCurrentStep(3)}
+              >
+                Next: Review & Checkout <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
 
-          <section className="card">
+        {currentStep === 3 && (
+          <div className="wizard-step" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+            <section className="card" style={{ marginBottom: 'var(--space-6)' }}>
             <div className="card-header">
               <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
                 <Tag size={16} /> Discount
@@ -578,9 +644,7 @@ export default function BookingsPage() {
               </div>
             </div>
           </section>
-        </div>
-
-        <aside className="card booking-cart-panel">
+            <div className="card booking-cart-panel" style={{ width: '100%', position: 'static' }}>
           <div className="card-header">
             <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
               <Receipt size={16} /> Cart
@@ -647,33 +711,23 @@ export default function BookingsPage() {
               <strong>{fmtMoney(summary.finalAmount)}</strong>
             </div>
           </div>
-        </aside>
-      </div>
+            </div>
 
-      <div className="booking-checkout-spacer" />
-      <div className="booking-checkout-bar">
-        <div className="booking-checkout-metrics">
-          <div>
-            <span>Subtotal</span>
-            <strong>{fmtMoney(summary.baseAmount)}</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-6)', alignItems: 'center' }}>
+              <button className="btn btn-secondary btn-lg" onClick={() => setCurrentStep(2)}>
+                <ChevronLeft size={18} /> Back
+              </button>
+              <button
+                type="button"
+                className={`btn btn-primary btn-lg ${saving ? 'btn-loading' : ''}`}
+                disabled={!canConfirm}
+                onClick={confirmBooking}
+              >
+                <CheckCircle size={18} /> Confirm Booking
+              </button>
+            </div>
           </div>
-          <div>
-            <span>Discount{discountPercentageStr}</span>
-            <strong>-{fmtMoney(summary.discountAmount)}</strong>
-          </div>
-          <div>
-            <span>Final Total</span>
-            <strong>{fmtMoney(summary.finalAmount)}</strong>
-          </div>
-        </div>
-        <button
-          type="button"
-          className={`btn btn-primary btn-lg ${saving ? 'btn-loading' : ''}`}
-          disabled={!canConfirm}
-          onClick={confirmBooking}
-        >
-          <CheckCircle size={18} /> Confirm Booking
-        </button>
+        )}
       </div>
     </div>
   );
