@@ -18,7 +18,9 @@ import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
-startChecklistMaintenanceScheduler();
+if (process.env.NEXT_PHASE !== 'phase-production-build') {
+  startChecklistMaintenanceScheduler();
+}
 
 export async function GET(request: NextRequest) {
   try {
