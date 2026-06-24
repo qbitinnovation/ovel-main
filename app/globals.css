@@ -3,43 +3,43 @@
    ========================================= */
 
 /* Google Font */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* ---- CSS Custom Properties ---- */
 :root {
   /* Base Colors */
-  --bg-primary: #f4f7fe;
+  --bg-primary: #ffffff;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #f8f9fa;
+  --bg-tertiary: #f8fafc;
   --bg-elevated: #ffffff;
-  --bg-hover: #e2e8f0;
-  --bg-active: #cbd5e1;
+  --bg-hover: #f1f5f9;
+  --bg-active: #e2e8f0;
 
   /* Surface / Card Colors */
   --surface-glass: #ffffff;
   --surface-glass-hover: #ffffff;
-  --surface-glass-border: transparent;
-  --surface-overlay: rgba(0, 0, 0, 0.35);
+  --surface-glass-border: #e2e8f0;
+  --surface-overlay: rgba(15, 23, 42, 0.3);
 
   /* Text Colors */
-  --text-primary: #1A252C;
-  --text-secondary: #8A99AD;
-  --text-tertiary: #8A99AD;
-  --text-muted: #8A99AD;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-muted: #94a3b8;
   --text-inverse: #ffffff;
 
   /* Accent Colors */
-  --accent-primary: #90CF8E;
-  --accent-primary-hover: #7BBB79;
-  --accent-primary-soft: rgba(144, 207, 142, 0.12);
-  --accent-primary-glow: rgba(144, 207, 142, 0.18);
+  --accent-primary: #10b981;
+  --accent-primary-hover: #059669;
+  --accent-primary-soft: rgba(16, 185, 129, 0.08);
+  --accent-primary-glow: rgba(16, 185, 129, 0.15);
 
-  --accent-secondary: #90CF8E;
-  --accent-secondary-hover: #7BBB79;
-  --accent-secondary-soft: rgba(144, 207, 142, 0.15);
+  --accent-secondary: #059669;
+  --accent-secondary-hover: #047857;
+  --accent-secondary-soft: rgba(5, 150, 105, 0.08);
 
-  --accent-tertiary: #90CF8E;
-  --accent-tertiary-soft: rgba(144, 207, 142, 0.15);
+  --accent-tertiary: #047857;
+  --accent-tertiary-soft: rgba(4, 120, 87, 0.08);
 
   /* Status Colors */
   --status-success: #10b981;
@@ -59,7 +59,7 @@
   --status-info-border: rgba(59, 130, 246, 0.3);
 
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --text-xs: 0.75rem;
