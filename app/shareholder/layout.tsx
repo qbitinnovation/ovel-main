@@ -82,7 +82,7 @@ export default function ShareholderLayout({ children }: { children: React.ReactN
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo"><Building2 size={20} /></div>
+          <div className="sidebar-logo"><img src="/logo.png" alt="Oval Turf Logo" className="sidebar-logo-img" /></div>
           <div>
             <div className="sidebar-title">Oval Turf</div>
             <div className="sidebar-subtitle">Shareholder Portal</div>

@@ -88,7 +88,9 @@ function PortalLoginContent({ portal }: { portal: AuthPortal }) {
 
       <main className="login-shell">
         <section className="login-card" aria-label={PORTAL_TITLES[portal]}>
-          <div className="login-avatar" aria-hidden="true" />
+          <div className="login-avatar-container">
+            <img src="/logo.png" alt="Oval Turf Logo" className="login-logo" />
+          </div>
 
           <div className="login-card-header">
             <h1 className="login-title">Oval Turf</h1>
