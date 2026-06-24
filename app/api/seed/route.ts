@@ -39,7 +39,7 @@ const MODULE_DEFINITIONS = [
     description: 'Product listing, sales entries with auto-decrement, and restocking.',
     icon: '📦',
     displayOrder: 4,
-    availableActions: ['log_sale', 'add_restock_entry', 'view_inventory_levels', 'set_low_stock_threshold', 'export_inventory_report'],
+    availableActions: ['view_sales', 'add_item', 'create_sale', 'add_restock', 'delete_item', 'export_sales_report', 'view_sales_history'],
   },
   {
     moduleKey: 'maintenance_tasks',

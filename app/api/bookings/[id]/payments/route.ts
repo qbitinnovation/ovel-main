@@ -7,6 +7,7 @@ import AccountTransaction from '@/models/AccountTransaction';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevPayment } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,9 @@ export async function GET(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'bookings', 'view_payment_dashboard');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const { id } = await params;
     try {
@@ -72,6 +76,9 @@ export async function POST(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'bookings', 'add_payment');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const { id } = await params;
     const body = await request.json();
@@ -327,7 +334,7 @@ export async function POST(
         userId: session.user.id,
         userName: session.user.name || '',
         userType: session.user.userType,
-        action: 'add_payment_entry',
+        action: 'add_payment',
         module: 'bookings',
         recordId: booking._id,
         description: `Recorded bulk payment ₹${totalPaidAmount} (Discount: ₹${finalDiscountAmount}) via [${modesDesc}] for bulk booking (ID: ${booking.bulkId})`,
@@ -393,7 +400,7 @@ export async function POST(
       userId: session.user.id,
       userName: session.user.name || '',
       userType: session.user.userType,
-      action: 'add_payment_entry',
+      action: 'add_payment',
       module: 'bookings',
       recordId: payment._id,
       description: `Recorded payment ₹${totalPaidAmount} (Discount: ₹${finalDiscountAmount}) via [${modesDesc}] for booking ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}. Status: ${booking.paymentStatus}`,

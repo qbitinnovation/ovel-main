@@ -40,10 +40,13 @@ const HARMLESS_EXACT_BUTTONS = ['+', '-', 'x', '×'];
 const ACTION_MATCHERS: Record<string, string[]> = {
   submit_daily_entry: ['new entry', 'submit', 'submit & lock', 'add row'],
   request_unlock: ['request unlock'],
-  add_turf_inventory_item: ['add turf item', 'add item'],
-  update_turf_inventory_item: ['edit', 'update', 'save changes'],
-  log_sale: ['log sale', 'sell'],
-  add_restock_entry: ['add restock', 'restock'],
+  add_item: ['add turf item', 'add item'],
+  edit_item: ['edit', 'update', 'save changes', 'edit item', 'update item'],
+  delete_item: ['delete item', 'remove item', 'delete'],
+  export_turf_inventory_report: ['export pdf', 'export excel'],
+  export_sales_report: ['export pdf', 'export excel'],
+  create_sale: ['log sale', 'sell'],
+  add_restock: ['add restock', 'restock'],
   set_low_stock_threshold: ['threshold'],
   create_task: ['create task'],
   edit_task: ['edit', 'save changes'],
@@ -56,17 +59,21 @@ const ACTION_MATCHERS: Record<string, string[]> = {
   verify_checklist: ['verify'],
   approve_checklist: ['approve'],
   reject_checklist: ['reject'],
-  create_mom_entry: ['new mom'],
+  // Smart Attendance
+  submit_attendance: ['mark attendance', 'submit attendance', 'check in'],
+  verify_attendance: ['verify attendance', 'approve attendance', 'reject attendance'],
+  view_attendance_reports: ['view attendance history', 'view attendance'],
+  create_mom_entry: ['new mom', 'save mom'],
   convert_to_malayalam: ['convert to malayalam'],
-  edit_translation: ['translation'],
-  save_mom_record: ['save mom'],
+  edit_mom: ['edit mom'],
+  add_transaction: ['new manual entry', 'submit entry'],
+  export_reports: ['export pdf', 'export excel'],
+  export_mom_history: ['download pdf', 'download'],
   create_booking: ['new booking', 'create booking'],
   edit_booking: ['edit', 'save changes'],
   cancel_booking: ['cancel booking'],
-  add_payment_entry: ['add payment'],
-  edit_payment_entry: ['edit payment'],
-  configure_notification_rules: ['configure'],
-  manage_channels: ['manage'],
+  add_payment: ['add payment'],
+  edit_payment: ['edit payment'],
 };
 
 export default function PermissionScopedAdminPage({ moduleKey, children }: Props) {
@@ -168,6 +175,19 @@ export default function PermissionScopedAdminPage({ moduleKey, children }: Props
     }
   };
 
+  const [breachLogged, setBreachLogged] = useState(false);
+
+  useEffect(() => {
+    if (loaded && !access && !breachLogged) {
+      setBreachLogged(true);
+      fetch('/api/security/breach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moduleKey, path: window.location.pathname }),
+      }).catch(console.error);
+    }
+  }, [loaded, access, breachLogged, moduleKey]);
+
   const label = access?.accessLevel === 'full_control'
     ? 'Full Control'
     : access?.accessLevel === 'edit'
@@ -175,6 +195,21 @@ export default function PermissionScopedAdminPage({ moduleKey, children }: Props
       : access?.accessLevel === 'view'
         ? 'View Only'
         : 'No Access';
+
+  if (loaded && !access) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl font-bold">!</span>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Access Denied</h2>
+        <p className="text-gray-500 max-w-md mx-auto">
+          You do not have permission to view the {moduleDef?.moduleName || 'requested'} module. 
+          This unauthorized access attempt has been logged.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} onClickCapture={handleClickCapture}>

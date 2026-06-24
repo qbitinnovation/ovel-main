@@ -7,6 +7,10 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
+    const { checkPermission } = await import('@/lib/permissions');
+    const perm = await checkPermission(session.user.id, 'malayalam_mom', 'convert_to_malayalam');
+    if (!perm.allowed) return errorResponse('Forbidden', 403);
+
     const body = await request.json();
     const { text } = body;
     if (!text?.trim()) return errorResponse('Text is required');

@@ -3525,3 +3525,60 @@ h6 { font-size: var(--text-base); font-weight: 500; }
     font-size: var(--text-sm);
   }
 }
+
+.slot-pill.current-booking {
+  border: 2px dashed var(--accent-primary);
+  background: var(--accent-primary-soft);
+}
+
+/* =========================================
+   Print Styles for PDF Export
+   ========================================= */
+@media print {
+  /* Hide application shell elements */
+  .sidebar,
+  .topbar,
+  .mobile-menu-toggle,
+  .notification-bell,
+  .sidebar-overlay,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Reset layout for printing */
+  .app-layout,
+  .main-content,
+  .page-container {
+    height: auto !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  /* Hide specific UI elements not meant for PDF */
+  button,
+  .btn,
+  .page-header button,
+  input[type="text"],
+  input[type="search"] {
+    display: none !important;
+  }
+  
+  /* Make cards printer friendly */
+  .card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    margin-bottom: 20px !important;
+  }
+  
+  /* Remove backgrounds for better printing */
+  body, .app-layout, .main-content {
+    background: white !important;
+    color: black !important;
+  }
+}

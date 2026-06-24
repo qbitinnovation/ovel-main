@@ -42,6 +42,10 @@ interface DevStore {
   bookings: DevBooking[];
   payments: DevPayment[];
   accountTransactions: DevAccountTransaction[];
+  complaints: any[];
+  feedbacks: any[];
+  anomalies: any[];
+  reportSnapshots: any[];
 }
 
 export interface DevAccountTransaction {
@@ -201,6 +205,9 @@ export interface DevBooking {
   customerName: string;
   contactNumber: string;
   expectedAmount: number;
+  bookingType?: 'standard' | 'bulk';
+  slots?: { bookingDate: string; startTime: string; endTime: string; status?: string }[];
+  editHistory?: any[];
   priceType?: 'normal' | 'regular';
   pricingSnapshot?: unknown;
   notes: string;
@@ -250,7 +257,7 @@ export function isDevFallbackEnabled() {
   return process.env.NODE_ENV === 'development';
 }
 
-export function getDevStore() {
+export function getDevStore(): DevStore {
   const demoUsers: DevUser[] = [
     {
       _id: '000000000000000000000001',
@@ -341,7 +348,18 @@ export function getDevStore() {
           isActive: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
+        },
+        {
+          _id: 'dev-module-map-committee-attendance',
+          positionId: 'demo-position',
+          moduleKey: 'smart_attendance',
+          accessLevel: 'full_control',
+          enabledActions: ['submit_attendance', 'verify_attendance', 'view_attendance_reports'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+
       ],
       portalMappings: [
         {
@@ -363,47 +381,77 @@ export function getDevStore() {
           isActive: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
+        },
+        {
+          _id: 'dev-portal-map-turf-attendance',
+          portalType: 'turf',
+          moduleKey: 'smart_attendance',
+          accessLevel: 'full_control',
+          enabledActions: ['submit_attendance', 'verify_attendance', 'view_attendance_reports'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          _id: 'dev-portal-map-shareholder-attendance',
+          portalType: 'shareholder',
+          moduleKey: 'smart_attendance',
+          accessLevel: 'full_control',
+          enabledActions: ['submit_attendance', 'verify_attendance', 'view_attendance_reports'],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+
       ],
       checklists: [],
       momRecords: [],
       bookings: [],
       payments: [],
       accountTransactions: [],
+      complaints: [],
+      feedbacks: [],
+      anomalies: [],
+      reportSnapshots: [],
     };
   }
 
-  global.omsDevStore.inventoryItems ||= [];
-  global.omsDevStore.settings ||= [];
-  global.omsDevStore.inventoryTransactions ||= [];
-  global.omsDevStore.turfInventoryItems ||= [];
-  global.omsDevStore.maintenanceTasks ||= [];
-  global.omsDevStore.moduleMappings ||= [];
-  global.omsDevStore.portalMappings ||= [];
-  global.omsDevStore.checklists ||= [];
-  global.omsDevStore.momRecords ||= [];
-  global.omsDevStore.bookings ||= [];
-  global.omsDevStore.payments ||= [];
-  global.omsDevStore.accountTransactions ||= [];
+  const store = global.omsDevStore!;
+  
+  store.inventoryItems ||= [];
+  store.settings ||= [];
+  store.inventoryTransactions ||= [];
+  store.turfInventoryItems ||= [];
+  store.maintenanceTasks ||= [];
+  store.moduleMappings ||= [];
+  store.portalMappings ||= [];
+  store.checklists ||= [];
+  store.momRecords ||= [];
+  store.bookings ||= [];
+  store.payments ||= [];
+  store.accountTransactions ||= [];
+  store.feedbacks ||= [];
+  store.anomalies ||= [];
+  store.reportSnapshots ||= [];
 
-  if (global.omsDevStore.users) {
-    global.omsDevStore.users = global.omsDevStore.users.filter(
+  if (store.users) {
+    store.users = store.users.filter(
       (user) => user._id !== '000000000000000000000003'
     );
   }
-  if (global.omsDevStore.checklists) {
-    global.omsDevStore.checklists = global.omsDevStore.checklists.filter(
+  if (store.checklists) {
+    store.checklists = store.checklists.filter(
       (checklist) => checklist.staffId !== '000000000000000000000003'
     );
   }
 
   for (const demoUser of demoUsers) {
-    if (!global.omsDevStore.users.some((user) => user._id === demoUser._id)) {
-      global.omsDevStore.users.unshift(demoUser);
+    if (!store.users.some((user) => user._id === demoUser._id)) {
+      store.users.unshift(demoUser);
     }
   }
 
-  return global.omsDevStore;
+  return store;
 }
 
 export function populateDevUserPosition(user: DevUser) {

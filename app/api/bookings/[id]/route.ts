@@ -67,9 +67,13 @@ export async function PUT(
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
+    const { checkPermission } = await import('@/lib/permissions');
+    const perm = await checkPermission(session.user.id, 'bookings', 'edit_booking');
+    if (!perm.allowed) return errorResponse('Forbidden', 403);
+
     const { id } = await params;
     const body = await request.json();
-    const { customerName, contactNumber, notes, bookingDate, startTime, endTime, updateGroup } = body;
+    const { customerName, contactNumber, notes, bookingDate, startTime, endTime, updateGroup, expectedAmount } = body;
 
     try {
       await dbConnect();
@@ -86,13 +90,100 @@ export async function PUT(
         : [booking];
 
       for (const b of bookingsToUpdate) {
-        const paymentCount = store.payments.filter((payment) => payment.bookingId === b._id).length;
-        if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
-          return errorResponse('Cannot change booking date or time slot because payments have been recorded against this booking');
-        }
+        const oldDate = b.bookingDate;
+        const oldStartTime = b.startTime;
+        const oldEndTime = b.endTime;
+        const oldExpectedAmount = b.expectedAmount;
+
         if (customerName !== undefined) b.customerName = customerName.trim();
         if (contactNumber !== undefined) b.contactNumber = contactNumber.trim();
         if (notes !== undefined) b.notes = notes;
+        if (bookingDate !== undefined) b.bookingDate = new Date(bookingDate).toISOString();
+        if (startTime !== undefined) b.startTime = startTime;
+        if (endTime !== undefined) b.endTime = endTime;
+        if (expectedAmount !== undefined) {
+          b.expectedAmount = expectedAmount;
+          const finalAmt = Math.max(0, b.expectedAmount - (b.discountAmount || 0));
+          const refundAmount = b.totalPaid - finalAmt;
+          
+          if (refundAmount > 0) {
+            b.totalPaid = finalAmt;
+            b.paymentStatus = 'paid';
+            
+            const { createDevId } = await import('@/lib/dev-store');
+            
+            store.payments.unshift({
+              _id: createDevId('payment'),
+              bookingId: b._id,
+              amountPaid: -refundAmount,
+              paymentMode: 'bank_transfer',
+              paymentDate: new Date().toISOString(),
+              referenceNumber: '',
+              cashReceivedBy: '',
+              referenceNote: 'Automatic adjustment due to booking edit (price decrease)',
+              discountAmount: 0,
+              discountPercentage: 0,
+              splits: [],
+              createdBy: session.user.id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+            
+            store.accountTransactions.unshift({
+              _id: createDevId('account_txn'),
+              type: 'expense',
+              source: 'booking',
+              amount: refundAmount,
+              paymentMode: 'bank_transfer',
+              customerName: b.customerName || '',
+              customerContact: b.contactNumber || '',
+              summary: `Booking edit adjustment refund for ${b.bookingDate ? new Date(b.bookingDate).toLocaleDateString('en-IN') : ''}`,
+              referenceNumber: '',
+              date: new Date().toISOString(),
+              createdBy: session.user.id,
+              bookingId: b._id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          } else {
+            if (b.totalPaid >= finalAmt && finalAmt > 0) {
+              b.paymentStatus = 'paid';
+            } else if (b.totalPaid > 0) {
+              b.paymentStatus = 'partial';
+            } else {
+              b.paymentStatus = 'pending';
+            }
+          }
+        }
+        
+        // Keep slots in sync for standard bookings in dev-store fallback
+        if (b.bookingType === 'standard') {
+          b.slots = [{
+            bookingDate: b.bookingDate,
+            startTime: b.startTime,
+            endTime: b.endTime
+          } as any];
+        }
+        
+        // Log edit history in dev store
+        const isDateChanged = oldDate !== b.bookingDate;
+        const isTimeChanged = oldStartTime !== b.startTime || oldEndTime !== b.endTime;
+        const isPriceChanged = oldExpectedAmount !== b.expectedAmount;
+        if (isDateChanged || isTimeChanged || isPriceChanged) {
+          if (!b.editHistory) b.editHistory = [];
+          b.editHistory.push({
+            editedAt: new Date().toISOString(),
+            oldDate,
+            oldStartTime,
+            oldEndTime,
+            oldExpectedAmount,
+            newDate: b.bookingDate,
+            newStartTime: b.startTime,
+            newEndTime: b.endTime,
+            newExpectedAmount: b.expectedAmount
+          });
+        }
+        
         b.updatedAt = new Date().toISOString();
       }
       return successResponse(booking, 'Booking updated successfully');
@@ -109,16 +200,6 @@ export async function PUT(
     const bookingsToUpdate = isGroupUpdate
       ? await Booking.find({ bulkId: booking.bulkId })
       : [booking];
-
-    // Check if payments exist on any booking being updated if date/time is changing
-    for (const b of bookingsToUpdate) {
-      const paymentCount = await PaymentEntry.countDocuments({ bookingId: b._id });
-      if (paymentCount > 0 && (bookingDate || startTime || endTime)) {
-        return errorResponse(
-          'Cannot change booking date or time slot because payments have been recorded against this booking'
-        );
-      }
-    }
 
     // Store old values for audit
     const oldValue = {
@@ -149,10 +230,19 @@ export async function PUT(
 
       const conflicts = await Booking.find({
         _id: { $ne: id },
-        bookingDate: { $gte: dateStart, $lte: dateEnd },
         bookingStatus: 'confirmed',
-        startTime: { $lt: newEndTime },
-        endTime: { $gt: newStartTime },
+        $or: [
+          {
+            bookingDate: { $gte: dateStart, $lte: dateEnd },
+            startTime: { $lt: newEndTime },
+            endTime: { $gt: newStartTime },
+          },
+          {
+            'slots.bookingDate': { $gte: dateStart, $lte: dateEnd },
+            'slots.startTime': { $lt: newEndTime },
+            'slots.endTime': { $gt: newStartTime },
+          }
+        ]
       });
 
       if (conflicts.length > 0) {
@@ -162,6 +252,14 @@ export async function PUT(
       booking.bookingDate = newBookingDate;
       booking.startTime = newStartTime;
       booking.endTime = newEndTime;
+
+      if (booking.bookingType === 'standard') {
+        booking.slots = [{
+          bookingDate: newBookingDate as Date,
+          startTime: newStartTime,
+          endTime: newEndTime,
+        }];
+      }
     }
 
     // Update editable fields for all bookings in group or just single booking
@@ -170,10 +268,75 @@ export async function PUT(
       if (contactNumber !== undefined) b.contactNumber = contactNumber.trim();
       if (notes !== undefined) b.notes = notes;
       
+      if (expectedAmount !== undefined) {
+        b.expectedAmount = expectedAmount;
+        const finalAmt = Math.max(0, b.expectedAmount - (b.discountAmount || 0));
+        const refundAmount = b.totalPaid - finalAmt;
+        
+        if (refundAmount > 0) {
+          b.totalPaid = finalAmt;
+          b.paymentStatus = 'paid';
+          
+          await PaymentEntry.create({
+            bookingId: b._id,
+            amountPaid: -refundAmount,
+            paymentMode: 'bank_transfer',
+            paymentDate: new Date(),
+            referenceNote: 'Automatic adjustment due to booking edit (price decrease)',
+            createdBy: session.user.id,
+          });
+          
+          // Use dynamic import for AccountTransaction if it's not imported at top
+          // It's actually imported from '@/models/AccountTransaction' ? Wait I need to import it
+          const AccountTransactionModule = await import('@/models/AccountTransaction');
+          const AccountTransactionModel = AccountTransactionModule.default;
+          
+          await AccountTransactionModel.create({
+            type: 'expense',
+            source: 'booking',
+            amount: refundAmount,
+            paymentMode: 'bank_transfer',
+            customerName: b.customerName || '',
+            customerContact: b.contactNumber || '',
+            summary: `Booking edit adjustment refund for ${b.bookingDate ? new Date(b.bookingDate).toLocaleDateString('en-IN') : ''}`,
+            date: new Date(),
+            createdBy: session.user.id,
+            bookingId: b._id,
+          });
+        } else {
+          if (b.totalPaid >= finalAmt && finalAmt > 0) {
+            b.paymentStatus = 'paid';
+          } else if (b.totalPaid > 0) {
+            b.paymentStatus = 'partial';
+          } else {
+            b.paymentStatus = 'pending';
+          }
+        }
+      }
+      
       // Save changes if it's not the main booking (main booking is saved below)
       if (b._id.toString() !== booking._id.toString()) {
         await b.save();
       }
+    }
+
+    const isDateChanged = oldValue.bookingDate?.toISOString() !== booking.bookingDate?.toISOString();
+    const isTimeChanged = oldValue.startTime !== booking.startTime || oldValue.endTime !== booking.endTime;
+    const isPriceChanged = oldValue.expectedAmount !== booking.expectedAmount;
+    
+    if (isDateChanged || isTimeChanged || isPriceChanged) {
+      if (!booking.editHistory) booking.editHistory = [];
+      booking.editHistory.push({
+        editedAt: new Date(),
+        oldDate: oldValue.bookingDate,
+        oldStartTime: oldValue.startTime,
+        oldEndTime: oldValue.endTime,
+        oldExpectedAmount: oldValue.expectedAmount,
+        newDate: booking.bookingDate,
+        newStartTime: booking.startTime,
+        newEndTime: booking.endTime,
+        newExpectedAmount: booking.expectedAmount,
+      });
     }
 
     await booking.save();
@@ -217,6 +380,10 @@ export async function DELETE(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const { checkPermission } = await import('@/lib/permissions');
+    const perm = await checkPermission(session.user.id, 'bookings', 'cancel_booking');
+    if (!perm.allowed) return errorResponse('Forbidden', 403);
 
     const { id } = await params;
     const body = await request.json().catch(() => ({}));

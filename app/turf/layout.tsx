@@ -53,7 +53,6 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
     { label: 'റിപ്പോർട്ടുകൾ', labelEn: 'Reports', href: '/turf-manager/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
     { label: 'MOM', labelEn: 'MOM', href: '/turf-manager/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
     { label: 'ബുക്കിംഗ്', labelEn: 'Bookings', href: '/turf-manager/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
-    { label: 'നോട്ടിഫിക്കേഷനുകൾ', labelEn: 'Notifications', href: '/turf-manager/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
     { label: 'ഓഡിറ്റ് ലോഗ്', labelEn: 'Audit Log', href: '/turf-manager/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
   ];
 

@@ -5,10 +5,11 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
 
 import { ReactNode } from 'react';
 import {
-  LayoutDashboard, Wallet, Package, ShoppingCart, Wrench, CheckSquare, BarChart3, FileText, Calendar, Bell, Building2, UserCircle, Camera
+  LayoutDashboard, Wallet, Package, ShoppingCart, Wrench, CheckSquare, BarChart3, FileText, Calendar, Bell, Building2, UserCircle, Camera, MessageSquare
 } from 'lucide-react';
 
 interface NavItem {
@@ -31,46 +32,27 @@ const moduleNavItems: NavItem[] = [
   { label: 'Sales', href: '/committee/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
   { label: 'Maintenance', href: '/committee/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
   { label: 'Checklists', href: '/committee/checklists', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations', alternativeActions: ['upload_checklist', 'view_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist'] },
-  { label: 'Reports', href: '/committee/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
+  { label: 'Feedback & Support', href: '/committee/feedback', icon: <MessageSquare size={20} /> },
   { label: 'MOM', href: '/committee/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/committee/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
-  { label: 'Notifications', href: '/committee/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
+  { label: 'Attendance', href: '/committee/attendance', icon: <Building2 size={20} />, moduleKey: 'smart_attendance' },
 ];
 
 export default function CommitteeLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [moduleAccessMap, setModuleAccessMap] = useState<Record<string, { accessLevel: string; enabledActions: string[] }>>({});
-
-  // Fetch user's accessible modules
-  useEffect(() => {
-    async function fetchAccess() {
-      try {
-        const res = await fetch('/api/users/me/access');
-        if (res.ok) {
-          const data = await res.json();
-          const accessMap: Record<string, { accessLevel: string; enabledActions: string[] }> = {};
-          data.data?.forEach((m: any) => {
-            accessMap[m.moduleKey] = { accessLevel: m.accessLevel, enabledActions: m.enabledActions || [] };
-          });
-          setModuleAccessMap(accessMap);
-        }
-      } catch (error) {
-        console.error('Failed to fetch module access:', error);
-      }
-    }
-    if (session?.user) fetchAccess();
-  }, [session]);
+  const { hasModuleAccess, checkPermission, loading: permissionsLoading } = usePermissions();
 
   const visibleNavItems = [
     ...defaultNav,
     ...moduleNavItems.filter((item) => {
-      const access = moduleAccessMap[item.moduleKey!];
-      if (!access) return false;
-      if (access.accessLevel === 'full_control') return true;
-      if (item.requiredAction && !access.enabledActions.includes(item.requiredAction)) return false;
-      if (item.alternativeActions && !item.alternativeActions.some(a => access.enabledActions.includes(a))) return false;
+      if (!item.moduleKey) return true;
+      if (!hasModuleAccess(item.moduleKey)) return false;
+      
+      if (item.requiredAction && !checkPermission(item.moduleKey, item.requiredAction)) return false;
+      if (item.alternativeActions && !item.alternativeActions.some(a => checkPermission(item.moduleKey!, a))) return false;
+      
       return true;
     }),
   ];
@@ -81,6 +63,10 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
   const handleSignOut = () => {
     signOut({ callbackUrl: '/community/login' });
   };
+
+  if (permissionsLoading) {
+    return <div className="app-layout"><div className="loading-screen"><div className="spinner spinner-lg" /></div></div>;
+  }
 
   return (
     <div className="app-layout">

@@ -1,7 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Wrench, MapPin, Calendar, User } from 'lucide-react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
 
 interface Task { _id: string; title: string; description: string; location: string; priority: string; dueDate: string; assigneeId: { _id: string; name: string } | null; creatorId: { _id: string; name: string } | null; status: string; resolutionNote: string; createdAt: string; }
 interface User { _id: string; name: string; }
@@ -20,6 +22,10 @@ export default function MaintenancePage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
+
+  const { checkPermission } = usePermissions();
+  const canCreate = checkPermission('maintenance_tasks', 'create_task');
+  const canUpdate = checkPermission('maintenance_tasks', 'edit_task');
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -55,7 +61,7 @@ export default function MaintenancePage() {
       {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Maintenance</h1><p className="page-subtitle">Track and manage physical maintenance tasks</p></div>
-        <button className="btn btn-primary btn-md" onClick={() => setShowModal(true)}>+ Create Task</button>
+        {canCreate && <button className="btn btn-primary btn-md" onClick={() => setShowModal(true)}>+ Create Task</button>}
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
@@ -88,7 +94,7 @@ export default function MaintenancePage() {
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : tasks.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">🔧</div><div className="empty-state-title">No tasks</div><div className="empty-state-description">Create a maintenance task to track issues.</div></div></div>
+        <div className="card"><div className="empty-state"><div className="empty-state-icon"><Wrench size={48} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} /></div><div className="empty-state-title">No tasks</div><div className="empty-state-description">Create a maintenance task to track issues.</div></div></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {tasks.map((t) => (
@@ -103,16 +109,16 @@ export default function MaintenancePage() {
                   </div>
                   {t.description && <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>{t.description}</div>}
                   <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                    {t.location && <span>📍 {t.location}</span>}
-                    <span>📅 Due: {new Date(t.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                    <span>👤 {t.assigneeId?.name || '—'}</span>
+                    {t.location && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {t.location}</span>}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /> Due: {new Date(t.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {t.assigneeId?.name || '—'}</span>
                     <span>Created by {t.creatorId?.name || '—'}</span>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  {t.status === 'open' && <button className="btn btn-primary btn-sm" onClick={() => handleAction(t._id, 'complete', 'Work completed')}>✓ Complete</button>}
-                  {t.status === 'completed' && <button className="btn btn-primary btn-sm" onClick={() => handleAction(t._id, 'close', 'Verified and closed')}>✓ Close</button>}
-                  {['completed', 'closed'].includes(t.status) && t.status !== 'open' && <button className="btn btn-ghost btn-sm" onClick={() => handleAction(t._id, 'reopen', 'Reopened for review')}>↺ Reopen</button>}
+                  {canUpdate && t.status === 'open' && <button className="btn btn-primary btn-sm" onClick={() => handleAction(t._id, 'complete', 'Work completed')}>✓ Complete</button>}
+                  {canUpdate && t.status === 'completed' && <button className="btn btn-primary btn-sm" onClick={() => handleAction(t._id, 'close', 'Verified and closed')}>✓ Close</button>}
+                  {canUpdate && ['completed', 'closed'].includes(t.status) && t.status !== 'open' && <button className="btn btn-ghost btn-sm" onClick={() => handleAction(t._id, 'reopen', 'Reopened for review')}>↺ Reopen</button>}
                 </div>
               </div>
             </div>

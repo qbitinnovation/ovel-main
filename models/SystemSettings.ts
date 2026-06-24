@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS = [
   { key: 'photo_expiry_days', value: 7, label: 'Photo Verification Expiry (days)', category: 'operations' },
   { key: 'finance_submission_deadline', value: '21:00', label: 'Finance Submission Deadline', category: 'operations' },
   { key: 'safety_logout_deadline', value: '23:00', label: 'Safety Checklist Logout Deadline', category: 'operations' },
+  { key: 'attendance_geofence', value: { lat: 10.0247, lng: 76.3079, radius: 50 }, label: 'Attendance Geofence (Lat, Lng, Radius in meters)', category: 'operations' },
   { key: 'low_stock_threshold_default', value: 5, label: 'Default Low Stock Threshold', category: 'inventory' },
   { key: 'notification_channel_primary', value: 'push', label: 'Primary Notification Channel', category: 'notifications' },
   { key: 'notification_channel_fallback', value: 'sms', label: 'Fallback Notification Channel', category: 'notifications' },

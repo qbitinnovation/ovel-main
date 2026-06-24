@@ -39,10 +39,25 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
     const body = await request.json();
-    const { date, attendees, pointsEnglish, decisions } = body;
+    const { action, id, date, attendees, pointsEnglish, pointsMalayalam, decisions } = body;
+    
+    const { checkPermission } = await import('@/lib/permissions');
+    
+    // Check permissions based on action
+    if (action === 'update') {
+      const perm = await checkPermission(session.user.id, 'malayalam_mom', 'edit_mom');
+      if (!perm.allowed) return errorResponse('Forbidden: Missing edit_mom permission', 403);
+      if (!id) return errorResponse('MOM ID is required for update', 400);
+    } else {
+      const perm = await checkPermission(session.user.id, 'malayalam_mom', 'create_mom_entry');
+      if (!perm.allowed) return errorResponse('Forbidden: Missing create_mom_entry permission', 403);
+    }
+
     if (!date) return errorResponse('Meeting date is required');
     if (!pointsEnglish?.trim()) return errorResponse('Meeting points are required');
+    
     let useDevStore = false;
     try {
       await dbConnect();
@@ -51,51 +66,77 @@ export async function POST(request: NextRequest) {
       useDevStore = true;
     }
 
+    const meta = getRequestMeta(request.headers);
+
     if (useDevStore) {
       const store = getDevStore();
-      const pendingTasks = store.maintenanceTasks.filter((task) => ['open', 'in_progress', 'completed'].includes(task.status));
-      const pendingTasksSummary = pendingTasks.map((task) => `[${task.status.toUpperCase()}] ${task.title} - Assigned to ${devUserRef(task.assigneeId)?.name || 'Unknown'}`).join('\n');
       const now = new Date().toISOString();
-      const record: DevMomRecord = {
-        _id: createDevId('mom'),
-        date: new Date(date).toISOString(),
-        attendees: attendees || [],
-        pointsEnglish: pointsEnglish.trim(),
-        pointsMalayalam: '',
-        decisions: decisions || [],
-        pendingTasksSummary,
-        linkedTaskIds: pendingTasks.map((task) => task._id),
-        createdBy: session.user.id,
-        createdAt: now,
-        updatedAt: now,
-      };
-      store.momRecords.unshift(record);
-      return successResponse(record, 'MOM saved', 201);
+      
+      if (action === 'update') {
+        const index = store.momRecords.findIndex(r => r._id === id);
+        if (index === -1) return errorResponse('MOM record not found', 404);
+        
+        store.momRecords[index] = {
+          ...store.momRecords[index],
+          date: new Date(date).toISOString(),
+          attendees: attendees || [],
+          pointsEnglish: pointsEnglish.trim(),
+          pointsMalayalam: pointsMalayalam || '',
+          decisions: decisions || [],
+          updatedAt: now,
+        };
+        return successResponse(store.momRecords[index], 'MOM updated', 200);
+      } else {
+        const record: DevMomRecord = {
+          _id: createDevId('mom'),
+          date: new Date(date).toISOString(),
+          attendees: attendees || [],
+          pointsEnglish: pointsEnglish.trim(),
+          pointsMalayalam: pointsMalayalam || '',
+          decisions: decisions || [],
+          pendingTasksSummary: '',
+          linkedTaskIds: [],
+          createdBy: session.user.id,
+          createdAt: now,
+          updatedAt: now,
+        };
+        store.momRecords.unshift(record);
+        return successResponse(record, 'MOM saved', 201);
+      }
     }
 
-    // Auto-pull pending/overdue tasks
-    const pendingTasks = await MaintenanceTask.find({
-      status: { $in: ['open', 'in_progress', 'completed'] },
-    }).populate('assigneeId', 'name').limit(50);
+    if (action === 'update') {
+      const record = await MeetingMinutes.findByIdAndUpdate(
+        id,
+        {
+          date: new Date(date),
+          attendees: attendees || [],
+          pointsEnglish: pointsEnglish.trim(),
+          pointsMalayalam: pointsMalayalam || '',
+          decisions: decisions || [],
+        },
+        { new: true }
+      );
+      
+      if (!record) return errorResponse('MOM record not found', 404);
+      
+      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'edit_mom', module: 'malayalam_mom', recordId: record._id, description: `Updated MOM for ${new Date(date).toLocaleDateString()}`, ...meta }, request.headers);
+      
+      return successResponse(record, 'MOM updated', 200);
+    } else {
+      const record = await MeetingMinutes.create({
+        date: new Date(date),
+        attendees: attendees || [],
+        pointsEnglish: pointsEnglish.trim(),
+        pointsMalayalam: pointsMalayalam || '',
+        decisions: decisions || [],
+        createdBy: session.user.id,
+      });
 
-    const pendingTasksSummary = pendingTasks.map(
-      (t) => `[${t.status.toUpperCase()}] ${t.title} — Assigned to ${(t.assigneeId as any)?.name || 'Unknown'}`
-    ).join('\n');
+      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'create_mom_entry', module: 'malayalam_mom', recordId: record._id, description: `Created MOM for ${new Date(date).toLocaleDateString()}`, ...meta }, request.headers);
 
-    const record = await MeetingMinutes.create({
-      date: new Date(date),
-      attendees: attendees || [],
-      pointsEnglish: pointsEnglish.trim(),
-      decisions: decisions || [],
-      pendingTasksSummary,
-      linkedTaskIds: pendingTasks.map((t) => t._id),
-      createdBy: session.user.id,
-    });
-
-    const meta = getRequestMeta(request.headers);
-    await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'create_mom_entry', module: 'malayalam_mom', recordId: record._id, description: `Created MOM for ${new Date(date).toLocaleDateString()}`, ...meta }, request.headers);
-
-    return successResponse(record, 'MOM saved', 201);
+      return successResponse(record, 'MOM saved', 201);
+    }
   } catch (error) {
     console.error('POST /api/mom error:', error);
     return errorResponse('Failed to save MOM', 500);

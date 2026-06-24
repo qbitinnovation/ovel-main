@@ -7,6 +7,7 @@ import { successResponse, errorResponse, getRequestMeta, parsePagination, pagina
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevBooking } from '@/lib/dev-store';
 import { calculateTurfSlotPrice } from '@/lib/turf-pricing';
 import { getDevTurfPricingConfig, getTurfPricingConfig } from '@/lib/turf-pricing-settings';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,16 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const [permView, permCreate, permDashboard] = await Promise.all([
+      checkPermission(session.user.id, 'bookings', 'view_booking'),
+      checkPermission(session.user.id, 'bookings', 'create_booking'),
+      checkPermission(session.user.id, 'bookings', 'view_payment_dashboard')
+    ]);
+
+    if (!permView.allowed && !permCreate.allowed && !permDashboard.allowed) {
+      return errorResponse('Forbidden', 403);
+    }
 
     const sp = request.nextUrl.searchParams;
     const { page, limit } = parsePagination(sp);
@@ -58,8 +69,8 @@ export async function GET(request: NextRequest) {
       }
       
       filter.$or = [
-        { bookingDate: dateFilter },
-        { 'slots.bookingDate': dateFilter }
+        { bookingDate: { ...dateFilter } },
+        { 'slots.bookingDate': { ...dateFilter } }
       ];
     }
     if (status) filter.paymentStatus = status;
@@ -72,13 +83,15 @@ export async function GET(request: NextRequest) {
       .populate('createdBy', 'name')
       .populate('cancelledBy', 'name')
       .sort({ bookingDate: -1, startTime: -1 })
-      .skip(pagination.skip)
       .limit(limit);
+
+    console.log(`GET /api/bookings: found ${bookings.length} bookings for filter`, JSON.stringify(filter));
 
     return successResponse({ bookings, pagination });
   } catch (error) {
+    try { require('fs').writeFileSync('api_error.txt', error instanceof Error ? error.stack : String(error)); } catch (e) {}
     console.error('GET /api/bookings error:', error);
-    return errorResponse('Failed to fetch bookings', 500);
+    return errorResponse(`Failed to fetch bookings: ${error instanceof Error ? error.message : String(error)}`, 500);
   }
 }
 
@@ -86,6 +99,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'bookings', 'create_booking');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const body = await request.json();
     const { bookingDate, startTime, endTime, customerName, contactNumber, notes, bulkId, priceType, discountAmount, discountPercentage } = body;

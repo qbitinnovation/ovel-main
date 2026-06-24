@@ -27,21 +27,25 @@ import {
   DEFAULT_TURF_PRICING_CONFIG,
   calculateTurfSlotPrice,
   type TurfPriceType,
-  type TurfPricingConfig,
   type TurfPricingResult,
+  type TurfPricingConfig,
 } from '@/lib/turf-pricing';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
+
+import { SlotGrid } from '@/components/bookings/SlotGrid';
+import {
+  TIME_SLOTS,
+  isSlotBooked,
+  hasAnyBookingOnDate,
+  mergeSelectedSlots,
+  formatDate,
+  formatTime,
+  type ExistingBooking,
+} from '@/lib/booking-utils';
 
 type BookingMode = 'normal' | 'bulk';
-type DiscountType = 'percentage' | 'flat';
 type CartItemKind = 'slot' | 'full_day' | 'extra_slot';
-
-interface ExistingBooking {
-  _id: string;
-  bookingDate: string;
-  startTime: string;
-  endTime: string;
-  bookingStatus: 'confirmed' | 'cancelled';
-}
+type DiscountType = 'percentage' | 'flat';
 
 interface CartItem {
   id: string;
@@ -65,18 +69,6 @@ interface ApiResponse<T> {
   message: string;
   data: T;
 }
-
-const TIME_SLOTS = Array.from({ length: 48 }, (_, index) => {
-  const startMinutes = index * 30;
-  const endMinutes = startMinutes + 30;
-  const start = toTimeValue(startMinutes);
-  const end = endMinutes >= 24 * 60 ? '23:59' : toTimeValue(endMinutes);
-  return {
-    start,
-    end,
-    label: formatTime(start),
-  };
-});
 
 const DISCOUNT_OPTIONS = [
   { value: 'percentage', label: 'Percentage (%)', icon: <Percent size={14} /> },
@@ -115,6 +107,10 @@ export default function BookingsPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+
+  const { checkPermission } = usePermissions();
+  const canCreateBooking = checkPermission('bookings', 'create_booking');
+  const canViewPaymentDashboard = checkPermission('bookings', 'view_payment_dashboard');
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -356,15 +352,22 @@ export default function BookingsPage() {
       });
 
       const data = await res.json() as ApiResponse<unknown>;
-      if (!data.success) throw new Error(data.message || 'Failed to confirm booking');
+      if (!data.success) {
+        showToast(data.message || 'Failed to confirm booking', 'error');
+        return;
+      }
 
-      showToast('Booking confirmed! Redirecting...');
+      showToast('Booking confirmed!');
       resetCheckout();
       await Promise.all([fetchPricing(), fetchBookedSlots()]);
-      router.push(manageUrl);
+      
+      if (canViewPaymentDashboard) {
+        showToast('Booking confirmed! Redirecting...');
+        router.push(manageUrl);
+      }
     } catch (error) {
-      console.error(error);
-      showToast(error instanceof Error ? error.message : 'Failed to confirm booking', 'error');
+      console.error('Network or parsing error:', error);
+      showToast('Failed to connect to the server', 'error');
     } finally {
       setSaving(false);
     }
@@ -388,12 +391,16 @@ export default function BookingsPage() {
             <p className="page-subtitle">Create turf bookings and grouped invoices</p>
           </div>
           <div className="pill-toggle-group" style={{ background: 'var(--surface-secondary)', padding: '4px', borderRadius: '30px' }}>
-            <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-              New Booking
-            </button>
-            <button className="pill-toggle" onClick={() => router.push(manageUrl)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-              Manage Bookings
-            </button>
+            {canCreateBooking && (
+              <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+                New Booking
+              </button>
+            )}
+            {canViewPaymentDashboard && (
+              <button className="pill-toggle" onClick={() => router.push(manageUrl)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+                Manage Bookings
+              </button>
+            )}
           </div>
         </div>
         
@@ -413,7 +420,7 @@ export default function BookingsPage() {
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label required">Booking Date</label>
-                  <CustomDatePicker value={selectedDate} onChange={setSelectedDate} />
+                  <CustomDatePicker value={selectedDate} onChange={setSelectedDate} minDate={new Date().toISOString().split('T')[0]} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Mode</label>
@@ -717,14 +724,16 @@ export default function BookingsPage() {
               <button className="btn btn-secondary btn-lg" onClick={() => setCurrentStep(2)}>
                 <ChevronLeft size={18} /> Back
               </button>
-              <button
-                type="button"
-                className={`btn btn-primary btn-lg ${saving ? 'btn-loading' : ''}`}
-                disabled={!canConfirm}
-                onClick={confirmBooking}
-              >
-                <CheckCircle size={18} /> Confirm Booking
-              </button>
+              {canCreateBooking && (
+                <button
+                  type="button"
+                  className={`btn btn-primary btn-lg ${saving ? 'btn-loading' : ''}`}
+                  disabled={!canConfirm}
+                  onClick={confirmBooking}
+                >
+                  <CheckCircle size={18} /> Confirm Booking
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -733,40 +742,39 @@ export default function BookingsPage() {
   );
 }
 
-function SlotGrid({
-  date,
-  selectedSet,
-  bookedByDate,
-  disabled,
-  onToggle,
-}: {
-  date: string;
-  selectedSet: Set<string>;
-  bookedByDate: Record<string, ExistingBooking[]>;
-  disabled: boolean;
-  onToggle: (slot: typeof TIME_SLOTS[number]) => void;
-}) {
-  return (
-    <div className="booking-slot-grid-3">
-      {TIME_SLOTS.map((slot) => {
-        const booked = isSlotBooked(date, slot.start, slot.end, bookedByDate);
-        const selected = selectedSet.has(slot.start);
-        const locked = disabled && !selected;
-        return (
-          <button
-            key={`${date}-${slot.start}`}
-            type="button"
-            className={`slot-pill ${selected ? 'selected' : ''} ${booked ? 'booked' : ''} ${locked ? 'locked' : ''}`}
-            disabled={booked || locked}
-            onClick={() => onToggle(slot)}
-            title={booked ? 'Booked' : locked ? 'Locked' : slot.label}
-          >
-            {slot.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+function getDiscountAmount(baseAmount: number, discount: AppliedDiscount | null) {
+  if (!discount || baseAmount <= 0) return 0;
+  if (discount.type === 'percentage') {
+    return Math.min(baseAmount, Math.round((baseAmount * Math.min(100, Math.max(0, discount.value))) / 100));
+  }
+
+  return Math.min(baseAmount, Math.round(Math.max(0, discount.value)));
+}
+
+function todayKey() {
+  return formatDateKey(new Date());
+}
+
+function addDays(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return formatDateKey(date);
+}
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function fmtMoney(amount: number) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(amount) ? amount : 0).replace(/\s+/g, '');
 }
 
 function buildSlotCartItems({
@@ -842,104 +850,3 @@ function quoteCartItem({
   }
 }
 
-function mergeSelectedSlots(slotStarts: string[]) {
-  const sorted = slotStarts
-    .map((start) => TIME_SLOTS.find((slot) => slot.start === start))
-    .filter((slot): slot is typeof TIME_SLOTS[number] => Boolean(slot))
-    .sort((a, b) => a.start.localeCompare(b.start));
-
-  const ranges: Array<{ startTime: string; endTime: string }> = [];
-  for (const slot of sorted) {
-    const last = ranges[ranges.length - 1];
-    if (last && last.endTime === slot.start) {
-      last.endTime = slot.end;
-    } else {
-      ranges.push({ startTime: slot.start, endTime: slot.end });
-    }
-  }
-
-  return ranges;
-}
-
-function isSlotBooked(date: string, startTime: string, endTime: string, bookedByDate: Record<string, ExistingBooking[]>) {
-  return (bookedByDate[date] || []).some((booking) => (
-    booking.bookingStatus === 'confirmed' &&
-    rangesOverlap(startTime, endTime, booking.startTime, booking.endTime)
-  ));
-}
-
-function hasAnyBookingOnDate(date: string, bookedByDate: Record<string, ExistingBooking[]>) {
-  return (bookedByDate[date] || []).some((booking) => booking.bookingStatus === 'confirmed');
-}
-
-function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  const aStartMinutes = toMinutes(aStart);
-  const aEndMinutes = toMinutes(aEnd);
-  const bStartMinutes = toMinutes(bStart);
-  const bEndMinutes = toMinutes(bEnd);
-  return aStartMinutes < bEndMinutes && bStartMinutes < aEndMinutes;
-}
-
-function getDiscountAmount(baseAmount: number, discount: AppliedDiscount | null) {
-  if (!discount || baseAmount <= 0) return 0;
-  if (discount.type === 'percentage') {
-    return Math.min(baseAmount, Math.round((baseAmount * Math.min(100, Math.max(0, discount.value))) / 100));
-  }
-
-  return Math.min(baseAmount, Math.round(Math.max(0, discount.value)));
-}
-
-function todayKey() {
-  return formatDateKey(new Date());
-}
-
-function addDays(dateKey: string, days: number) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + days);
-  return formatDateKey(date);
-}
-
-function formatDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatDate(dateKey: string) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function fmtMoney(amount: number) {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(Number.isFinite(amount) ? amount : 0).replace(/\s+/g, '');
-}
-
-function formatTime(time: string) {
-  const [hours, minutes] = time.split(':').map(Number);
-  const normalizedHours = time === '23:59' ? 23 : hours;
-  const ampm = normalizedHours >= 12 ? 'PM' : 'AM';
-  const hour12 = normalizedHours % 12 || 12;
-  return `${hour12}:${minutes.toString().padStart(2, '0')} ${ampm}`;
-}
-
-function toTimeValue(minutes: number) {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-}
-
-function toMinutes(time: string) {
-  if (time === '23:59') return 24 * 60;
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}

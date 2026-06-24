@@ -19,7 +19,7 @@ export async function PUT(
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
     // Only SuperAdmin can edit payment entries
-    if (session.user.userType !== USER_TYPES.SUPERADMIN) {
+    if (session.user.userType !== 'superadmin') {
       return errorResponse('Only SuperAdmin can edit payment entries', 403);
     }
 

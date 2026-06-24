@@ -5,6 +5,7 @@ import TurfInventoryItem from '@/models/TurfInventoryItem';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta, sanitizeInput } from '@/lib/utils';
 import { createDevId, getDevStore, isDevFallbackEnabled, type DevTurfInventoryItem } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,9 @@ export async function GET() {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'inventory', 'view_items');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     try {
       await dbConnect();
@@ -56,6 +60,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'add-item') {
+      const permission = await checkPermission(session.user.id, 'inventory', 'add_item');
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+
       const name = sanitizeInput(body.name || '');
       if (!name) return errorResponse('Item name is required');
 
@@ -87,6 +94,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'update-item') {
+      const permission = await checkPermission(session.user.id, 'inventory', 'edit_item');
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+
       const { itemId } = body;
       if (!itemId) return errorResponse('Item ID required');
 
@@ -115,6 +125,29 @@ export async function POST(request: NextRequest) {
       await item.save();
       await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'update_turf_inventory_item', module: 'inventory', recordId: item._id, description: `Updated turf inventory item "${item.name}"`, ...meta }, request.headers);
       return successResponse(item, 'Inventory item updated');
+    }
+
+    if (action === 'delete-item') {
+      const permission = await checkPermission(session.user.id, 'inventory', 'delete_item');
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+
+      const { itemId } = body;
+      if (!itemId) return errorResponse('Item ID required');
+
+      if (useDevStore) {
+        const store = getDevStore();
+        const index = store.turfInventoryItems.findIndex((entry) => entry._id === itemId);
+        if (index === -1) return errorResponse('Item not found', 404);
+        const [deletedItem] = store.turfInventoryItems.splice(index, 1);
+        return successResponse(deletedItem, 'Inventory item deleted');
+      }
+
+      const item = await TurfInventoryItem.findById(itemId);
+      if (!item) return errorResponse('Item not found', 404);
+      
+      await item.deleteOne();
+      await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'delete_turf_inventory_item', module: 'inventory', recordId: item._id, description: `Deleted turf inventory item "${item.name}"`, ...meta }, request.headers);
+      return successResponse(item, 'Inventory item deleted');
     }
 
     return errorResponse('Invalid action');

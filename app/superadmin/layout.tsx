@@ -8,7 +8,7 @@ import { getInitials } from '@/lib/utils';
 
 import {
   LayoutDashboard, Users, Link as LinkIcon, Wallet, Package, ShoppingCart, Wrench, CheckSquare, FileText, Calendar,
-  BarChart3, Bell, ClipboardList, Settings, Building2, Camera, Receipt
+  BarChart3, Bell, ClipboardList, Settings, Building2, Camera, Receipt, MapPin, CheckCircle, MessageSquare
 } from 'lucide-react';
 
 const navItems = [
@@ -23,9 +23,11 @@ const navItems = [
   { label: 'Checklists', href: '/superadmin/checklists', icon: <CheckSquare size={20} /> },
   { label: 'MOM', href: '/superadmin/mom', icon: <FileText size={20} /> },
   { label: 'Bookings', href: '/superadmin/bookings', icon: <Calendar size={20} /> },
+  { divider: true, label: 'Smart Attendance' },
+  { label: 'Submit Attendance', href: '/superadmin/attendance/submit', icon: <MapPin size={20} /> },
+  { label: 'Verify Attendance', href: '/superadmin/attendance/verify', icon: <CheckCircle size={20} /> },
   { divider: true, label: 'System' },
-  { label: 'Reports', href: '/superadmin/reports', icon: <BarChart3 size={20} /> },
-  { label: 'Notifications', href: '/superadmin/notifications', icon: <Bell size={20} /> },
+  { label: 'Feedback & Support', href: '/superadmin/feedback', icon: <MessageSquare size={20} /> },
   { label: 'Audit Log', href: '/superadmin/audit-log', icon: <ClipboardList size={20} /> },
   { label: 'Settings', href: '/superadmin/settings', icon: <Settings size={20} /> },
 ];
@@ -60,10 +62,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item, i) => {
+          {navItems.map((item) => {
             if ('divider' in item && item.divider) {
               return (
-                <div key={i} className="sidebar-section">
+                <div key={`divider-${item.label}`} className="sidebar-section">
                   <span className="sidebar-section-title">{item.label}</span>
                 </div>
               );

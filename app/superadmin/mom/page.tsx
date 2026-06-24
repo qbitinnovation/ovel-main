@@ -1,7 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { X, Check, Save, Globe, FileText } from 'lucide-react';
+import { X, Check, Save, Globe, FileText, Download, Edit } from 'lucide-react';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
+import jsPDF from 'jspdf';
 
 interface MOM { _id: string; date: string; attendees: string[]; pointsEnglish: string; pointsMalayalam: string; decisions: string[]; pendingTasksSummary: string; createdBy: { name: string } | null; createdAt: string; }
 
@@ -17,8 +19,16 @@ export default function MOMPage() {
   const [translating, setTranslating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<MOM | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
+
+  const { checkPermission } = usePermissions();
+  const canCreate = checkPermission('malayalam_mom', 'create_mom_entry');
+  const canEdit = checkPermission('malayalam_mom', 'edit_mom');
+  const canTranslate = checkPermission('malayalam_mom', 'convert_to_malayalam');
+  const canExport = checkPermission('malayalam_mom', 'export_mom_history');
+  const canViewHistory = checkPermission('malayalam_mom', 'view_mom_history');
 
   const fetchRecords = useCallback(async () => {
     try { const res = await fetch('/api/mom'); const d = await res.json(); if (d.success) setRecords(d.data); } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -36,11 +46,63 @@ export default function MOMPage() {
     if (!pointsEnglish.trim()) return showToast('Meeting points required', 'error');
     setSaving(true);
     try {
-      const res = await fetch('/api/mom', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: formDate, attendees: attendees.split(',').map((a) => a.trim()).filter(Boolean), pointsEnglish, decisions: decisions.split('\n').filter(Boolean) }) });
+      const res = await fetch('/api/mom', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingId ? 'update' : 'create', id: editingId, date: formDate, attendees: attendees.split(',').map((a) => a.trim()).filter(Boolean), pointsEnglish, pointsMalayalam, decisions: decisions.split('\n').filter(Boolean) }) });
       const d = await res.json();
-      if (d.success) { showToast('MOM saved'); setView('list'); fetchRecords(); setPointsEnglish(''); setPointsMalayalam(''); setDecisions(''); setAttendees(''); }
+      if (d.success) { showToast(editingId ? 'MOM updated' : 'MOM saved'); setView('list'); fetchRecords(); setPointsEnglish(''); setPointsMalayalam(''); setDecisions(''); setAttendees(''); setEditingId(null); setSelected(null); }
       else showToast(d.message, 'error');
     } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+  };
+
+  const handleEdit = () => {
+    if (!selected) return;
+    setFormDate(selected.date.split('T')[0]);
+    setAttendees(selected.attendees.join(', '));
+    setPointsEnglish(selected.pointsEnglish);
+    setPointsMalayalam(selected.pointsMalayalam);
+    setDecisions(selected.decisions.join('\n'));
+    setEditingId(selected._id);
+    setView('form');
+  };
+
+  const handleExportPDF = () => {
+    if (!selected) return;
+    const doc = new jsPDF();
+    const dateStr = new Date(selected.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    doc.setFontSize(16);
+    doc.text(`Minutes of Meeting - ${dateStr}`, 14, 20);
+    
+    let y = 30;
+    doc.setFontSize(12);
+    doc.text('Attendees:', 14, y);
+    doc.setFontSize(10);
+    y += 7;
+    const attendeesText = doc.splitTextToSize(selected.attendees.join(', ') || 'None listed', 180);
+    doc.text(attendeesText, 14, y);
+    y += attendeesText.length * 5 + 5;
+    
+    doc.setFontSize(12);
+    doc.text('Meeting Points (English):', 14, y);
+    doc.setFontSize(10);
+    y += 7;
+    const pointsText = doc.splitTextToSize(selected.pointsEnglish, 180);
+    doc.text(pointsText, 14, y);
+    y += pointsText.length * 5 + 5;
+
+    if (selected.decisions && selected.decisions.length > 0) {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.text('Decisions:', 14, y);
+      doc.setFontSize(10);
+      y += 7;
+      selected.decisions.forEach((d, i) => {
+        if (y > 280) { doc.addPage(); y = 20; }
+        const dText = doc.splitTextToSize(`${i + 1}. ${d}`, 180);
+        doc.text(dText, 14, y);
+        y += dText.length * 5 + 2;
+      });
+    }
+
+    doc.save(`MOM_${selected.date.split('T')[0]}.pdf`);
   };
 
   return (
@@ -48,8 +110,8 @@ export default function MOMPage() {
       {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Minutes of Meeting</h1><p className="page-subtitle">Create, translate, and manage meeting minutes</p></div>
-        {view === 'list' && <button className="btn btn-primary btn-md" onClick={() => setView('form')}>+ New MOM</button>}
-        {view === 'form' && <button className="btn btn-secondary btn-md" onClick={() => setView('list')}>← Back</button>}
+        {view === 'list' && canCreate && <button className="btn btn-primary btn-md" onClick={() => { setView('form'); setEditingId(null); setPointsEnglish(''); setPointsMalayalam(''); setDecisions(''); setAttendees(''); setFormDate(new Date().toISOString().split('T')[0]); }}>+ New MOM</button>}
+        {view === 'form' && <button className="btn btn-secondary btn-md" onClick={() => { setView('list'); setEditingId(null); }}>← Back</button>}
       </div>
 
       {view === 'form' ? (
@@ -69,7 +131,7 @@ export default function MOMPage() {
           <div>
             <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
               <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}><Globe size={18} /> Malayalam Translation</h3>
-                <button className={`btn btn-secondary btn-sm ${translating ? 'btn-loading' : ''}`} onClick={handleTranslate} disabled={translating}>Convert to Malayalam</button>
+                {canTranslate && <button className={`btn btn-secondary btn-sm ${translating ? 'btn-loading' : ''}`} onClick={handleTranslate} disabled={translating}>Convert to Malayalam</button>}
               </div>
               <div className="card-body" style={{ padding: 'var(--space-4)' }}>
                 {pointsMalayalam ? (
@@ -81,7 +143,9 @@ export default function MOMPage() {
             </div>
           </div>
         </div>
-      ) : loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : records.length === 0 ? (
+      ) : loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : !canViewHistory ? (
+        <div className="card"><div className="empty-state"><div className="empty-state-icon"><FileText size={48} /></div><div className="empty-state-title">No Access</div><div className="empty-state-description">You don't have permission to view MOM history.</div></div></div>
+      ) : records.length === 0 ? (
         <div className="card"><div className="empty-state"><div className="empty-state-icon"><FileText size={48} /></div><div className="empty-state-title">No meeting minutes</div><div className="empty-state-description">Create your first meeting record.</div></div></div>
       ) : (
         <div className={selected ? 'form-grid-responsive' : 'grid'}>
@@ -97,13 +161,26 @@ export default function MOMPage() {
           </div>
           {selected && (
             <div className="card">
-              <div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={18} /> {new Date(selected.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3></div>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={18} /> {new Date(selected.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {canEdit && (
+                    <button className="btn btn-secondary btn-sm" onClick={handleEdit} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Edit size={16} /> Edit MOM
+                    </button>
+                  )}
+                  {canExport && (
+                    <button className="btn btn-secondary btn-sm" onClick={handleExportPDF} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Download size={16} /> Download PDF
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="card-body" style={{ padding: 'var(--space-6)' }}>
                 <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">Attendees</div><div style={{ fontSize: 'var(--text-sm)' }}>{selected.attendees.join(', ') || 'None listed'}</div></div>
                 <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">Meeting Points (English)</div><div style={{ fontSize: 'var(--text-sm)', whiteSpace: 'pre-wrap' }}>{selected.pointsEnglish}</div></div>
                 {selected.pointsMalayalam && <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">മലയാളം (Malayalam)</div><div style={{ fontSize: 'var(--text-sm)', whiteSpace: 'pre-wrap' }}>{selected.pointsMalayalam}</div></div>}
                 {selected.decisions.length > 0 && <div style={{ marginBottom: 'var(--space-4)' }}><div className="form-label">Decisions</div><ul style={{ paddingLeft: 'var(--space-4)', fontSize: 'var(--text-sm)' }}>{selected.decisions.map((d, i) => <li key={i} style={{ marginBottom: 'var(--space-1)' }}>{d}</li>)}</ul></div>}
-                {selected.pendingTasksSummary && <div><div className="form-label">Linked Pending Tasks</div><pre style={{ fontSize: 'var(--text-xs)', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>{selected.pendingTasksSummary}</pre></div>}
               </div>
             </div>
           )}

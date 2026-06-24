@@ -11,13 +11,7 @@ const CATEGORIES = [
     icon: <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />,
     href: '/superadmin/settings/bookings',
   },
-  {
-    key: 'general',
-    label: 'General Settings',
-    desc: 'Manage basic system profile details, contact information, and logo assets.',
-    icon: <Home size={18} style={{ color: 'var(--accent-primary)' }} />,
-    href: '/superadmin/settings/general',
-  },
+
   {
     key: 'operations',
     label: 'Operations Settings',
@@ -32,26 +26,13 @@ const CATEGORIES = [
     icon: <Package size={18} style={{ color: 'var(--accent-primary)' }} />,
     href: '/superadmin/settings/inventory',
   },
+
   {
-    key: 'notifications',
-    label: 'Notification Settings',
-    desc: 'Configure email alerts, SMS reminders, and system push notification triggers.',
-    icon: <Bell size={18} style={{ color: 'var(--accent-primary)' }} />,
-    href: '/superadmin/settings/notifications',
-  },
-  {
-    key: 'language',
-    label: 'Language Settings',
-    desc: 'Manage system language preferences, default locales, and translation sets.',
+    key: 'attendance',
+    label: 'Attendance Settings',
+    desc: 'Configure geofence for Smart Attendance and device verification parameters.',
     icon: <Globe size={18} style={{ color: 'var(--accent-primary)' }} />,
-    href: '/superadmin/settings/language',
-  },
-  {
-    key: 'reports',
-    label: 'Reports Settings',
-    desc: 'Configure system reports generation intervals and dashboard export properties.',
-    icon: <BarChart3 size={18} style={{ color: 'var(--accent-primary)' }} />,
-    href: '/superadmin/settings/reports',
+    href: '/superadmin/settings/attendance',
   },
 ];
 

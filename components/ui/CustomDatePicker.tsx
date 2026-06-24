@@ -10,9 +10,10 @@ interface CustomDatePickerProps {
   style?: React.CSSProperties;
   disabled?: boolean;
   placeholder?: string;
+  minDate?: string; // ISO date string YYYY-MM-DD
 }
 
-export function CustomDatePicker({ value, onChange, className = '', style, disabled = false, placeholder = 'Select Date' }: CustomDatePickerProps) {
+export function CustomDatePicker({ value, onChange, className = '', style, disabled = false, placeholder = 'Select Date', minDate }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -82,6 +83,16 @@ export function CustomDatePicker({ value, onChange, className = '', style, disab
     return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   };
 
+  const isBeforeMinDate = (d: Date) => {
+    if (!minDate) return false;
+    const [my, mm, md] = minDate.split('-').map(Number);
+    const minD = new Date(my, mm - 1, md);
+    minD.setHours(0, 0, 0, 0);
+    const target = new Date(d);
+    target.setHours(0, 0, 0, 0);
+    return target < minD;
+  };
+
   const handleSelectDate = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -118,12 +129,14 @@ export function CustomDatePicker({ value, onChange, className = '', style, disab
             ))}
             {days.map((d, i) => {
               if (!d) return <div key={`empty-${i}`} className="custom-datepicker-day empty"></div>;
+              const past = isBeforeMinDate(d);
               return (
                 <button
                   key={i}
                   type="button"
-                  className={`custom-datepicker-day ${isSelected(d) ? 'selected' : ''} ${isToday(d) && !isSelected(d) ? 'today' : ''}`}
-                  onClick={() => handleSelectDate(d)}
+                  disabled={past}
+                  className={`custom-datepicker-day ${isSelected(d) ? 'selected' : ''} ${isToday(d) && !isSelected(d) ? 'today' : ''} ${past ? 'disabled' : ''}`}
+                  onClick={() => !past && handleSelectDate(d)}
                 >
                   {d.getDate()}
                 </button>

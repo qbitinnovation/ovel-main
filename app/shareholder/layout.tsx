@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
 
-import { LayoutDashboard, BarChart3, Wallet, Bell, Building2, Package, ShoppingCart, Wrench, CheckSquare, Shield, FileText, Calendar, Menu, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Wallet, Bell, Building2, Package, ShoppingCart, Wrench, CheckSquare, Shield, FileText, Calendar, Menu, ClipboardList, MessageSquare } from 'lucide-react';
 
 const defaultNav = [
   { label: 'Dashboard', href: '/shareholder/dashboard', icon: <LayoutDashboard size={20} /> },
@@ -18,12 +18,13 @@ const moduleNavItems = [
   { label: 'Inventory', href: '/shareholder/inventory', icon: <Package size={20} />, moduleKey: 'inventory' },
   { label: 'Sales', href: '/shareholder/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
   { label: 'Checklist', href: '/shareholder/checklist', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
+  { label: 'Feedback & Support', href: '/shareholder/feedback', icon: <MessageSquare size={20} /> },
   { label: 'Tasks', href: '/shareholder/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
   { label: 'Safety', href: '/shareholder/safety-checkout', icon: <Shield size={20} />, moduleKey: 'safety_checklist' },
   { label: 'Reports', href: '/shareholder/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
   { label: 'MOM', href: '/shareholder/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/shareholder/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
-  { label: 'Notifications', href: '/shareholder/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
+  { label: 'Complaints', href: '/shareholder/complaints', icon: <MessageSquare size={20} />, moduleKey: 'complaints' },
   { label: 'Audit Log', href: '/shareholder/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
 ];
 
@@ -62,7 +63,7 @@ export default function ShareholderLayout({ children }: { children: React.ReactN
 
   const visibleNavItems = [
     ...defaultNav,
-    ...moduleNavItems.filter((item) => accessibleModules.includes(item.moduleKey)),
+    ...moduleNavItems.filter((item) => !item.moduleKey || accessibleModules.includes(item.moduleKey)),
   ];
 
   if (loadingAccess) {

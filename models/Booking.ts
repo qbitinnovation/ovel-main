@@ -6,6 +6,18 @@ export interface IBookingSlot {
   endTime: string;
 }
 
+export interface IBookingEditHistory {
+  editedAt: Date;
+  oldDate?: Date;
+  oldStartTime?: string;
+  oldEndTime?: string;
+  oldExpectedAmount?: number;
+  newDate?: Date;
+  newStartTime?: string;
+  newEndTime?: string;
+  newExpectedAmount?: number;
+}
+
 export interface IBooking extends Document {
   _id: Types.ObjectId;
   bookingType: 'standard' | 'bulk';
@@ -31,6 +43,7 @@ export interface IBooking extends Document {
   bulkId: string | null;
   discountAmount: number;
   discountPercentage: number;
+  editHistory?: IBookingEditHistory[];
 }
 
 const BookingSlotSchema = new Schema<IBookingSlot>(
@@ -75,6 +88,22 @@ const BookingSchema = new Schema<IBooking>(
     bulkId: { type: String, default: null },
     discountAmount: { type: Number, default: 0 },
     discountPercentage: { type: Number, default: 0 },
+    editHistory: {
+      type: [
+        {
+          editedAt: { type: Date, required: true },
+          oldDate: { type: Date },
+          oldStartTime: { type: String },
+          oldEndTime: { type: String },
+          oldExpectedAmount: { type: Number },
+          newDate: { type: Date },
+          newStartTime: { type: String },
+          newEndTime: { type: String },
+          newExpectedAmount: { type: Number },
+        }
+      ],
+      default: []
+    },
   },
   { timestamps: true }
 );

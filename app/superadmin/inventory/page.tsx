@@ -1,8 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Check, Package } from 'lucide-react';
+import { X, Check, Package, FileText, Receipt, Trash2 } from 'lucide-react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 
 interface TurfItem {
   _id: string;
@@ -39,6 +42,12 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [form, setForm] = useState(emptyForm);
+
+  const { checkPermission } = usePermissions();
+  const canAdd = checkPermission('inventory', 'add_item');
+  const canEdit = checkPermission('inventory', 'edit_item');
+  const canDelete = checkPermission('inventory', 'delete_item');
+  const canExport = checkPermission('inventory', 'export_turf_inventory_report');
 
   const showToast = (message: string, type = 'success') => {
     setToast({ message, type });
@@ -137,6 +146,84 @@ export default function InventoryPage() {
     }
   };
 
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    try {
+      const res = await fetch('/api/turf-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-item', itemId: id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Item deleted successfully');
+        setSelectedItem(null);
+        fetchItems();
+      } else {
+        showToast(data.message || 'Error deleting item', 'error');
+      }
+    } catch {
+      showToast('Error deleting item', 'error');
+    }
+  };
+
+  const exportToExcel = () => {
+    if (!items.length) return showToast('No items to export', 'error');
+    
+    const exportData = items.map(item => ({
+      'Item Name': item.name,
+      'Category': item.category,
+      'Quantity': item.quantity,
+      'Condition': conditionLabels[item.condition] || item.condition,
+      'Location': item.location,
+      'Notes': item.notes || '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Turf_Inventory');
+    XLSX.writeFile(workbook, `Turf_Inventory_${new Date().getTime()}.xlsx`);
+  };
+
+  const exportToPDF = () => {
+    if (!items.length) return showToast('No items to export', 'error');
+    
+    const doc = new jsPDF('portrait');
+    doc.setFontSize(16);
+    doc.text('Turf Inventory Report', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 22);
+
+    let y = 35;
+    doc.setFontSize(9);
+    doc.text('Item Name', 14, y);
+    doc.text('Category', 70, y);
+    doc.text('Quantity', 110, y);
+    doc.text('Condition', 135, y);
+    doc.text('Location', 170, y);
+    
+    y += 5;
+    doc.line(14, y, 200, y);
+    y += 7;
+
+    items.forEach((item) => {
+      if (y > 280) {
+        doc.addPage();
+        y = 20;
+      }
+      
+      doc.text(item.name.substring(0, 25), 14, y);
+      doc.text(item.category.substring(0, 15), 70, y);
+      doc.text(item.quantity.toString(), 110, y);
+      doc.text(conditionLabels[item.condition] || item.condition, 135, y);
+      doc.text(item.location.substring(0, 15), 170, y);
+      
+      y += 8;
+    });
+
+    doc.save(`Turf_Inventory_${new Date().getTime()}.pdf`);
+  };
+
   return (
     <div className="page-container">
       {toast && (
@@ -153,7 +240,21 @@ export default function InventoryPage() {
           <h1>Inventory</h1>
           <p className="page-subtitle">Store and track turf items, equipment, and ground assets</p>
         </div>
-        <button className="btn btn-primary btn-md" onClick={openAddForm}>+ Add Turf Item</button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          {canExport && (
+            <>
+              <button className="btn btn-secondary btn-md" onClick={exportToPDF}>
+                <FileText size={18} /> Export PDF
+              </button>
+              <button className="btn btn-secondary btn-md" onClick={exportToExcel}>
+                <Receipt size={18} /> Export Excel
+              </button>
+            </>
+          )}
+          {canAdd && (
+            <button className="btn btn-primary btn-md" onClick={openAddForm}>+ Add Turf Item</button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -219,9 +320,20 @@ export default function InventoryPage() {
                 <div><div className="stat-label">Notes</div><div style={{ color: 'var(--text-secondary)' }}>{selectedItem.notes || '-'}</div></div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary btn-md" onClick={() => setSelectedItem(null)}>Close</button>
-              <button className="btn btn-primary btn-md" onClick={() => openEditForm(selectedItem)}>Edit Item</button>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {canDelete ? (
+                <button className="btn btn-danger btn-md" onClick={() => handleDeleteItem(selectedItem._id)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Trash2 size={16} /> Delete Item
+                </button>
+              ) : (
+                <div />
+              )}
+              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <button className="btn btn-secondary btn-md" onClick={() => setSelectedItem(null)}>Close</button>
+                {canEdit && (
+                  <button className="btn btn-primary btn-md" onClick={() => openEditForm(selectedItem)}>Edit Item</button>
+                )}
+              </div>
             </div>
           </div>
         </div>

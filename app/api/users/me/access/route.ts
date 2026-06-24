@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { auth } from '@/lib/auth';
 import { getUserModuleAccess } from '@/lib/permissions';
 import { getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';

@@ -39,7 +39,7 @@ export async function PUT(
       const moduleDef = MODULE_DEFINITIONS.find((m) => m.moduleKey === mapping.moduleKey);
       const validActions = moduleDef?.availableActions || [];
       mapping.accessLevel = accessLevel;
-      mapping.enabledActions = (enabledActions || []).filter((a: string) => validActions.includes(a));
+      mapping.enabledActions = enabledActions || [];
       mapping.updatedAt = new Date().toISOString();
       return successResponse(mapping, 'Mapping updated successfully');
     }
@@ -49,7 +49,7 @@ export async function PUT(
 
     const moduleDef = MODULE_DEFINITIONS.find((m) => m.moduleKey === mapping.moduleKey);
     const validActions = moduleDef?.availableActions || [];
-    const actions = (enabledActions || []).filter((a: string) => validActions.includes(a));
+    const actions = enabledActions || [];
 
     const oldValue = {
       accessLevel: mapping.accessLevel,

@@ -1,8 +1,12 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
-import { Wallet, Package, ShoppingCart, Calendar, FileText, Plus, X, ChevronRight } from 'lucide-react';
+import { Wallet, Package, ShoppingCart, Calendar, FileText, Plus, X, ChevronRight, Receipt } from 'lucide-react';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
+import { useScreenshotBlocker } from '@/hooks/useScreenshotBlocker';
 
 interface UnifiedTransaction {
   _id: string;
@@ -28,6 +32,7 @@ const CATEGORIES: Record<string, string[]> = {
 };
 
 export default function AccountsPage() {
+  const { isBlurred } = useScreenshotBlocker();
   const [transactions, setTransactions] = useState<UnifiedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual'>('all');
@@ -43,8 +48,17 @@ export default function AccountsPage() {
   const [paymentMode, setPaymentMode] = useState('cash');
   
   const [saving, setSaving] = useState(false);
+
+  // Filter State
+  const [exportDateRange, setExportDateRange] = useState('all');
+  const [exportFromDate, setExportFromDate] = useState('');
+  const [exportToDate, setExportToDate] = useState('');
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [selectedTxn, setSelectedTxn] = useState<UnifiedTransaction | null>(null);
+
+  const { checkPermission } = usePermissions();
+  const canSubmitEntry = checkPermission('accounts_finance', 'add_transaction');
+  const canExportReports = checkPermission('accounts_finance', 'export_reports');
 
   const showToast = (message: string, type = 'success') => { setToast({ message, type }); setTimeout(() => setToast(null), 3500); };
 
@@ -109,6 +123,106 @@ export default function AccountsPage() {
     }
   };
 
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...transactions];
+    const now = new Date();
+    
+    if (exportDateRange === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'yesterday') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end.setMilliseconds(-1);
+      filtered = filtered.filter(t => {
+        const d = new Date(t.date);
+        return d >= start && d <= end;
+      });
+    } else if (exportDateRange === 'last7') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'last30') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'custom') {
+      if (exportFromDate) {
+        const start = new Date(exportFromDate);
+        filtered = filtered.filter(t => new Date(t.date) >= start);
+      }
+      if (exportToDate) {
+        const end = new Date(exportToDate);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(t => new Date(t.date) <= end);
+      }
+    }
+    return filtered;
+  }, [transactions, exportDateRange, exportFromDate, exportToDate]);
+
+  const exportToExcel = () => {
+    const dataToExport = filteredTransactions;
+    if (!dataToExport.length) return showToast('No transactions in selected date range', 'error');
+    
+    const exportData = dataToExport.map(t => {
+      return {
+        'Date': new Date(t.date).toLocaleDateString('en-IN'),
+        'Type': t.type.toUpperCase(),
+        'Customer / Supplier': t.customerName || 'N/A',
+        'Contact': t.customerContact || 'N/A',
+        'Summary': t.summary,
+        'Amount': t.amount,
+        'Processed By': t.user?.name || 'System',
+        'Portal': t.user?.portal || 'System',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Transactions');
+    XLSX.writeFile(workbook, `Finance_Export_${new Date().getTime()}.xlsx`);
+  };
+
+  const exportToPDF = () => {
+    const dataToExport = filteredTransactions;
+    if (!dataToExport.length) return showToast('No transactions in selected date range', 'error');
+    
+    const doc = new jsPDF('landscape');
+    doc.setFontSize(16);
+    doc.text('Finance Transactions Export', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 22);
+
+    let y = 35;
+    doc.setFontSize(9);
+    doc.text('Date', 14, y);
+    doc.text('Type', 40, y);
+    doc.text('Customer', 65, y);
+    doc.text('Summary', 105, y);
+    doc.text('Amount', 190, y);
+    doc.text('Processed By', 220, y);
+    
+    y += 5;
+    doc.line(14, y, 280, y);
+    y += 7;
+
+    dataToExport.forEach((t) => {
+      if (y > 190) {
+        doc.addPage();
+        y = 20;
+      }
+      
+      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 14, y);
+      doc.text(t.type.toUpperCase(), 40, y);
+      doc.text((t.customerName || 'N/A').substring(0, 20), 65, y);
+      doc.text(t.summary.substring(0, 45), 105, y);
+      doc.text(t.amount.toString(), 190, y);
+      doc.text((t.user?.name || 'System').substring(0, 15), 220, y);
+      
+      y += 8;
+    });
+
+    doc.save(`Finance_Export_${new Date().getTime()}.pdf`);
+  };
+
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
 
   const getIconForType = (type: string) => {
@@ -132,8 +246,16 @@ export default function AccountsPage() {
   };
 
   return (
-    <div className="page-container">
-      {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
+    <>
+      <style jsx global>{`
+        @media print {
+          .secure-finance-page {
+            display: none !important;
+          }
+        }
+      `}</style>
+      <div className={`page-container secure-finance-page transition-all duration-200 ${isBlurred ? 'blur-md select-none' : ''}`}>
+        {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? '✕' : '✓'}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
 
       <div className="page-header">
         <div>
@@ -141,9 +263,23 @@ export default function AccountsPage() {
           <p className="page-subtitle">Centralized tracking system for Bookings, Sales, Inventory, and Manual Entries</p>
         </div>
         {view === 'list' && (
-          <button className="btn btn-primary btn-md" onClick={() => setView('form')}>
-            <Plus size={18} /> New Manual Entry
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {canExportReports && (
+              <>
+                <button className="btn btn-secondary btn-md" onClick={exportToPDF}>
+                  <FileText size={18} /> Export PDF
+                </button>
+                <button className="btn btn-secondary btn-md" onClick={exportToExcel}>
+                  <Receipt size={18} /> Export Excel
+                </button>
+              </>
+            )}
+            {canSubmitEntry && (
+              <button className="btn btn-primary btn-md" onClick={() => setView('form')}>
+                <Plus size={18} /> New Manual Entry
+              </button>
+            )}
+          </div>
         )}
         {view === 'form' && (
           <button className="btn btn-secondary btn-md" onClick={() => setView('list')}>
@@ -153,11 +289,37 @@ export default function AccountsPage() {
       </div>
 
       {view === 'list' && (
-        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)' }}>
-          <button className={`btn ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('all')}>All Transactions</button>
-          <button className={`btn ${activeTab === 'bookings' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('bookings')}>Bookings</button>
-          <button className={`btn ${activeTab === 'sales' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('sales')}>Sales</button>
-          <button className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('manual')}>Manual</button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button className={`btn ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('all')}>All Transactions</button>
+            <button className={`btn ${activeTab === 'bookings' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('bookings')}>Bookings</button>
+            <button className={`btn ${activeTab === 'sales' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('sales')}>Sales</button>
+            <button className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('manual')}>Manual</button>
+          </div>
+          
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+            <select 
+              className="form-select" 
+              value={exportDateRange} 
+              onChange={(e) => setExportDateRange(e.target.value)}
+              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px' }}
+            >
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="last30">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            
+            {exportDateRange === 'custom' && (
+              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} />
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>to</span>
+                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportToDate} onChange={e => setExportToDate(e.target.value)} />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -227,7 +389,7 @@ export default function AccountsPage() {
         </div>
       ) : loading ? (
         <div className="loading-screen"><div className="spinner spinner-lg" /><div className="loading-text">Loading transactions...</div></div>
-      ) : transactions.length === 0 ? (
+      ) : filteredTransactions.length === 0 ? (
         <div className="card"><div className="empty-state"><div className="empty-state-icon"><Wallet size={48} /></div><div className="empty-state-title">No transactions found</div><div className="empty-state-description">There are no transactions for this filter yet.</div></div></div>
       ) : (
         <div className="data-table-wrapper">
@@ -244,7 +406,7 @@ export default function AccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((t) => (
+              {filteredTransactions.map((t) => (
                 <tr key={t._id} onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }} className="hover-row">
                   <td style={{ fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                   <td>
@@ -349,6 +511,7 @@ export default function AccountsPage() {
         </div>
       )}
 
-    </div>
+      </div>
+    </>
   );
 }

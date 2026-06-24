@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
 
-import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu, Wallet, Package, ShoppingCart, BarChart3, FileText, Calendar, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu, Wallet, Package, ShoppingCart, BarChart3, FileText, Calendar, ClipboardList, MessageSquare } from 'lucide-react';
 
 const defaultNav = [
   { label: 'Dashboard', href: '/turf-manager/dashboard', icon: <LayoutDashboard size={20} /> },
@@ -20,10 +20,10 @@ const moduleNavItems = [
   { label: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
   { label: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
   { label: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} />, moduleKey: 'safety_checklist' },
-  { label: 'Reports', href: '/turf-manager/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
   { label: 'MOM', href: '/turf-manager/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/turf-manager/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
-  { label: 'Notifications', href: '/turf-manager/notifications', icon: <Bell size={20} />, moduleKey: 'notifications' },
+  { label: 'Attendance', href: '/turf-manager/attendance', icon: <Building2 size={20} />, moduleKey: 'smart_attendance' },
+  { label: 'Feedback & Support', href: '/turf-manager/feedback', icon: <MessageSquare size={20} /> },
   { label: 'Audit Log', href: '/turf-manager/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
 ];
 
@@ -62,7 +62,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
 
   const visibleNavItems = [
     ...defaultNav,
-    ...moduleNavItems.filter((item) => accessibleModules.includes(item.moduleKey)),
+    ...moduleNavItems.filter((item) => !item.moduleKey || accessibleModules.includes(item.moduleKey)),
   ];
 
   if (loadingAccess) {

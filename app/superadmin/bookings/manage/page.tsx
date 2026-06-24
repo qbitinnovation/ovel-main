@@ -1,13 +1,22 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
 import {
   Calendar, Check, CheckCircle, ChevronRight, Clock, FileText, IndianRupee,
-  Plus, Receipt, Search, Trash2, X, AlertCircle
+  Plus, Receipt, Search, Trash2, X, AlertCircle, Edit
 } from 'lucide-react';
+import {
+  DEFAULT_TURF_PRICING_CONFIG,
+  calculateTurfSlotPrice,
+  type TurfPricingConfig,
+} from '@/lib/turf-pricing';
+import { jsPDF } from 'jspdf';
+
+import * as XLSX from 'xlsx';
 
 interface Booking {
   _id: string;
@@ -23,10 +32,22 @@ interface Booking {
   totalPaid: number;
   bookingStatus: 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'partial' | 'paid';
-  bulkId: string | null;
+  bulkId?: string | null;
+  editHistory?: {
+    editedAt: string;
+    oldDate: string;
+    oldStartTime: string;
+    oldEndTime: string;
+    oldExpectedAmount: number;
+    newDate: string;
+    newStartTime: string;
+    newEndTime: string;
+    newExpectedAmount: number;
+  }[];
   createdBy: { name: string };
   allDates?: string[];
-  slots?: { bookingDate: string }[];
+  slots?: { bookingDate: string; startTime: string; endTime: string }[];
+  notes?: string;
 }
 
 interface PaymentEntry {
@@ -57,6 +78,46 @@ interface PaymentSplit {
   referenceNote: string;
 }
 
+import { SlotGrid } from '@/components/bookings/SlotGrid';
+import {
+  TIME_SLOTS,
+  isSlotBooked,
+  hasAnyBookingOnDate,
+  mergeSelectedSlots,
+  rangesOverlap,
+  formatDate,
+  formatTime,
+  getDateStr,
+  getSlotsBetweenTimes,
+  isSlotInPast,
+  type ExistingBooking,
+} from '@/lib/booking-utils';
+
+const getInitialSlotsForBooking = (booking: Booking, date: string): string[] => {
+  const selected: string[] = [];
+  
+  // If standard booking
+  if (booking.bookingType !== 'bulk') {
+    const mainDateStr = getDateStr(booking.bookingDate);
+    if (mainDateStr === date) {
+      return getSlotsBetweenTimes(booking.startTime || '', booking.endTime || '');
+    }
+    return [];
+  }
+  
+  // If bulk booking, gather slots for the selected date
+  if (booking.slots && Array.isArray(booking.slots)) {
+    for (const slot of booking.slots) {
+      const slotDateStr = getDateStr(slot.bookingDate);
+      if (slotDateStr === date && slot.startTime && slot.endTime) {
+        selected.push(...getSlotsBetweenTimes(slot.startTime, slot.endTime));
+      }
+    }
+  }
+  
+  return selected;
+};
+
 export default function ManageBookingsPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,6 +125,8 @@ export default function ManageBookingsPage() {
   const newBookingUrl = `/${portalBase}/bookings`;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pricing, setPricing] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
+  const [pricingLoading, setPricingLoading] = useState(true);
   
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -87,6 +150,32 @@ export default function ManageBookingsPage() {
   
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  // Edit Booking Modal State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editContactNumber, setEditContactNumber] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editBookingDate, setEditBookingDate] = useState('');
+  const [editSelectedSlots, setEditSelectedSlots] = useState<string[]>([]);
+  const [editBookedByDate, setEditBookedByDate] = useState<Record<string, ExistingBooking[]>>({});
+  const [editBookedLoading, setEditBookedLoading] = useState(false);
+  const [editUpdateGroup, setEditUpdateGroup] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Cancel Booking Modal State
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancellingBooking, setCancellingBooking] = useState(false);
+
+  const { checkPermission } = usePermissions();
+  const canCreateBooking = checkPermission('bookings', 'create_booking');
+  const canManageBookings = checkPermission('bookings', 'add_payment');
+  const canViewPaymentDashboard = checkPermission('bookings', 'view_payment_dashboard');
+  const canEditBooking = checkPermission('bookings', 'edit_booking');
+  const canCancelBooking = checkPermission('bookings', 'cancel_booking');
+  const canExportBill = checkPermission('bookings', 'export_bill');
+  const canExportHistory = checkPermission('bookings', 'export_payment');
+
   // Derived calculations for payment modal
   const baseAmount = selectedBooking?.expectedAmount || 0;
   const dInput = Number(discountInput) || 0;
@@ -99,6 +188,25 @@ export default function ManageBookingsPage() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   }, []);
+
+  const fetchPricing = useCallback(async () => {
+    setPricingLoading(true);
+    try {
+      const res = await fetch(`/api/settings/pricing?sync=${Date.now()}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) {
+        setPricing(data.data.pricing || DEFAULT_TURF_PRICING_CONFIG);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPricingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPricing();
+  }, [fetchPricing]);
 
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -115,36 +223,13 @@ export default function ManageBookingsPage() {
       const data = await res.json();
       if (data.success) {
         const rawBookings = data.data.bookings || [];
-        const grouped: Booking[] = [];
-        const bulkMap = new Map<string, Booking>();
+        const flattened: Booking[] = rawBookings.map((b: any) => ({
+          ...b,
+          bookingType: b.bulkId ? 'bulk' : (b.bookingType || 'standard')
+        }));
         
-        for (const b of rawBookings) {
-          if (!b.bulkId) {
-            grouped.push({ ...b, bookingType: b.bookingType || 'standard' });
-          } else {
-            if (bulkMap.has(b.bulkId)) {
-              const existing = bulkMap.get(b.bulkId)!;
-              existing.expectedAmount += b.expectedAmount;
-              existing.totalPaid += b.totalPaid;
-              existing.discountAmount = (existing.discountAmount || 0) + (b.discountAmount || 0);
-              if (b.bookingDate && existing.allDates && !existing.allDates.includes(b.bookingDate)) {
-                existing.allDates.push(b.bookingDate);
-              }
-            } else {
-              const dates = new Set<string>();
-              if (b.bookingDate) dates.add(b.bookingDate);
-              if (b.slots && Array.isArray(b.slots)) {
-                b.slots.forEach((s: any) => { if (s.bookingDate) dates.add(s.bookingDate); });
-              }
-              const clone = { ...b, bookingType: b.bookingType || 'bulk', allDates: Array.from(dates) };
-              bulkMap.set(b.bulkId, clone);
-              grouped.push(clone);
-            }
-          }
-        }
-        
-        grouped.sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime());
-        setBookings(grouped);
+        flattened.sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime());
+        setBookings(flattened);
       }
     } catch (error) {
       console.error(error);
@@ -157,6 +242,37 @@ export default function ManageBookingsPage() {
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  const fetchEditBookedSlots = useCallback(async (dateStr: string) => {
+    if (!dateStr) return;
+    setEditBookedLoading(true);
+    try {
+      const params = new URLSearchParams({
+        startDate: dateStr,
+        endDate: dateStr,
+        bookingStatus: 'confirmed',
+        limit: '100',
+      });
+      const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) {
+        setEditBookedByDate((prev) => ({
+          ...prev,
+          [dateStr]: data.data.bookings || [],
+        }));
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setEditBookedLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showEditModal && editBookingDate) {
+      fetchEditBookedSlots(editBookingDate);
+    }
+  }, [showEditModal, editBookingDate, fetchEditBookedSlots]);
 
   useEffect(() => {
     if (paymentSplits.length === 0) return;
@@ -198,6 +314,9 @@ export default function ManageBookingsPage() {
       const data = await res.json();
       if (data.success) {
         setBookingPayments(data.data.payments || []);
+        if (data.data.booking) {
+          setSelectedBooking(data.data.booking);
+        }
       }
     } catch (error) {
       showToast('Failed to load payments', 'error');
@@ -344,6 +463,326 @@ export default function ManageBookingsPage() {
     }
   };
 
+  const exportToExcel = () => {
+    if (!bookings.length) return showToast('No bookings to export', 'error');
+    
+    const exportData = bookings.map(b => {
+      const dateStr = getDateStr(b.bookingDate as unknown as string);
+      return {
+        'Booking ID': b._id.substring(b._id.length - 6).toUpperCase(),
+        'Date': formatDate(dateStr),
+        'Type': b.bookingType === 'bulk' ? 'Bulk Order' : 'Standard',
+        'Customer': b.customerName || 'Walk-in',
+        'Contact': b.contactNumber || 'N/A',
+        'Total Amount': b.expectedAmount,
+        'Amount Paid': b.totalPaid || 0,
+        'Pending': Math.max(0, b.expectedAmount - (b.totalPaid || 0)),
+        'Payment Status': (b.paymentStatus || 'pending').toUpperCase(),
+        'Booking Status': (b.bookingStatus || 'confirmed').toUpperCase(),
+        'Created By': b.createdBy?.name || 'Unknown',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Bookings');
+    XLSX.writeFile(workbook, `Bookings_Export_${new Date().getTime()}.xlsx`);
+  };
+
+  const exportToPDF = () => {
+    if (!bookings.length) return showToast('No bookings to export', 'error');
+    
+    const doc = new jsPDF('landscape');
+    doc.setFontSize(16);
+    doc.text('Bookings History Export', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 22);
+
+    let y = 35;
+    doc.setFontSize(9);
+    doc.text('ID', 14, y);
+    doc.text('Date', 35, y);
+    doc.text('Customer', 65, y);
+    doc.text('Total', 120, y);
+    doc.text('Paid', 140, y);
+    doc.text('Pending', 160, y);
+    doc.text('P. Status', 180, y);
+    doc.text('B. Status', 205, y);
+    
+    y += 5;
+    doc.line(14, y, 280, y);
+    y += 7;
+
+    bookings.forEach((b) => {
+      if (y > 190) {
+        doc.addPage();
+        y = 20;
+      }
+      const dateStr = getDateStr(b.bookingDate as unknown as string);
+      const pending = Math.max(0, b.expectedAmount - (b.totalPaid || 0));
+      
+      doc.text(b._id.substring(b._id.length - 6).toUpperCase(), 14, y);
+      doc.text(formatDate(dateStr), 35, y);
+      doc.text((b.customerName || 'Walk-in').substring(0, 20), 65, y);
+      doc.text(b.expectedAmount.toString(), 120, y);
+      doc.text((b.totalPaid || 0).toString(), 140, y);
+      doc.text(pending.toString(), 160, y);
+      doc.text((b.paymentStatus || 'pending').toUpperCase(), 180, y);
+      doc.text((b.bookingStatus || 'confirmed').toUpperCase(), 205, y);
+      
+      y += 8;
+    });
+
+    doc.save(`Bookings_Export_${new Date().getTime()}.pdf`);
+  };
+
+  const handleDownloadReceipt = () => {
+    if (!selectedBooking) return;
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(22);
+      doc.text('Booking Confirmation', 14, 25);
+      
+      doc.setFontSize(12);
+      doc.setTextColor(100);
+      doc.text(`Booking ID: ${selectedBooking._id.substring(selectedBooking._id.length - 6).toUpperCase()}`, 14, 35);
+      
+      doc.setTextColor(0);
+      doc.setFontSize(14);
+      doc.text('Customer Details', 14, 50);
+      doc.setFontSize(11);
+      doc.text(`Name: ${selectedBooking.customerName || 'Walk-in'}`, 14, 60);
+      doc.text(`Contact: ${selectedBooking.contactNumber || 'N/A'}`, 14, 68);
+      
+      doc.setFontSize(14);
+      doc.text('Booking Details', 100, 50);
+      doc.setFontSize(11);
+      const dateStr = getDateStr(selectedBooking.bookingDate);
+      doc.text(`Date: ${formatDate(dateStr)}`, 100, 60);
+      
+      const slots = getInitialSlotsForBooking(selectedBooking, dateStr);
+      let timeStr = 'N/A';
+      if (slots.length > 0) {
+        const firstSlot = slots[0];
+        const lastSlot = slots[slots.length - 1];
+        const endSlotObj = TIME_SLOTS.find(s => s.start === lastSlot);
+        timeStr = `${formatTime(firstSlot)} - ${formatTime(endSlotObj ? endSlotObj.end : lastSlot)}`;
+      }
+      doc.text(`Time: ${timeStr}`, 100, 68);
+      
+      doc.setDrawColor(200);
+      doc.line(14, 80, 196, 80);
+      
+      doc.setFontSize(14);
+      doc.text('Payment Summary', 14, 95);
+      doc.setFontSize(11);
+      doc.text(`Total Amount: Rs ${selectedBooking.expectedAmount}`, 14, 105);
+      doc.text(`Amount Paid: Rs ${selectedBooking.totalPaid}`, 14, 113);
+      
+      const pending = Math.max(0, selectedBooking.expectedAmount - selectedBooking.totalPaid);
+      doc.text(`Pending Balance: Rs ${pending}`, 14, 121);
+      
+      let finalY = 135;
+      if (selectedBooking.editHistory && selectedBooking.editHistory.length > 0) {
+        doc.setFontSize(14);
+        doc.text('Edit Adjustments', 14, finalY);
+        doc.setFontSize(10);
+        finalY += 8;
+        selectedBooking.editHistory.forEach((edit, i) => {
+          const diff = edit.newExpectedAmount - edit.oldExpectedAmount;
+          doc.setTextColor(100);
+          doc.text(`${i + 1}. Changed to ${formatDate(getDateStr(edit.newDate as unknown as string))} (${formatTime(edit.newStartTime)} - ${formatTime(edit.newEndTime)})`, 14, finalY);
+          if (diff !== 0) {
+            doc.setTextColor(diff > 0 ? 200 : 0, diff < 0 ? 150 : 0, 0); // Red if price increased, green/gray if decreased
+            doc.text(`   Price Difference: ${diff > 0 ? '+' : ''}Rs ${diff} (Old: Rs ${edit.oldExpectedAmount} -> New: Rs ${edit.newExpectedAmount})`, 14, finalY + 6);
+            finalY += 14;
+          } else {
+            finalY += 8;
+          }
+        });
+      }
+      
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text('Generated by OMS System', 14, 280);
+      
+      doc.save(`Receipt_${selectedBooking.customerName || 'WalkIn'}_${dateStr}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate PDF', error);
+      showToast('Failed to download receipt', 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (showEditModal && selectedBooking && editBookingDate) {
+      const initialSlots = getInitialSlotsForBooking(selectedBooking, editBookingDate);
+      setEditSelectedSlots(initialSlots);
+    }
+  }, [showEditModal, editBookingDate, selectedBooking]);
+
+  const openEditModal = (booking: Booking) => {
+    setEditCustomerName(booking.customerName || '');
+    setEditContactNumber(booking.contactNumber || '');
+    setEditNotes(booking.notes || '');
+    const dateStr = getDateStr(booking.bookingDate);
+    setEditBookingDate(dateStr);
+    
+    // Parse slots
+    const initialSlots = getInitialSlotsForBooking(booking, dateStr);
+    setEditSelectedSlots(initialSlots);
+    setEditUpdateGroup(false);
+    setShowEditModal(true);
+  };
+
+  const editNewExpectedAmount = useMemo(() => {
+    if (!selectedBooking) return 0;
+    const initialSlots = getInitialSlotsForBooking(selectedBooking, editBookingDate);
+    const initialRanges = mergeSelectedSlots(initialSlots);
+    const currentRanges = mergeSelectedSlots(editSelectedSlots);
+    const isSameDate = editBookingDate === getDateStr(selectedBooking.bookingDate);
+    const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r, i) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
+    
+    if (!slotsChanged) return selectedBooking.expectedAmount;
+    
+    if (currentRanges.length === 1) {
+      const pricingRes = calculateTurfSlotPrice({
+        bookingDate: editBookingDate,
+        startTime: currentRanges[0].startTime,
+        endTime: currentRanges[0].endTime,
+        priceType: (selectedBooking as any).priceType || 'normal',
+        weekdayRules: pricing.weekdayRules,
+        weekendRules: pricing.weekendRules,
+        holidays: pricing.holidays,
+        weekendDays: pricing.weekendDays,
+      });
+      return pricingRes.amount;
+    }
+    return selectedBooking.expectedAmount;
+  }, [selectedBooking, editBookingDate, editSelectedSlots, pricing]);
+
+  const handleEditSubmit = async () => {
+    if (!selectedBooking) return;
+
+    setSavingEdit(true);
+    try {
+      const body: any = {
+        customerName: editCustomerName,
+        contactNumber: editContactNumber,
+        notes: editNotes,
+        updateGroup: editUpdateGroup,
+      };
+
+      const initialSlots = getInitialSlotsForBooking(selectedBooking, editBookingDate);
+      const initialRanges = mergeSelectedSlots(initialSlots);
+      const currentRanges = mergeSelectedSlots(editSelectedSlots);
+      const isSameDate = editBookingDate === getDateStr(selectedBooking.bookingDate);
+      const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r, i) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
+
+      if (slotsChanged) {
+        if (currentRanges.length === 0) {
+          throw new Error('Please select at least one time slot');
+        }
+        if (currentRanges.length > 1) {
+          throw new Error('Please select contiguous time slots');
+        }
+        body.bookingDate = editBookingDate;
+        body.startTime = currentRanges[0].startTime;
+        body.endTime = currentRanges[0].endTime;
+        body.expectedAmount = editNewExpectedAmount;
+      }
+
+      const res = await fetch(`/api/bookings/${selectedBooking._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Booking updated successfully');
+        setShowEditModal(false);
+        fetchBookings(); // Refresh list
+        // Update local state details
+        if (data.data) {
+          setSelectedBooking(data.data);
+        } else {
+          handleRowClick(selectedBooking);
+        }
+      } else {
+        throw new Error(data.message || 'Failed to update booking');
+      }
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const toggleEditSlot = (slotStart: string) => {
+    // Note: We use isSlotBooked logic within the UI component now, but we double-check here
+    // we don't strictly need to do manual bounds check if SlotGrid sets 'disabled',
+    // but as an extra measure:
+    const slotObj = TIME_SLOTS.find(s => s.start === slotStart);
+    if (!slotObj) return;
+    const isCurrent = getInitialSlotsForBooking(selectedBooking!, editBookingDate).includes(slotStart);
+    if (!isCurrent && isSlotBooked(editBookingDate, slotObj.start, slotObj.end, editBookedByDate)) {
+      return;
+    }
+    
+    setEditSelectedSlots((prev) =>
+      prev.includes(slotStart) ? prev.filter((s) => s !== slotStart) : [...prev, slotStart].sort()
+    );
+  };
+
+  const isEditSlotBooked = (slotStart: string, slotEnd: string) => {
+    return bookings.some((b: any) => {
+      const isSameBooking = String(b._id) === String(selectedBooking?._id);
+      const isSameBulkGroup = selectedBooking?.bulkId && b.bulkId && String(b.bulkId) === String(selectedBooking.bulkId);
+      
+      if (isSameBooking || isSameBulkGroup) {
+        return false;
+      }
+      
+      if (b.bookingStatus !== 'confirmed') return false;
+
+      if (b.bookingType === 'bulk' && b.slots) {
+         return b.slots.some((s: any) => getDateStr(s.bookingDate) === editBookingDate && rangesOverlap(slotStart, slotEnd, s.startTime, s.endTime));
+      }
+
+      return (
+        getDateStr(b.bookingDate) === editBookingDate &&
+        rangesOverlap(slotStart, slotEnd, b.startTime, b.endTime)
+      );
+    });
+  };
+
+  const handleCancelSubmit = async () => {
+    if (!selectedBooking) return;
+
+    setCancellingBooking(true);
+    try {
+      const res = await fetch(`/api/bookings/${selectedBooking._id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: cancelReason }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Booking cancelled successfully');
+        setShowCancelModal(false);
+        setSelectedBooking(null); // Close details modal
+        fetchBookings(); // Refresh list
+      } else {
+        throw new Error(data.message || 'Failed to cancel booking');
+      }
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setCancellingBooking(false);
+    }
+  };
+
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
 
   return (
@@ -364,14 +803,29 @@ export default function ManageBookingsPage() {
             <p className="page-subtitle">View existing bookings and record payments</p>
           </div>
           <div className="pill-toggle-group" style={{ background: 'var(--surface-secondary)', padding: '4px', borderRadius: '30px' }}>
-            <button className="pill-toggle" onClick={() => router.push(newBookingUrl)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-              New Booking
-            </button>
-            <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-              Manage Bookings
-            </button>
+            {canCreateBooking && (
+              <button className="pill-toggle" onClick={() => router.push(`/${portalBase}/bookings`)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+                New Booking
+              </button>
+            )}
+            {canViewPaymentDashboard && (
+              <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+                Manage Bookings
+              </button>
+            )}
           </div>
         </div>
+
+        {canExportHistory && (
+          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary btn-sm" onClick={exportToPDF} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FileText size={14} /> Export to PDF
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={exportToExcel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Receipt size={14} /> Export to Excel
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
@@ -449,13 +903,15 @@ export default function ManageBookingsPage() {
                         </span>
                       </td>
                       <td>
-                        <button 
-                          className="btn btn-primary btn-sm" 
-                          onClick={(e) => openPaymentModal(b, e)}
-                          disabled={isPaid}
-                        >
-                          <IndianRupee size={14} /> Pay
-                        </button>
+                        {canManageBookings && (
+                          <button 
+                            className="btn btn-primary btn-sm" 
+                            onClick={(e) => openPaymentModal(b, e)}
+                            disabled={isPaid}
+                          >
+                            <IndianRupee size={14} /> Pay
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -494,7 +950,7 @@ export default function ManageBookingsPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)', paddingBottom: 'var(--space-2)' }}>
                 <h4 style={{ margin: 0 }}>Payment Summary</h4>
-                {selectedBooking.paymentStatus !== 'paid' && (
+                {selectedBooking.paymentStatus !== 'paid' && canManageBookings && (
                   <button className="btn btn-primary btn-sm" onClick={(e) => openPaymentModal(selectedBooking, e)}>
                     Record Payment
                   </button>
@@ -554,9 +1010,126 @@ export default function ManageBookingsPage() {
                   ))}
                 </div>
               )}
+
+              {selectedBooking.editHistory && selectedBooking.editHistory.length > 0 && (
+                <>
+                  <h4 style={{ margin: 'var(--space-6) 0 var(--space-4) 0' }}>Edit History</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                    {selectedBooking.editHistory.map((edit, idx) => {
+                      const diff = edit.newExpectedAmount - edit.oldExpectedAmount;
+                      return (
+                        <div key={idx} className="card" style={{ padding: 'var(--space-3)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                              Edited on {new Date(edit.editedAt).toLocaleString('en-IN')}
+                            </span>
+                            {diff !== 0 && (
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: diff > 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                                  Price Adjustment: {diff > 0 ? '+' : ''}{fmt(diff)}
+                                </span>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  Calculation: {fmt(edit.newExpectedAmount)} - {fmt(edit.oldExpectedAmount)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                            <div style={{ padding: 'var(--space-2)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-sm)' }}>
+                              <strong style={{ fontSize: 'var(--text-xs)' }}>Old Booking</strong>
+                              <div style={{ fontSize: 'var(--text-xs)' }}>{formatDate(getDateStr(edit.oldDate as unknown as string))}</div>
+                              <div style={{ fontSize: 'var(--text-xs)' }}>{formatTime(edit.oldStartTime)} - {formatTime(edit.oldEndTime)}</div>
+                              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, marginTop: '2px' }}>{fmt(edit.oldExpectedAmount)}</div>
+                              {(() => {
+                                const b = calculateTurfSlotPrice({
+                                  bookingDate: getDateStr(edit.oldDate as unknown as string),
+                                  startTime: edit.oldStartTime,
+                                  endTime: edit.oldEndTime,
+                                  priceType: (selectedBooking as any).priceType || 'normal',
+                                  weekdayRules: pricing.weekdayRules,
+                                  weekendRules: pricing.weekendRules,
+                                  holidays: pricing.holidays,
+                                  weekendDays: pricing.weekendDays,
+                                });
+                                return b.appliedRules.length > 0 ? (
+                                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '8px' }}>
+                                    {b.appliedRules.map((r, i) => (
+                                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', background: 'rgba(255,255,255,0.4)', padding: '4px 6px', borderRadius: '4px' }}>
+                                        <div style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                          {formatTime(r.startTime)} - {formatTime(r.endTime)}
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fmt(r.amount)}</div>
+                                          <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>
+                                            {r.minutes / 60} hrs @ {fmt(r.rate)}/hr
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
+                            <div style={{ padding: 'var(--space-2)', background: 'var(--accent-primary-soft)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--radius-sm)' }}>
+                              <strong style={{ fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>Changed To</strong>
+                              <div style={{ fontSize: 'var(--text-xs)' }}>{formatDate(getDateStr(edit.newDate as unknown as string))}</div>
+                              <div style={{ fontSize: 'var(--text-xs)' }}>{formatTime(edit.newStartTime)} - {formatTime(edit.newEndTime)}</div>
+                              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, marginTop: '2px' }}>{fmt(edit.newExpectedAmount)}</div>
+                              {(() => {
+                                const b = calculateTurfSlotPrice({
+                                  bookingDate: getDateStr(edit.newDate as unknown as string),
+                                  startTime: edit.newStartTime,
+                                  endTime: edit.newEndTime,
+                                  priceType: (selectedBooking as any).priceType || 'normal',
+                                  weekdayRules: pricing.weekdayRules,
+                                  weekendRules: pricing.weekendRules,
+                                  holidays: pricing.holidays,
+                                  weekendDays: pricing.weekendDays,
+                                });
+                                return b.appliedRules.length > 0 ? (
+                                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '8px' }}>
+                                    {b.appliedRules.map((r, i) => (
+                                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', background: 'rgba(255,255,255,0.4)', padding: '4px 6px', borderRadius: '4px' }}>
+                                        <div style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                          {formatTime(r.startTime)} - {formatTime(r.endTime)}
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fmt(r.amount)}</div>
+                                          <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>
+                                            {r.minutes / 60} hrs @ {fmt(r.rate)}/hr
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary btn-md" onClick={() => setSelectedBooking(null)}>Close</button>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-start', gap: 'var(--space-3)', width: '100%', marginTop: 'auto', flexWrap: 'wrap' }}>
+              {selectedBooking.bookingStatus !== 'cancelled' && canEditBooking && !isSlotInPast(getDateStr(selectedBooking.bookingDate as unknown as string), selectedBooking.endTime) && (
+                  <button className="btn btn-primary btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => openEditModal(selectedBooking)}>
+                    <Edit size={16} /> Edit Booking
+                  </button>
+                )}
+                {selectedBooking.bookingStatus !== 'cancelled' && canCancelBooking && !isSlotInPast(getDateStr(selectedBooking.bookingDate as unknown as string), selectedBooking.endTime) && (
+                  <button className="btn btn-danger btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => { setCancelReason(''); setShowCancelModal(true); }}>
+                    <Trash2 size={16} /> Cancel Booking
+                  </button>
+                )}
+                {canExportBill && (
+                  <button className="btn btn-secondary btn-md" onClick={handleDownloadReceipt} style={{ marginLeft: 'auto' }}>
+                    <FileText size={18} /> Download Bill
+                  </button>
+                )}
+                <button className="btn btn-secondary btn-md" onClick={() => setSelectedBooking(null)}>Close</button>
             </div>
           </div>
         </div>
@@ -718,6 +1291,213 @@ export default function ManageBookingsPage() {
                   <CheckCircle size={18} /> Submit Payment
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Booking Modal */}
+      {showEditModal && selectedBooking && (
+        <div className="modal-backdrop" onClick={() => setShowEditModal(false)}>
+          <div className="modal" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Edit Booking</h3>
+              <button className="modal-close" onClick={() => setShowEditModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              
+              {bookingPayments.length > 0 && (
+                <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--surface-secondary)', borderLeft: '4px solid var(--status-info)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)' }}>
+                  <AlertCircle size={20} style={{ color: 'var(--status-info)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 'var(--text-sm)' }}>
+                    <strong>Payments exist:</strong> Total Paid so far is {fmt(selectedBooking.totalPaid)}. Changing slots will adjust the total expected amount.
+                  </span>
+                </div>
+              )}
+
+              <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                <div className="form-group">
+                  <label className="form-label">Customer Name (Optional)</label>
+                  <input
+                    className="form-input"
+                    value={editCustomerName}
+                    onChange={(e) => setEditCustomerName(e.target.value)}
+                    placeholder="Walk-in"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Contact Number (Optional)</label>
+                  <input
+                    className="form-input"
+                    value={editContactNumber}
+                    onChange={(e) => setEditContactNumber(e.target.value)}
+                    placeholder="Contact Number"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label">Booking Date</label>
+                <CustomDatePicker
+                  value={editBookingDate}
+                  onChange={setEditBookingDate}
+                  minDate={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Select Time Slots</span>
+                  <span className="badge badge-neutral">{editSelectedSlots.length} selected</span>
+                </label>
+                
+                {editBookedLoading ? (
+                  <div className="loading-screen" style={{ minHeight: '120px' }}><div className="spinner spinner-sm" /></div>
+                ) : (
+                  <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '4px', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)' }}>
+                    <SlotGrid
+                      date={editBookingDate}
+                      selectedSet={new Set(editSelectedSlots)}
+                      bookedByDate={editBookedByDate}
+                      disabled={false}
+                      onToggle={(slot) => toggleEditSlot(slot.start)}
+                      currentBookingSlots={new Set(getInitialSlotsForBooking(selectedBooking, editBookingDate))}
+                    />
+                  </div>
+                )}
+                
+                {editNewExpectedAmount !== selectedBooking.expectedAmount || editBookingDate !== getDateStr(selectedBooking.bookingDate) ? (
+                  <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div style={{ padding: '8px', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)' }}>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Old Booking</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Date:</strong> {formatDate(getDateStr(selectedBooking.bookingDate))}</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Time:</strong> {getInitialSlotsForBooking(selectedBooking, getDateStr(selectedBooking.bookingDate)).length > 0 ? `${formatTime(getInitialSlotsForBooking(selectedBooking, getDateStr(selectedBooking.bookingDate))[0])} onwards` : 'N/A'}</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Amount:</strong> {fmt(selectedBooking.expectedAmount)}</div>
+                      </div>
+                      <div style={{ padding: '8px', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary-light)', position: 'relative' }}>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--primary)', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>New Booking</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Date:</strong> {formatDate(editBookingDate)}</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Time:</strong> {editSelectedSlots.length > 0 ? `${formatTime(editSelectedSlots[0])} onwards` : 'N/A'}</div>
+                        <div style={{ fontSize: 'var(--text-sm)' }}><strong>Amount:</strong> {fmt(editNewExpectedAmount)}</div>
+                      </div>
+                    </div>
+                    
+                    {bookingPayments.length > 0 && (
+                      <div style={{ paddingTop: '12px', borderTop: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total Paid</div>
+                          <strong style={{ color: 'var(--status-success)' }}>{fmt(selectedBooking.totalPaid)}</strong>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          {editNewExpectedAmount > selectedBooking.totalPaid ? (
+                            <>
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Additional Payment Required</div>
+                              <strong style={{ color: 'var(--status-danger)', fontSize: '1.2em' }}>{fmt(editNewExpectedAmount - selectedBooking.totalPaid)}</strong>
+                            </>
+                          ) : editNewExpectedAmount < selectedBooking.totalPaid ? (
+                            <>
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Refund / Difference</div>
+                              <strong style={{ color: 'var(--status-warning)', fontSize: '1.2em' }}>{fmt(selectedBooking.totalPaid - editNewExpectedAmount)}</strong>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Balance Settled</div>
+                              <strong style={{ color: 'var(--status-success)', fontSize: '1.2em' }}>{fmt(0)}</strong>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label">Notes</label>
+                <textarea
+                  className="form-input form-textarea"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Optional notes"
+                  rows={3}
+                />
+              </div>
+
+              {selectedBooking.bulkId && (
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+                  <input
+                    type="checkbox"
+                    id="editUpdateGroup"
+                    checked={editUpdateGroup}
+                    onChange={(e) => setEditUpdateGroup(e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="editUpdateGroup" style={{ fontSize: 'var(--text-sm)', cursor: 'pointer', fontWeight: 500 }}>
+                    Apply name, contact number, and notes updates to all bookings in this bulk group
+                  </label>
+                </div>
+              )}
+
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+              <button className="btn btn-secondary btn-md" onClick={() => setShowEditModal(false)}>Cancel</button>
+              <button 
+                className={`btn btn-primary btn-md ${savingEdit ? 'btn-loading' : ''}`} 
+                onClick={handleEditSubmit}
+                disabled={savingEdit}
+              >
+                <CheckCircle size={18} /> Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Booking Modal */}
+      {showCancelModal && selectedBooking && (
+        <div className="modal-backdrop" onClick={() => setShowCancelModal(false)}>
+          <div className="modal" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ borderBottomColor: 'var(--status-danger)' }}>
+              <h3 className="modal-title" style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={20} /> Cancel Booking
+              </h3>
+              <button className="modal-close" onClick={() => setShowCancelModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                Are you sure you want to cancel the booking for <strong>{selectedBooking.customerName || 'Walk-in'}</strong>? This action will set the booking status to cancelled.
+              </p>
+
+              {selectedBooking.bulkId && (
+                <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--surface-secondary)', borderLeft: '4px solid var(--status-danger)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)' }}>
+                  <AlertCircle size={20} style={{ color: 'var(--status-danger)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 'var(--text-sm)' }}>
+                    <strong>Warning:</strong> This is a bulk booking. Cancelling will cancel <strong>all bookings</strong> associated with this bulk group.
+                  </span>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Reason for Cancellation (Optional)</label>
+                <textarea
+                  className="form-input form-textarea"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g., Customer requested change, duplicate booking, etc."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+              <button className="btn btn-secondary btn-md" onClick={() => setShowCancelModal(false)}>Go Back</button>
+              <button 
+                className={`btn btn-danger btn-md ${cancellingBooking ? 'btn-loading' : ''}`} 
+                onClick={handleCancelSubmit}
+                disabled={cancellingBooking}
+              >
+                <Trash2 size={18} /> Confirm Cancellation
+              </button>
             </div>
           </div>
         </div>

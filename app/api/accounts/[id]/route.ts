@@ -33,6 +33,12 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
     const { action } = body;
+
+    const { checkPermission } = await import('@/lib/permissions');
+    const permAction = action === 'unlock' ? 'request_unlock' : 'edit_transaction';
+    const perm = await checkPermission(session.user.id, 'accounts_finance', permAction);
+    if (!perm.allowed) return errorResponse('Forbidden', 403);
+
     await dbConnect();
     const entry = await FinanceEntry.findById(id);
     if (!entry) return errorResponse('Entry not found', 404);

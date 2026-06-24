@@ -2,6 +2,20 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { ACTION_LABELS, MODULE_DEFINITIONS } from '@/lib/constants';
+import { 
+  Users, Wallet, Package, ShoppingCart, Wrench, CheckSquare, 
+  FileText, ShieldCheck, MapPin, ClipboardList, Calendar, 
+  Tag, TreePine, TrendingUp, Link as LinkIcon, ArrowLeft, Edit2, X 
+} from 'lucide-react';
+
+const DynamicIcon = ({ name, size = 18, style }: { name: string, size?: number, style?: any }) => {
+  const IconMap: any = {
+    Users, Wallet, Package, ShoppingCart, Wrench, CheckSquare, 
+    FileText, ShieldCheck, MapPin, ClipboardList, Calendar
+  };
+  const IconComponent = IconMap[name] || Package;
+  return <IconComponent size={size} style={style} />;
+};
 
 interface Position {
   _id: string;
@@ -151,15 +165,34 @@ export default function ModuleMappingPage() {
   };
 
   const toggleAction = (action: string) => {
-    setConfigActions((prev) =>
-      prev.includes(action) ? prev.filter((a) => a !== action) : [...prev, action]
-    );
+    setConfigActions((prev) => {
+      const next = prev.includes(action) ? prev.filter((a) => a !== action) : [...prev, action];
+      if (configAccessLevel === 'view' && !action.startsWith('view_') && !prev.includes(action)) {
+        setConfigAccessLevel('edit');
+      }
+      return next;
+    });
   };
 
   const handleAccessLevelChange = (level: string) => {
+    if (configAccessLevel === level) {
+      // Toggle off if clicking the already selected level
+      setConfigAccessLevel('');
+      setConfigActions([]);
+      return;
+    }
+
     setConfigAccessLevel(level);
     if (level === 'full_control' && configModule) {
       setConfigActions([...configModule.availableActions]);
+    } else if (level === 'view' && configModule) {
+      setConfigActions(configModule.availableActions.filter(a => a.startsWith('view_')));
+    } else if (level === 'edit' && configModule) {
+      // When edit is selected, ensure view actions are at least enabled
+      setConfigActions((prev) => {
+        const viewActions = configModule.availableActions.filter(a => a.startsWith('view_'));
+        return Array.from(new Set([...prev, ...viewActions]));
+      });
     }
   };
 
@@ -290,7 +323,7 @@ export default function ModuleMappingPage() {
       {activeTab === 'committee' && positions.length === 0 ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">🔗</div>
+            <LinkIcon size={48} style={{ color: 'var(--text-secondary)', opacity: 0.5, margin: '0 auto var(--space-4)' }} />
             <div className="empty-state-title">No committee positions yet</div>
             <div className="empty-state-description">
               Create a committee member and type their position manually before mapping modules.
@@ -319,7 +352,7 @@ export default function ModuleMappingPage() {
                     onClick={() => setSelectedPosition(pos._id)}
                     style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPosition === pos._id ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
                   >
-                    <span className="sidebar-link-icon">🏷️</span>
+                    <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><Tag size={16} /></span>
                     <span>{pos.name}</span>
                     {selectedPosition === pos._id && (
                       <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
@@ -335,7 +368,7 @@ export default function ModuleMappingPage() {
                     onClick={() => setSelectedPortal('turf')}
                     style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'turf' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
                   >
-                    <span className="sidebar-link-icon">🌱</span>
+                    <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><TreePine size={16} /></span>
                     <span>Turf Manager Portal</span>
                     {selectedPortal === 'turf' && (
                       <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
@@ -348,7 +381,7 @@ export default function ModuleMappingPage() {
                     onClick={() => setSelectedPortal('shareholder')}
                     style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'shareholder' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
                   >
-                    <span className="sidebar-link-icon">📈</span>
+                    <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><TrendingUp size={16} /></span>
                     <span>Shareholder Portal</span>
                     {selectedPortal === 'shareholder' && (
                       <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--accent-primary)' }}>
@@ -366,7 +399,7 @@ export default function ModuleMappingPage() {
             {!(activeTab === 'committee' ? selectedPosition : selectedPortal) ? (
               <div className="card">
                 <div className="empty-state" style={{ padding: 'var(--space-12)' }}>
-                  <div className="empty-state-icon">👈</div>
+                  <ArrowLeft size={48} style={{ color: 'var(--text-secondary)', opacity: 0.5, margin: '0 auto var(--space-4)' }} />
                   <div className="empty-state-title">Select a {activeTab === 'committee' ? 'position' : 'portal'}</div>
                   <div className="empty-state-description">
                     Choose from the left panel to view and manage its module mappings.
@@ -388,8 +421,8 @@ export default function ModuleMappingPage() {
                     <div key={mod.moduleKey} className="card" style={{ transition: 'all var(--transition-base)' }}>
                       <div className="module-card-inner" style={{ padding: 'var(--space-5) var(--space-6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flex: 1 }}>
-                          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-lg)', background: isMapped ? 'var(--accent-primary-soft)' : 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xl)', flexShrink: 0 }}>
-                            {mod.icon}
+                          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-lg)', background: isMapped ? 'var(--accent-primary-soft)' : 'var(--bg-tertiary)', color: isMapped ? 'var(--accent-primary)' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xl)', flexShrink: 0 }}>
+                            <DynamicIcon name={mod.icon} size={20} />
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -417,11 +450,11 @@ export default function ModuleMappingPage() {
                         <div className="flex gap-2">
                           {isMapped ? (
                             <>
-                              <button className="btn btn-ghost btn-sm" onClick={() => openConfig(mod, mapping)}>
-                                ✏️ Edit
+                              <button className="btn btn-ghost btn-sm" onClick={() => openConfig(mod, mapping)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Edit2 size={14} /> Edit
                               </button>
-                              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-danger)' }} onClick={() => setDeleteMapping(mapping)}>
-                                ✕
+                              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setDeleteMapping(mapping)}>
+                                <X size={14} />
                               </button>
                             </>
                           ) : (
@@ -445,8 +478,8 @@ export default function ModuleMappingPage() {
         <div className="modal-backdrop" onClick={() => setConfigModule(null)}>
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">
-                {configModule.icon} Configure {configModule.moduleName}
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DynamicIcon name={configModule.icon} size={20} /> Configure {configModule.moduleName}
                 {selectedPosName && (
                   <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 400, marginLeft: 'var(--space-2)' }}>
                     for {selectedPosName}
@@ -466,6 +499,9 @@ export default function ModuleMappingPage() {
                       cursor: 'pointer',
                       borderColor: configAccessLevel === level.value ? 'var(--accent-primary)' : undefined,
                       background: configAccessLevel === level.value ? 'var(--accent-primary-soft)' : undefined,
+                    }} onClick={(e) => {
+                      e.preventDefault();
+                      handleAccessLevelChange(level.value);
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                         <input
@@ -473,8 +509,8 @@ export default function ModuleMappingPage() {
                           name="accessLevel"
                           value={level.value}
                           checked={configAccessLevel === level.value}
-                          onChange={() => handleAccessLevelChange(level.value)}
-                          style={{ accentColor: 'var(--accent-primary)' }}
+                          readOnly
+                          style={{ accentColor: 'var(--accent-primary)', pointerEvents: 'none' }}
                         />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{level.label}</div>
@@ -524,7 +560,7 @@ export default function ModuleMappingPage() {
               <button
                 className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`}
                 onClick={handleSaveMapping}
-                disabled={saving}
+                disabled={saving || !configAccessLevel}
               >
                 {editingMappingId ? 'Save Changes' : 'Save Mapping'}
               </button>

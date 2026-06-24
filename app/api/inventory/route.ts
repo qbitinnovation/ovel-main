@@ -6,6 +6,7 @@ import InventoryTransaction from '@/models/InventoryTransaction';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevInventoryTransaction } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,10 @@ export async function GET() {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'inventory_sales', 'view_sales');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     try {
       await dbConnect();
     } catch (error) {
@@ -56,6 +61,18 @@ export async function POST(request: NextRequest) {
       useDevStore = true;
     }
     const meta = getRequestMeta(request.headers);
+
+    let permissionAction = '';
+    if (action === 'log-sale') permissionAction = 'create_sale';
+    else if (action === 'add-item') permissionAction = 'add_item';
+    else if (action === 'add-restock') permissionAction = 'add_restock';
+    else if (action === 'set-threshold') permissionAction = 'add_restock';
+    else if (action === 'delete-item') permissionAction = 'delete_item';
+
+    if (permissionAction) {
+      const permission = await checkPermission(session.user.id, 'inventory_sales', permissionAction);
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+    }
 
     // Sanitize user ID to prevent Mongoose CastErrors with legacy/cached session IDs
     const userId = /^[0-9a-fA-F]{24}$/.test(session.user.id)
@@ -139,6 +156,17 @@ export async function POST(request: NextRequest) {
         return successResponse(item, 'Threshold updated');
       }
 
+      if (action === 'delete-item') {
+        const { itemId } = body;
+        if (!itemId) return errorResponse('Item ID required');
+        const itemIndex = store.inventoryItems.findIndex((entry) => entry._id === itemId);
+        if (itemIndex === -1) return errorResponse('Item not found', 404);
+        const itemName = store.inventoryItems[itemIndex].name;
+        store.inventoryItems[itemIndex].isActive = false;
+        store.inventoryItems[itemIndex].updatedAt = now;
+        return successResponse(null, 'Item deleted successfully');
+      }
+
       return errorResponse('Invalid action');
     }
 
@@ -199,6 +227,17 @@ export async function POST(request: NextRequest) {
       await item.save();
       await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'set_low_stock_threshold', module: 'inventory_sales', recordId: item._id, description: `Changed threshold for ${item.name}: ${oldThreshold} → ${threshold}`, oldValue: { threshold: oldThreshold }, newValue: { threshold }, ...meta }, request.headers);
       return successResponse(item, 'Threshold updated');
+    }
+
+    if (action === 'delete-item') {
+      const { itemId } = body;
+      if (!itemId) return errorResponse('Item ID required');
+      const item = await InventoryItem.findById(itemId);
+      if (!item) return errorResponse('Item not found', 404);
+      item.isActive = false;
+      await item.save();
+      await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'delete_inventory_item', module: 'inventory_sales', recordId: item._id, description: `Deleted inventory item "${item.name}"`, ...meta }, request.headers);
+      return successResponse(null, 'Item deleted successfully');
     }
 
     return errorResponse('Invalid action');

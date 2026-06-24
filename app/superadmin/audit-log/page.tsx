@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import { Search } from 'lucide-react';
 
 interface AuditEntry { _id: string; userId: string; userName: string; userType: string; action: string; module: string; description: string; oldValue: Record<string, unknown> | null; newValue: Record<string, unknown> | null; ipAddress: string; timestamp: string; }
 
@@ -44,9 +45,9 @@ export default function AuditLogPage() {
       <div className="page-header"><div><h1>Audit Log</h1><p className="page-subtitle">Tamper-proof activity records — insert-only, no edits or deletions</p></div></div>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
-        <div className="search-input-wrapper" style={{ flex: '1 1 250px' }}>
-          <span className="search-icon">🔍</span>
-          <input className="form-input search-input" placeholder="Search logs..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        <div className="search-input-wrapper" style={{ flex: '1 1 250px', position: 'relative' }}>
+          <span className="search-icon" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}><Search size={16} /></span>
+          <input className="form-input search-input" style={{ paddingLeft: '32px' }} placeholder="Search logs..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div style={{ width: '160px' }}>
           <CustomSelect
@@ -106,8 +107,7 @@ export default function AuditLogPage() {
               <div><span className="form-label">Action:</span> {detail.action}</div>
               <div><span className="form-label">Description:</span> {detail.description}</div>
               {detail.ipAddress && <div><span className="form-label">IP:</span> {detail.ipAddress}</div>}
-              {detail.oldValue && <div><span className="form-label">Old Value:</span><pre style={{ fontSize: 'var(--text-xs)', background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', overflow: 'auto' }}>{JSON.stringify(detail.oldValue, null, 2)}</pre></div>}
-              {detail.newValue && <div><span className="form-label">New Value:</span><pre style={{ fontSize: 'var(--text-xs)', background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', overflow: 'auto' }}>{JSON.stringify(detail.newValue, null, 2)}</pre></div>}
+
             </div>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary btn-md" onClick={() => setDetail(null)}>Close</button></div>

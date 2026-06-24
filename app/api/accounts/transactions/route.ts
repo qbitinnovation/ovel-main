@@ -9,6 +9,7 @@ import User from '@/models/User';
 import Position from '@/models/Position';
 import { errorResponse, successResponse, parsePagination, paginate } from '@/lib/utils';
 import { isDevFallbackEnabled, getDevStore, devUserRef } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'accounts_finance', 'view_transactions');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all'; // all, bookings, sales, manual

@@ -5,6 +5,7 @@ import MaintenanceTask from '@/models/MaintenanceTask';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, sanitizeInput, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevMaintenanceTask } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'maintenance_tasks', 'view_all_tasks');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const sp = request.nextUrl.searchParams;
     const { page, limit } = parsePagination(sp);
@@ -64,6 +68,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'maintenance_tasks', 'create_task');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const body = await request.json();
     const { title, description, location, priority, dueDate, assigneeId } = body;

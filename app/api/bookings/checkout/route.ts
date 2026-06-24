@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
+    const { checkPermission } = await import('@/lib/permissions');
+    const perm = await checkPermission(session.user.id, 'bookings', 'create_booking');
+    if (!perm.allowed) return errorResponse('Forbidden', 403);
+
     const body = await request.json() as Record<string, unknown>;
     const itemsResult = parseCheckoutItems(body.items);
     if ('error' in itemsResult) return errorResponse(itemsResult.error);

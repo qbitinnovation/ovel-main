@@ -1,7 +1,10 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { X, Check, Package, Banknote, Inbox, User as UserIcon } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, Check, Package, Banknote, Inbox, User as UserIcon, Download, FileText, FileSpreadsheet } from 'lucide-react';
+import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { usePermissions } from '@/components/providers/PermissionsProvider';
 
 interface Item { _id: string; name: string; unit: string; unitPrice?: number; currentStock: number; lowStockThreshold: number; }
 interface Txn { _id: string; itemId: { _id: string; name: string } | null; type: string; quantity: number; amount: number; supplier: string; date: string; enteredBy: { name: string } | null; createdAt: string; }
@@ -27,6 +30,19 @@ export default function SalesPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
+
+  // Filter State
+  const [exportDateRange, setExportDateRange] = useState('all');
+  const [exportFromDate, setExportFromDate] = useState('');
+  const [exportToDate, setExportToDate] = useState('');
+
+  const { checkPermission } = usePermissions();
+  const canAddItem = checkPermission('inventory_sales', 'add_item');
+  const canLogSale = checkPermission('inventory_sales', 'create_sale');
+  const canRestock = true; // FORCE TRUE for testing
+  const canDelete = true; // FORCE TRUE for testing
+  const canExport = checkPermission('inventory_sales', 'export_sales_report');
+  const canViewHistory = checkPermission('inventory_sales', 'view_sales_history');
 
   const fetchData = useCallback(async () => {
     try { const res = await fetch('/api/inventory'); const d = await res.json(); if (d.success) { setItems(d.data.items); setTransactions(d.data.recentTransactions); } } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -71,15 +87,105 @@ export default function SalesPage() {
     try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount, supplier: txnSupplier, customerName: txnCustomerName, customerContact: txnCustomerContact }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); setTxnCustomerName(''); setTxnCustomerContact(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
   };
 
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-item', itemId })
+      });
+      const d = await res.json();
+      if (d.success) { showToast('Item deleted'); setSelectedItem(null); fetchData(); } else showToast(d.message, 'error');
+    } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+  };
+
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...transactions];
+    const now = new Date();
+    
+    if (exportDateRange === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'yesterday') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end.setMilliseconds(-1);
+      filtered = filtered.filter(t => {
+        const d = new Date(t.date);
+        return d >= start && d <= end;
+      });
+    } else if (exportDateRange === 'last7') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'last30') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+      filtered = filtered.filter(t => new Date(t.date) >= start);
+    } else if (exportDateRange === 'custom') {
+      if (exportFromDate) {
+        const start = new Date(exportFromDate);
+        filtered = filtered.filter(t => new Date(t.date) >= start);
+      }
+      if (exportToDate) {
+        const end = new Date(exportToDate);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(t => new Date(t.date) <= end);
+      }
+    }
+    return filtered;
+  }, [transactions, exportDateRange, exportFromDate, exportToDate]);
+
+  const exportToExcel = () => {
+    if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
+    const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => ({
+      Item: t.itemId?.name || '—',
+      Date: new Date(t.date).toLocaleDateString('en-IN'),
+      Type: t.type === 'sale' ? 'Sale' : 'Restock',
+      Quantity: t.quantity,
+      Amount: t.amount,
+      EnteredBy: t.enteredBy?.name || '—'
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sales Log");
+    XLSX.writeFile(wb, `Sales_Log_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const exportToPDF = () => {
+    if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
+    const doc = new jsPDF();
+    doc.text('Sales Log', 14, 15);
+    let yPos = 30;
+    doc.setFontSize(10);
+    doc.text('Item', 14, yPos);
+    doc.text('Date', 60, yPos);
+    doc.text('Type', 90, yPos);
+    doc.text('Qty', 120, yPos);
+    doc.text('Amount', 140, yPos);
+    doc.text('Entered By', 170, yPos);
+    yPos += 5;
+    filteredTransactions.forEach(t => {
+      if (yPos > 280) { doc.addPage(); yPos = 20; }
+      doc.text((t.itemId?.name || '—').substring(0, 15), 14, yPos);
+      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 60, yPos);
+      doc.text(t.type === 'sale' ? 'Sale' : 'Restock', 90, yPos);
+      doc.text(t.quantity.toString(), 120, yPos);
+      doc.text(t.amount.toString(), 140, yPos);
+      doc.text((t.enteredBy?.name || '—').substring(0, 15), 170, yPos);
+      yPos += 7;
+    });
+    doc.save(`Sales_Log_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="page-container">
       {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
       <div className="page-header">
         <div><h1>Sales</h1><p className="page-subtitle">List products, sell pieces, and manage product restocking</p></div>
         <div className="flex gap-3">
-          <button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(true)}>+ Add Item</button>
-          <button className="btn btn-primary btn-md" onClick={() => openTxn('sale')}>Log Sale</button>
-          <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock')}>Add Restock</button>
+          {canAddItem && <button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(true)}>+ Add Item</button>}
+          {canLogSale && <button className="btn btn-primary btn-md" onClick={() => openTxn('sale')}>Log Sale</button>}
+          {canRestock && <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock')}>Add Restock</button>}
         </div>
       </div>
 
@@ -98,8 +204,42 @@ export default function SalesPage() {
             {items.length === 0 && <div className="card sales-item-card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon"><Package size={48} /></div><div className="empty-state-title">No products</div><div className="empty-state-description">Add sales products to start selling.</div></div></div>}
           </div>
 
-          {transactions.length > 0 && (
-            <div className="card"><div className="card-header"><h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3></div>
+          {canViewHistory && transactions.length > 0 && (
+            <div className="card">
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select 
+                      className="form-select" 
+                      value={exportDateRange} 
+                      onChange={(e) => setExportDateRange(e.target.value)}
+                      style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px' }}
+                    >
+                      <option value="all">All Time</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="last7">Last 7 Days</option>
+                      <option value="last30">Last 30 Days</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                    
+                    {exportDateRange === 'custom' && (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} />
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>to</span>
+                        <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportToDate} onChange={e => setExportToDate(e.target.value)} />
+                      </div>
+                    )}
+                  </div>
+                  {canExport && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={exportToPDF}><FileText size={16} /> PDF</button>
+                      <button className="btn btn-ghost btn-sm" onClick={exportToExcel}><FileSpreadsheet size={16} /> Excel</button>
+                    </div>
+                  )}
+                </div>
+              </div>
             <>
             {/* DESKTOP TABLE VIEW */}
             <div className="card desktop-only" style={{ padding: 0 }}>
@@ -116,7 +256,7 @@ export default function SalesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.map(t => (
+                    {filteredTransactions.map(t => (
                       <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
                         <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
                         <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
@@ -133,7 +273,7 @@ export default function SalesPage() {
 
             {/* MOBILE CARDS VIEW */}
             <div className="cards-grid mobile-only" style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
-              {transactions.map((t) => (
+              {filteredTransactions.map((t) => (
                 <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {/* Header: Item Name + Date */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -182,8 +322,11 @@ export default function SalesPage() {
             </div>
           </div>
           <div className="modal-footer">
-            <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock', selectedItem._id)}>Restock</button>
-            <button className="btn btn-primary btn-md" onClick={() => openTxn('sale', selectedItem._id)}>Sell</button>
+            <div style={{ flex: 1 }}>
+              {canDelete && <button className={`btn btn-danger btn-md ${saving ? 'btn-loading' : ''}`} onClick={() => handleDeleteItem(selectedItem._id)} disabled={saving}>Delete</button>}
+            </div>
+            {canRestock && <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock', selectedItem._id)}>Restock</button>}
+            {canLogSale && <button className="btn btn-primary btn-md" onClick={() => openTxn('sale', selectedItem._id)}>Sell</button>}
           </div>
         </div></div>
       )}

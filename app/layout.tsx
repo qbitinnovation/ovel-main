@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { SessionProvider } from '@/components/providers/SessionProvider';
 import { ToastProvider } from '@/components/providers/ToastProvider';
+import { PermissionsProvider } from '@/components/providers/PermissionsProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -41,9 +42,11 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <SessionProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
+          <PermissionsProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </PermissionsProvider>
         </SessionProvider>
       </body>
     </html>

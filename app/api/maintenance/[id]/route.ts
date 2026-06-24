@@ -5,6 +5,7 @@ import MaintenanceTask from '@/models/MaintenanceTask';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, sanitizeInput, getRequestMeta } from '@/lib/utils';
 import { devUserRef, getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
+import { checkPermission } from '@/lib/permissions';
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +14,10 @@ export async function GET(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'maintenance_tasks', 'view_all_tasks');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     const { id } = await params;
     try {
       await dbConnect();
@@ -42,6 +47,10 @@ export async function PUT(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
+
+    const permission = await checkPermission(session.user.id, 'maintenance_tasks', 'edit_task');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     const { id } = await params;
     const body = await request.json();
     try {
@@ -91,6 +100,16 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
     const { action, note } = body;
+
+    let permissionAction = '';
+    if (action === 'start' || action === 'complete') permissionAction = 'update_task_status';
+    else if (action === 'close') permissionAction = 'close_task';
+    else if (action === 'reopen') permissionAction = 'reopen_task';
+
+    if (permissionAction) {
+      const permission = await checkPermission(session.user.id, 'maintenance_tasks', permissionAction);
+      if (!permission.allowed) return errorResponse('Forbidden', 403);
+    }
     try {
       await dbConnect();
     } catch (error) {
@@ -184,7 +203,10 @@ export async function DELETE(
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
-    if (session.user.userType !== 'superadmin') return errorResponse('Only SuperAdmin can delete tasks', 403);
+
+    const permission = await checkPermission(session.user.id, 'maintenance_tasks', 'delete_task');
+    if (!permission.allowed) return errorResponse('Forbidden', 403);
+
     const { id } = await params;
     try {
       await dbConnect();
