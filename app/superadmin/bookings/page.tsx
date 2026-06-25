@@ -20,6 +20,8 @@ import {
   Trash2,
   User as UserIcon,
   X,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -70,6 +72,22 @@ interface ApiResponse<T> {
   data: T;
 }
 
+interface InventoryItem {
+  _id: string;
+  name: string;
+  unitPrice: number;
+  currentStock: number;
+  unit: string;
+}
+
+type FacilityType = 'turf' | 'nets_with_machine' | 'nets_without_machine';
+
+const FACILITY_OPTIONS: Array<{ value: FacilityType; label: string }> = [
+  { value: 'turf', label: 'Turf Booking' },
+  { value: 'nets_with_machine', label: 'Nets (With Machine)' },
+  { value: 'nets_without_machine', label: 'Nets (Without Machine)' },
+];
+
 const DISCOUNT_OPTIONS = [
   { value: 'percentage', label: 'Percentage (%)', icon: <Percent size={14} /> },
   { value: 'flat', label: 'Flat Rate', icon: <Tag size={14} /> },
@@ -85,7 +103,7 @@ export default function BookingsPage() {
   const pathname = usePathname();
   const portalBase = pathname?.split('/')[1] || 'superadmin';
   const manageUrl = `/${portalBase}/bookings/manage`;
-  const [pricing, setPricing] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
+  const [pricingConfig, setPricingConfig] = useState<any>(null);
   const [pricingLoading, setPricingLoading] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [selectedDate, setSelectedDate] = useState(todayKey());
@@ -108,6 +126,13 @@ export default function BookingsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
+  // New states for Phase 1 & 2
+  const [facility, setFacility] = useState<FacilityType>('turf');
+  const [loungeHours, setLoungeHours] = useState<number | ''>('');
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Record<string, number>>({});
+  const [showInventoryOptions, setShowInventoryOptions] = useState(false);
+
   const { checkPermission } = usePermissions();
   const canCreateBooking = checkPermission('bookings', 'create_booking');
   const canViewPaymentDashboard = checkPermission('bookings', 'view_payment_dashboard');
@@ -121,9 +146,9 @@ export default function BookingsPage() {
     setPricingLoading(true);
     try {
       const res = await fetch(`/api/settings/pricing?sync=${Date.now()}`, { cache: 'no-store' });
-      const data = await res.json() as ApiResponse<{ pricing: TurfPricingConfig }>;
+      const data = await res.json() as ApiResponse<any>;
       if (!data.success) throw new Error(data.message || 'Failed to load pricing');
-      setPricing(data.data.pricing || DEFAULT_TURF_PRICING_CONFIG);
+      setPricingConfig(data.data.pricing);
       setLastSyncedAt(new Date());
     } catch (error) {
       console.error(error);
@@ -135,11 +160,23 @@ export default function BookingsPage() {
 
   useEffect(() => {
     fetchPricing();
+    
+    // Fetch inventory items
+    fetch('/api/inventory')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data.items) {
+          setInventoryItems(data.data.items);
+        }
+      })
+      .catch(err => console.error('Failed to fetch inventory:', err));
   }, [fetchPricing]);
 
   useEffect(() => {
     setSelectedNormalSlots([]);
     setAppliedDiscount(null);
+    setLoungeHours('');
+    setSelectedProducts({});
     setBulkSelections((prev) => {
       if (prev.length === 0) return [{ date: selectedDate, isFullDay: true, slots: [] }];
       if (prev[0].date === selectedDate) return prev;
@@ -163,6 +200,7 @@ export default function BookingsPage() {
           startDate: date,
           endDate: date,
           bookingStatus: 'confirmed',
+          facility,
           limit: '100',
         });
         const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
@@ -184,12 +222,13 @@ export default function BookingsPage() {
 
   useEffect(() => {
     fetchBookedSlots();
-  }, [fetchBookedSlots]);
+  }, [fetchBookedSlots, facility]);
 
   const selectedNormalSet = useMemo(() => new Set(selectedNormalSlots), [selectedNormalSlots]);
 
   const cartItems = useMemo(() => {
     const items: CartItem[] = [];
+    const pricing = pricingConfig?.[facility] || DEFAULT_TURF_PRICING_CONFIG;
 
     if (bookingMode === 'normal') {
       items.push(...buildSlotCartItems({
@@ -229,21 +268,33 @@ export default function BookingsPage() {
     bookingMode,
     bulkSelections,
     priceType,
-    pricing,
+    pricingConfig,
+    facility,
     selectedDate,
     selectedNormalSlots,
   ]);
 
   const summary = useMemo(() => {
-    const baseAmount = cartItems.reduce((sum, item) => sum + item.amount, 0);
+    const slotAmount = cartItems.reduce((sum, item) => sum + item.amount, 0);
+    const hourlyRate = pricingConfig?.loungeHourlyRate || 0;
+    const lHours = Number(loungeHours) || 0;
+    const loungeAmount = lHours > 0 ? lHours * hourlyRate : 0;
+    
+    let productAmount = 0;
+    for (const [itemId, qty] of Object.entries(selectedProducts)) {
+      const item = inventoryItems.find((i) => i._id === itemId);
+      if (item) productAmount += item.unitPrice * qty;
+    }
+
+    const baseAmount = slotAmount + loungeAmount + productAmount;
     const discountAmount = getDiscountAmount(baseAmount, appliedDiscount);
     const finalAmount = Math.max(0, baseAmount - discountAmount);
     const totalHours = cartItems.reduce((sum, item) => sum + item.durationHours, 0);
     const hasZeroPriceItem = cartItems.some((item) => item.amount <= 0);
     const discountPercentage = baseAmount > 0 ? (discountAmount / baseAmount) * 100 : 0;
 
-    return { baseAmount, discountAmount, discountPercentage, finalAmount, totalHours, hasZeroPriceItem };
-  }, [appliedDiscount, cartItems]);
+    return { slotAmount, loungeAmount, productAmount, baseAmount, discountAmount, discountPercentage, finalAmount, totalHours, hasZeroPriceItem, hourlyRate };
+  }, [appliedDiscount, cartItems, loungeHours, pricingConfig, selectedProducts, inventoryItems]);
 
   const discountPercentageStr = useMemo(() => {
     if (summary.discountAmount <= 0) return '';
@@ -324,6 +375,8 @@ export default function BookingsPage() {
     setNotes('');
     setDiscountInput('');
     setAppliedDiscount(null);
+    setLoungeHours('');
+    setSelectedProducts({});
     setCurrentStep(1);
   };
 
@@ -340,6 +393,9 @@ export default function BookingsPage() {
           contactNumber,
           notes,
           priceType,
+          facility,
+          loungeHours: Number(loungeHours) || 0,
+          products: Object.entries(selectedProducts).map(([itemId, quantity]) => ({ itemId, quantity })),
           discount: appliedDiscount || { type: 'flat', value: 0 },
           items: cartItems.map((item) => ({
             bookingDate: item.bookingDate,
@@ -418,6 +474,26 @@ export default function BookingsPage() {
             <section className="card">
             <div className="card-body" style={{ display: 'grid', gap: 'var(--space-5)' }}>
               <div className="form-grid-2">
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label required">Facility</label>
+                  <div className="pill-toggle-group">
+                    {FACILITY_OPTIONS.map(option => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`pill-toggle ${facility === option.value ? 'active' : ''}`}
+                        onClick={() => {
+                          setFacility(option.value);
+                          setSelectedNormalSlots([]);
+                          setBulkSelections([{ date: todayKey(), isFullDay: true, slots: [] }]);
+                          setBookedByDate({}); // clear overlapping cache
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="form-group">
                   <label className="form-label required">Booking Date</label>
                   <CustomDatePicker value={selectedDate} onChange={setSelectedDate} minDate={new Date().toISOString().split('T')[0]} />
@@ -617,6 +693,100 @@ export default function BookingsPage() {
         {currentStep === 3 && (
           <div className="wizard-step" style={{ animation: 'fadeIn 0.3s ease-out' }}>
             <section className="card" style={{ marginBottom: 'var(--space-6)' }}>
+              <div className="card-header">
+                <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
+                  <Plus size={16} /> Add-ons
+                </h3>
+              </div>
+              <div className="card-body" style={{ display: 'grid', gap: 'var(--space-4)' }}>
+                <div className="booking-rate-option" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', width: 'fit-content', padding: 'var(--space-3)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={Number(loungeHours) > 0}
+                      onChange={(e) => setLoungeHours(e.target.checked ? 1 : '')}
+                      style={{ width: '18px', height: '18px' }}
+                    />
+                    <span>
+                      <strong>Include Lounge Area</strong>
+                      <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                        Billed hourly (Rate: {fmtMoney(summary.hourlyRate)}/hr)
+                      </span>
+                    </span>
+                  </label>
+                  
+                  {Number(loungeHours) > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)', paddingLeft: '26px' }}>
+                      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Hours:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className="form-input"
+                        value={loungeHours}
+                        onChange={(e) => setLoungeHours(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
+                        style={{ width: '80px', padding: '4px 8px' }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {inventoryItems.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 'var(--space-4)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Inventory Items (Sales)</label>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setShowInventoryOptions(!showInventoryOptions)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                      >
+                        {showInventoryOptions ? <Minus size={16} /> : <Plus size={16} />} 
+                        {showInventoryOptions ? 'Hide Sales' : 'Add Sales'}
+                      </button>
+                    </div>
+                    
+                    {showInventoryOptions && (
+                      <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                        {inventoryItems.map(item => (
+                          <div key={item._id} style={{ padding: 'var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                              <strong style={{ fontSize: 'var(--text-sm)' }}>{item.name}</strong>
+                              <span style={{ fontSize: 'var(--text-sm)' }}>{fmtMoney(item.unitPrice)}</span>
+                            </div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
+                              Stock: {item.currentStock} {item.unit}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={!selectedProducts[item._id]}
+                                onClick={() => setSelectedProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) - 1 }))}
+                                style={{ padding: '4px' }}
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span style={{ flex: 1, textAlign: 'center', fontWeight: 600 }}>{selectedProducts[item._id] || 0}</span>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={(selectedProducts[item._id] || 0) >= item.currentStock}
+                                onClick={() => setSelectedProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) + 1 }))}
+                                style={{ padding: '4px' }}
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="card" style={{ marginBottom: 'var(--space-6)' }}>
             <div className="card-header">
               <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
                 <Tag size={16} /> Discount
@@ -705,7 +875,24 @@ export default function BookingsPage() {
               </div>
             )}
 
-            <div className="booking-cart-total">
+            <div className="booking-cart-total muted" style={{ marginTop: 'var(--space-2)' }}>
+              <span>Slot Fees Subtotal</span>
+              <strong>{fmtMoney(summary.slotAmount)}</strong>
+            </div>
+            {Number(loungeHours) > 0 && (
+              <div className="booking-cart-total muted">
+                <span>Lounge Area Fee</span>
+                <strong>{fmtMoney(summary.loungeAmount)}</strong>
+              </div>
+            )}
+            {summary.productAmount > 0 && (
+              <div className="booking-cart-total muted">
+                <span>Inventory Products</span>
+                <strong>{fmtMoney(summary.productAmount)}</strong>
+              </div>
+            )}
+
+            <div className="booking-cart-total" style={{ borderTop: '1px dashed var(--border-primary)', paddingTop: 'var(--space-3)' }}>
               <span>Subtotal</span>
               <strong>{fmtMoney(summary.baseAmount)}</strong>
             </div>

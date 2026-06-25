@@ -6,7 +6,7 @@ import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevBooking } from '@/lib/dev-store';
 import { calculateTurfSlotPrice } from '@/lib/turf-pricing';
-import { getDevTurfPricingConfig, getTurfPricingConfig } from '@/lib/turf-pricing-settings';
+import { getDevAllFacilitiesPricingConfig, getAllFacilitiesPricingConfig } from '@/lib/turf-pricing-settings';
 import { checkPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const endDate = sp.get('endDate');
     const status = sp.get('status'); // 'pending' | 'partial' | 'paid'
     const bookingStatus = sp.get('bookingStatus'); // 'confirmed' | 'cancelled'
+    const facility = sp.get('facility');
 
     try {
       await dbConnect();
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
       if (endDate) bookings = bookings.filter((booking) => toDateKey(booking.bookingDate) <= endDate);
       if (status) bookings = bookings.filter((booking) => booking.paymentStatus === status);
       if (bookingStatus) bookings = bookings.filter((booking) => booking.bookingStatus === bookingStatus);
+      if (facility) bookings = bookings.filter((booking) => booking.facility === facility || (!booking.facility && facility === 'turf'));
       const total = bookings.length;
       const pagination = paginate({ page, limit, total });
       const pagedBookings = bookings
@@ -75,6 +77,7 @@ export async function GET(request: NextRequest) {
     }
     if (status) filter.paymentStatus = status;
     if (bookingStatus) filter.bookingStatus = bookingStatus;
+    if (facility) filter.facility = facility;
 
     const total = await Booking.countDocuments(filter);
     const pagination = paginate({ page, limit, total });
@@ -104,7 +107,7 @@ export async function POST(request: NextRequest) {
     if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const body = await request.json();
-    const { bookingDate, startTime, endTime, customerName, contactNumber, notes, bulkId, priceType, discountAmount, discountPercentage } = body;
+    const { bookingDate, startTime, endTime, customerName, contactNumber, notes, bulkId, priceType, discountAmount, discountPercentage, facility, loungeHours } = body;
 
     // Validate required fields
     if (!bookingDate) return errorResponse('Booking date is required');
@@ -127,7 +130,8 @@ export async function POST(request: NextRequest) {
       useDevStore = true;
     }
 
-    const pricing = useDevStore ? getDevTurfPricingConfig() : await getTurfPricingConfig();
+    const allPricing = useDevStore ? getDevAllFacilitiesPricingConfig() : await getAllFacilitiesPricingConfig();
+    const pricing = (allPricing[facility as keyof typeof allPricing] || allPricing.turf) as import('@/lib/turf-pricing').TurfPricingConfig;
     pricingSnapshot = calculateTurfSlotPrice({
       bookingDate,
       startTime,
@@ -173,6 +177,11 @@ export async function POST(request: NextRequest) {
         discountAmount: finalDiscountAmount,
         discountPercentage: finalDiscountPercentage,
         priceType: pricingSnapshot.priceType,
+        facility: facility || 'turf',
+        loungeHours: loungeHours || 0,
+        loungeAmount: 0,
+        products: [],
+        productAmount: 0,
         pricingSnapshot,
         notes: notes || '',
         bookingStatus: 'confirmed',
@@ -234,6 +243,11 @@ export async function POST(request: NextRequest) {
       discountAmount: finalDiscountAmount,
       discountPercentage: finalDiscountPercentage,
       priceType: pricingSnapshot.priceType,
+      facility: facility || 'turf',
+      loungeHours: loungeHours || 0,
+      loungeAmount: 0,
+      products: [],
+      productAmount: 0,
       pricingSnapshot,
       notes: notes || '',
       bookingStatus: 'confirmed',

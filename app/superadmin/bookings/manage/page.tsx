@@ -7,7 +7,7 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 import {
   Calendar, Check, CheckCircle, ChevronRight, Clock, FileText, IndianRupee,
-  Plus, Receipt, Search, Trash2, X, AlertCircle, Edit
+  Plus, Receipt, Search, Trash2, X, AlertCircle, Edit, Minus
 } from 'lucide-react';
 import {
   DEFAULT_TURF_PRICING_CONFIG,
@@ -32,6 +32,11 @@ interface Booking {
   totalPaid: number;
   bookingStatus: 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'partial' | 'paid';
+  facility: 'turf' | 'nets_with_machine' | 'nets_without_machine';
+  hasLounge: boolean;
+  loungeAmount: number;
+  products: Array<{ itemId: string; name: string; quantity: number; price: number }>;
+  productAmount: number;
   bulkId?: string | null;
   editHistory?: {
     editedAt: string;
@@ -74,7 +79,7 @@ interface PaymentSplit {
   amount: number | '';
   paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash';
   referenceNumber: string;
-  cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
+  cashReceivedBy: string;
   referenceNote: string;
 }
 
@@ -118,6 +123,20 @@ const getInitialSlotsForBooking = (booking: Booking, date: string): string[] => 
   return selected;
 };
 
+const getUserLabel = (u: any) => {
+  let extra = '';
+  if (u.positionId?.name) {
+    extra = u.positionId.name;
+  } else if (u.portalType === 'turf') {
+    extra = 'Turf Manager';
+  } else if (u.portalType === 'shareholder') {
+    extra = 'Shareholder';
+  } else if (u.userType) {
+    extra = u.userType.charAt(0).toUpperCase() + u.userType.slice(1);
+  }
+  return extra ? `${u.name} (${extra})` : u.name;
+};
+
 export default function ManageBookingsPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -128,10 +147,10 @@ export default function ManageBookingsPage() {
   const [pricing, setPricing] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
   const [pricingLoading, setPricingLoading] = useState(true);
   
-  // Filters
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('all'); // all, pending, partial, paid
+  const [facilityFilter, setFacilityFilter] = useState('all'); // all, turf, nets_with_machine, nets_without_machine
   
   // Modals
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -147,8 +166,8 @@ export default function ManageBookingsPage() {
     { amount: '', paymentMode: 'cash', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }
   ]);
   const [savingPayment, setSavingPayment] = useState(false);
-  
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
 
   // Edit Booking Modal State
   const [showEditModal, setShowEditModal] = useState(false);
@@ -166,6 +185,13 @@ export default function ManageBookingsPage() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancellingBooking, setCancellingBooking] = useState(false);
+
+  // Addons Modal State
+  const [showAddonsModal, setShowAddonsModal] = useState(false);
+  const [addonLoungeHours, setAddonLoungeHours] = useState<number | ''>('');
+  const [addonProducts, setAddonProducts] = useState<Record<string, number>>({});
+  const [savingAddons, setSavingAddons] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
   const { checkPermission } = usePermissions();
   const canCreateBooking = checkPermission('bookings', 'create_booking');
@@ -204,9 +230,22 @@ export default function ManageBookingsPage() {
     }
   }, []);
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/users?status=active&limit=100');
+      const data = await res.json();
+      if (data.success) {
+        setUsers(data.data.users || []);
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPricing();
-  }, [fetchPricing]);
+    fetchUsers();
+  }, [fetchPricing, fetchUsers]);
 
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -218,6 +257,7 @@ export default function ManageBookingsPage() {
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       if (paymentStatus !== 'all') params.append('status', paymentStatus);
+      if (facilityFilter !== 'all') params.append('facility', facilityFilter);
 
       const res = await fetch(`/api/bookings?${params.toString()}`);
       const data = await res.json();
@@ -237,7 +277,7 @@ export default function ManageBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, paymentStatus, showToast]);
+  }, [startDate, endDate, paymentStatus, facilityFilter, showToast]);
 
   useEffect(() => {
     fetchBookings();
@@ -462,7 +502,53 @@ export default function ManageBookingsPage() {
       setSavingPayment(false);
     }
   };
+  const openAddonsModal = () => {
+    setAddonLoungeHours('');
+    setAddonProducts({});
+    setShowAddonsModal(true);
 
+    if (inventoryItems.length === 0) {
+      fetch('/api/inventory')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data.items) {
+            setInventoryItems(data.data.items);
+          }
+        })
+        .catch(err => console.error('Failed to fetch inventory:', err));
+    }
+  };
+
+  const handleSaveAddons = async () => {
+    if (!selectedBooking) return;
+    setSavingAddons(true);
+    try {
+      const payload = {
+        loungeHours: addonLoungeHours ? Number(addonLoungeHours) : 0,
+        products: Object.entries(addonProducts).map(([itemId, quantity]) => ({ itemId, quantity }))
+      };
+
+      const res = await fetch(`/api/bookings/${selectedBooking._id}/addons`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Addons updated successfully');
+        setShowAddonsModal(false);
+        fetchBookings();
+        if (selectedBooking) handleRowClick(selectedBooking);
+      } else {
+        throw new Error(data.message || 'Failed to update addons');
+      }
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setSavingAddons(false);
+    }
+  };
   const exportToExcel = () => {
     if (!bookings.length) return showToast('No bookings to export', 'error');
     
@@ -573,16 +659,61 @@ export default function ManageBookingsPage() {
       doc.setDrawColor(200);
       doc.line(14, 80, 196, 80);
       
+      let currentY = 95;
+
+      // Bill Breakdown
       doc.setFontSize(14);
-      doc.text('Payment Summary', 14, 95);
+      doc.text('Bill Breakdown', 14, currentY);
+      currentY += 10;
+      
       doc.setFontSize(11);
-      doc.text(`Total Amount: Rs ${selectedBooking.expectedAmount}`, 14, 105);
-      doc.text(`Amount Paid: Rs ${selectedBooking.totalPaid}`, 14, 113);
+      const baseFee = selectedBooking.expectedAmount - (selectedBooking.loungeAmount || 0) - (selectedBooking.productAmount || 0);
+      doc.text('Slot Base Fee:', 14, currentY);
+      doc.text(`Rs ${baseFee}`, 100, currentY);
+      currentY += 8;
+
+      if ((selectedBooking.loungeAmount || 0) > 0) {
+        doc.text('Lounge Area Fee:', 14, currentY);
+        doc.text(`Rs ${selectedBooking.loungeAmount}`, 100, currentY);
+        currentY += 8;
+      }
+
+      if (selectedBooking.products && selectedBooking.products.length > 0) {
+        doc.text(`Products (${selectedBooking.products.length}):`, 14, currentY);
+        doc.text(`Rs ${selectedBooking.productAmount || 0}`, 100, currentY);
+        currentY += 6;
+        
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        selectedBooking.products.forEach((p: any) => {
+          doc.text(`- ${p.quantity}x ${p.name}`, 18, currentY);
+          doc.text(`Rs ${p.price}`, 100, currentY);
+          currentY += 5;
+        });
+        doc.setFontSize(11);
+        doc.setTextColor(0);
+        currentY += 3;
+      }
+
+      doc.setDrawColor(200);
+      doc.line(14, currentY - 2, 196, currentY - 2);
+      currentY += 6;
+
+      doc.setFontSize(14);
+      doc.text('Payment Summary', 14, currentY);
+      currentY += 10;
+
+      doc.setFontSize(11);
+      doc.text(`Total Amount: Rs ${selectedBooking.expectedAmount}`, 14, currentY);
+      currentY += 8;
+      doc.text(`Amount Paid: Rs ${selectedBooking.totalPaid}`, 14, currentY);
+      currentY += 8;
       
       const pending = Math.max(0, selectedBooking.expectedAmount - selectedBooking.totalPaid);
-      doc.text(`Pending Balance: Rs ${pending}`, 14, 121);
+      doc.text(`Pending Balance: Rs ${pending}`, 14, currentY);
+      currentY += 14;
       
-      let finalY = 135;
+      let finalY = currentY;
       if (selectedBooking.editHistory && selectedBooking.editHistory.length > 0) {
         doc.setFontSize(14);
         doc.text('Edit Adjustments', 14, finalY);
@@ -890,6 +1021,9 @@ export default function ManageBookingsPage() {
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                           {b.bookingType === 'bulk' ? `Bulk Order (${b.allDates?.length || 1} dates)` : `${b.startTime} - ${b.endTime}`}
                         </div>
+                        <span className="badge badge-neutral" style={{ marginTop: 'var(--space-1)', fontSize: '10px' }}>
+                          {b.facility === 'nets_with_machine' ? 'Nets (Machine)' : b.facility === 'nets_without_machine' ? 'Nets (No Machine)' : 'Turf'}
+                        </span>
                       </td>
                       <td>
                         <div style={{ fontWeight: 500 }}>{b.customerName || 'Walk-in'}</div>
@@ -948,13 +1082,52 @@ export default function ManageBookingsPage() {
                 </div>
               </div>
 
+              <h4 style={{ margin: 'var(--space-4) 0 var(--space-2) 0' }}>Bill Breakdown</h4>
+              <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Slot Base Fee</span>
+                  <span>{fmt(selectedBooking.expectedAmount - (selectedBooking.loungeAmount || 0) - (selectedBooking.productAmount || 0))}</span>
+                </div>
+                {(selectedBooking.loungeAmount || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Lounge Area Fee</span>
+                    <span>{fmt(selectedBooking.loungeAmount || 0)}</span>
+                  </div>
+                )}
+                {selectedBooking.products && selectedBooking.products.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                      <span>Products ({selectedBooking.products.length})</span>
+                      <span>{fmt(selectedBooking.productAmount || 0)}</span>
+                    </div>
+                    {selectedBooking.products.map((p: any, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', paddingLeft: 'var(--space-4)' }}>
+                        <span>{p.quantity}x {p.name}</span>
+                        <span>{fmt(p.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 'var(--space-2)', paddingTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                  <span>Total Expected Amount</span>
+                  <span>{fmt(selectedBooking.expectedAmount)}</span>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)', paddingBottom: 'var(--space-2)' }}>
                 <h4 style={{ margin: 0 }}>Payment Summary</h4>
-                {selectedBooking.paymentStatus !== 'paid' && canManageBookings && (
-                  <button className="btn btn-primary btn-sm" onClick={(e) => openPaymentModal(selectedBooking, e)}>
-                    Record Payment
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  {selectedBooking.paymentStatus !== 'paid' && canManageBookings && (
+                    <button className="btn btn-secondary btn-sm" onClick={openAddonsModal}>
+                      <Plus size={14} /> Add Add-Ons
+                    </button>
+                  )}
+                  {selectedBooking.paymentStatus !== 'paid' && canManageBookings && (
+                    <button className="btn btn-primary btn-sm" onClick={(e) => openPaymentModal(selectedBooking, e)}>
+                      Record Payment
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="form-grid-3" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
@@ -1145,16 +1318,40 @@ export default function ManageBookingsPage() {
             </div>
             <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               
-              <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Total Booking Value:</span>
+              <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                  <span>Slot Base Fee:</span>
+                  <span>{fmt(selectedBooking.expectedAmount - (selectedBooking.loungeAmount || 0) - (selectedBooking.productAmount || 0))}</span>
+                </div>
+                {(selectedBooking.loungeAmount || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                    <span>Lounge Area Fee:</span>
+                    <span>{fmt(selectedBooking.loungeAmount || 0)}</span>
+                  </div>
+                )}
+                {selectedBooking.products && selectedBooking.products.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Products ({selectedBooking.products.length}):</span>
+                      <span>{fmt(selectedBooking.productAmount || 0)}</span>
+                    </div>
+                    {selectedBooking.products.map((p: any, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', opacity: 0.8, paddingLeft: 'var(--space-4)' }}>
+                        <span>{p.quantity}x {p.name}</span>
+                        <span>{fmt(p.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
+                  <span style={{ color: 'var(--text-primary)' }}>Total Booking Value:</span>
                   <strong style={{ fontSize: '1.1em' }}>{fmt(selectedBooking.expectedAmount)}</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--status-success)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-success)' }}>
                   <span>Discount:</span>
                   <span>-{fmt(discountAmt)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Already Paid:</span>
                   <span>{fmt(selectedBooking.totalPaid)}</span>
                 </div>
@@ -1242,11 +1439,7 @@ export default function ManageBookingsPage() {
                         <div className="form-group">
                           <label className="form-label required" style={{ fontSize: 'var(--text-xs)' }}>Received By</label>
                           <CustomSelect
-                            options={[
-                              { value: 'turf_staff', label: 'Turf Staff' },
-                              { value: 'turf_owner', label: 'Turf Owner' },
-                              { value: 'arjo', label: 'Arjo' },
-                            ]}
+                            options={users.map((u: any) => ({ value: u.name, label: getUserLabel(u) }))}
                             value={split.cashReceivedBy}
                             onChange={(v) => updateSplit(index, 'cashReceivedBy', v)}
                           />
@@ -1497,6 +1690,87 @@ export default function ManageBookingsPage() {
                 disabled={cancellingBooking}
               >
                 <Trash2 size={18} /> Confirm Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Addons Modal */}
+      {showAddonsModal && selectedBooking && (
+        <div className="modal-backdrop" onClick={() => setShowAddonsModal(false)}>
+          <div className="modal" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Add Additional Items</h3>
+              <button className="modal-close" onClick={() => setShowAddonsModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={16} /> Lounge Area Add-On (Hours)
+                </label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Enter additional hours"
+                    className="form-input"
+                    value={addonLoungeHours}
+                    onChange={(e) => setAddonLoungeHours(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
+                  />
+                </div>
+              </div>
+
+              {inventoryItems.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Plus size={16} /> Add Inventory Items (Sales)
+                  </label>
+                  <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                    {inventoryItems.map(item => (
+                      <div key={item._id} style={{ padding: 'var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                          <strong style={{ fontSize: 'var(--text-sm)' }}>{item.name}</strong>
+                          <span style={{ fontSize: 'var(--text-sm)' }}>₹{item.unitPrice}</span>
+                        </div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
+                          Stock: {item.currentStock} {item.unit}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={!addonProducts[item._id]}
+                            onClick={() => setAddonProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) - 1 }))}
+                            style={{ padding: '4px' }}
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span style={{ flex: 1, textAlign: 'center', fontWeight: 600 }}>{addonProducts[item._id] || 0}</span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={(addonProducts[item._id] || 0) >= item.currentStock}
+                            onClick={() => setAddonProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) + 1 }))}
+                            style={{ padding: '4px' }}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+              <button className="btn btn-secondary btn-md" onClick={() => setShowAddonsModal(false)}>Cancel</button>
+              <button 
+                className={`btn btn-primary btn-md ${savingAddons ? 'btn-loading' : ''}`} 
+                onClick={handleSaveAddons}
+                disabled={savingAddons || (!addonLoungeHours && Object.keys(addonProducts).length === 0)}
+              >
+                <CheckCircle size={18} /> Apply Addons
               </button>
             </div>
           </div>

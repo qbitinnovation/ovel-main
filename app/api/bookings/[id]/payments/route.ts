@@ -121,9 +121,6 @@ export async function POST(
         if (!s.cashReceivedBy) {
           return errorResponse('Cash Received By is required for cash splits');
         }
-        if (!['turf_staff', 'turf_owner', 'arjo'].includes(s.cashReceivedBy)) {
-          return errorResponse('Invalid Cash Received By value in splits');
-        }
       }
     }
 

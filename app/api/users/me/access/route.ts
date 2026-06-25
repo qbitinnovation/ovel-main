@@ -27,14 +27,14 @@ export async function GET() {
           enabledActions: mod.availableActions,
           source: 'position',
         }));
-      } else if (user?.portalType === 'committee' && user?.positionId) {
+      } else if (user?.portalType === 'committee') {
         access = store.moduleMappings
-          .filter((mapping) => mapping.positionId === user.positionId && mapping.isActive)
+          .filter((mapping) => mapping.userId === session.user.id && mapping.isActive)
           .map((mapping) => ({
             moduleKey: mapping.moduleKey,
             accessLevel: mapping.accessLevel,
             enabledActions: mapping.enabledActions,
-            source: 'position',
+            source: 'override',
           }));
       } else if (user?.portalType === 'turf' || user?.portalType === 'shareholder') {
         access = store.portalMappings

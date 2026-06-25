@@ -1,18 +1,18 @@
 import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
-import PositionModuleMapping from '@/models/PositionModuleMapping';
-import Position from '@/models/Position';
+import UserModuleMapping from '@/models/UserModuleMapping';
+import User from '@/models/User';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { MODULE_DEFINITIONS } from '@/lib/constants';
-import { createDevId, devPositionRef, getDevStore, isDevFallbackEnabled, type DevModuleMapping } from '@/lib/dev-store';
+import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevModuleMapping } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/module-mappings
- * List all module mappings. Optionally filter by positionId.
+ * List all module mappings. Optionally filter by userId.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,24 +20,24 @@ export async function GET(request: NextRequest) {
     if (!session?.user) return errorResponse('Unauthorized', 401);
     if (session.user.userType !== 'superadmin') return errorResponse('Forbidden', 403);
 
-    const positionId = request.nextUrl.searchParams.get('positionId');
+    const userId = request.nextUrl.searchParams.get('userId');
 
     try {
       await dbConnect();
     } catch (error) {
       if (!isDevFallbackEnabled()) throw error;
       let mappings = getDevStore().moduleMappings;
-      if (positionId) mappings = mappings.filter((mapping) => mapping.positionId === positionId);
+      if (userId) mappings = mappings.filter((mapping) => mapping.userId === userId);
       return successResponse(
-        mappings.map((mapping) => ({ ...mapping, positionId: devPositionRef(mapping.positionId) }))
+        mappings.map((mapping) => ({ ...mapping, userId: devUserRef(mapping.userId) }))
       );
     }
 
     const filter: Record<string, unknown> = {};
-    if (positionId) filter.positionId = positionId;
+    if (userId) filter.userId = userId;
 
-    const mappings = await PositionModuleMapping.find(filter)
-      .populate('positionId', 'name isActive')
+    const mappings = await UserModuleMapping.find(filter)
+      .populate('userId', 'name email isActive')
       .sort({ createdAt: -1 });
 
     return successResponse(mappings);
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/module-mappings
- * Create a new module mapping for a position.
+ * Create a new module mapping for a user.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -58,10 +58,10 @@ export async function POST(request: NextRequest) {
     if (session.user.userType !== 'superadmin') return errorResponse('Forbidden', 403);
 
     const body = await request.json();
-    const { positionId, moduleKey, accessLevel, enabledActions } = body;
+    const { userId, moduleKey, accessLevel, enabledActions } = body;
 
-    if (!positionId || !moduleKey || !accessLevel) {
-      return errorResponse('positionId, moduleKey, and accessLevel are required');
+    if (!userId || !moduleKey || !accessLevel) {
+      return errorResponse('userId, moduleKey, and accessLevel are required');
     }
 
     // Validate module key
@@ -87,15 +87,15 @@ export async function POST(request: NextRequest) {
 
     if (useDevStore) {
       const store = getDevStore();
-      const position = store.positions.find((entry) => entry._id === positionId);
-      if (!position) return errorResponse('Position not found', 404);
-      if (!position.isActive) return errorResponse('Cannot map modules to an inactive position');
-      const existing = store.moduleMappings.find((mapping) => mapping.positionId === positionId && mapping.moduleKey === moduleKey);
-      if (existing) return errorResponse('This module is already mapped to this position. Edit the existing mapping instead.');
+      const user = store.users.find((entry) => entry._id === userId);
+      if (!user) return errorResponse('User not found', 404);
+      if (!user.isActive) return errorResponse('Cannot map modules to an inactive user');
+      const existing = store.moduleMappings.find((mapping) => mapping.userId === userId && mapping.moduleKey === moduleKey);
+      if (existing) return errorResponse('This module is already mapped to this user. Edit the existing mapping instead.');
       const now = new Date().toISOString();
       const mapping: DevModuleMapping = {
         _id: createDevId('mapping'),
-        positionId,
+        userId,
         moduleKey,
         accessLevel,
         enabledActions: actions,
@@ -104,22 +104,22 @@ export async function POST(request: NextRequest) {
         updatedAt: now,
       };
       store.moduleMappings.unshift(mapping);
-      return successResponse({ ...mapping, positionId: devPositionRef(positionId) }, 'Module mapped successfully', 201);
+      return successResponse({ ...mapping, userId: devUserRef(userId) }, 'Module mapped successfully', 201);
     }
 
-    // Validate position exists and is active
-    const position = await Position.findById(positionId);
-    if (!position) return errorResponse('Position not found', 404);
-    if (!position.isActive) return errorResponse('Cannot map modules to an inactive position');
+    // Validate user exists and is active
+    const user = await User.findById(userId);
+    if (!user) return errorResponse('User not found', 404);
+    if (!user.isActive) return errorResponse('Cannot map modules to an inactive user');
 
     // Check if mapping already exists
-    const existing = await PositionModuleMapping.findOne({ positionId, moduleKey });
+    const existing = await UserModuleMapping.findOne({ userId, moduleKey });
     if (existing) {
-      return errorResponse('This module is already mapped to this position. Edit the existing mapping instead.');
+      return errorResponse('This module is already mapped to this user. Edit the existing mapping instead.');
     }
 
-    const mapping = await PositionModuleMapping.create({
-      positionId,
+    const mapping = await UserModuleMapping.create({
+      userId,
       moduleKey,
       accessLevel,
       enabledActions: actions,
@@ -132,11 +132,11 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         userName: session.user.name || 'SuperAdmin',
         userType: session.user.userType,
-        action: 'map_module_to_position',
+        action: 'map_module_to_user',
         module: 'user_permission',
         recordId: mapping._id,
-        description: `Mapped ${moduleDef.moduleName} to ${position.name} with ${accessLevel} access`,
-        newValue: { positionId, moduleKey, accessLevel, enabledActions: actions },
+        description: `Mapped ${moduleDef.moduleName} to ${user.name} with ${accessLevel} access`,
+        newValue: { userId, moduleKey, accessLevel, enabledActions: actions },
         ...meta,
       },
       request.headers

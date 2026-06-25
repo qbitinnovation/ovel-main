@@ -7,7 +7,7 @@ export interface IPaymentEntry extends Document {
   paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash' | 'split';
   paymentDate: Date;
   referenceNumber: string;  // Bank ref / UTR — for bank transfers
-  cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';  // Required when mode is cash
+  cashReceivedBy: string;  // Required when mode is cash
   referenceNote: string;    // Free text for cash payments
   discountAmount: number;
   discountPercentage: number;
@@ -15,7 +15,7 @@ export interface IPaymentEntry extends Document {
     amount: number;
     paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash';
     referenceNumber: string;
-    cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
+    cashReceivedBy: string;
     referenceNote: string;
   }[];
   createdBy: Types.ObjectId;
@@ -36,7 +36,6 @@ const PaymentEntrySchema = new Schema<IPaymentEntry>(
     referenceNumber: { type: String, default: '', trim: true },
     cashReceivedBy: {
       type: String,
-      enum: ['turf_staff', 'turf_owner', 'arjo', ''],
       default: '',
     },
     referenceNote: { type: String, default: '' },
@@ -47,7 +46,7 @@ const PaymentEntrySchema = new Schema<IPaymentEntry>(
         amount: { type: Number, required: true },
         paymentMode: { type: String, required: true, enum: ['bank_transfer', 'upi', 'card', 'cash'] },
         referenceNumber: { type: String, default: '' },
-        cashReceivedBy: { type: String, enum: ['turf_staff', 'turf_owner', 'arjo', ''], default: '' },
+        cashReceivedBy: { type: String, default: '' },
         referenceNote: { type: String, default: '' },
       }
     ],

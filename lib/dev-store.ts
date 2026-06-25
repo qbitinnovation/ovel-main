@@ -135,7 +135,7 @@ export interface DevMaintenanceTask {
 
 export interface DevModuleMapping {
   _id: string;
-  positionId: string;
+  userId: string;
   moduleKey: string;
   accessLevel: 'view' | 'edit' | 'full_control';
   enabledActions: string[];
@@ -223,6 +223,11 @@ export interface DevBooking {
   createdAt: string;
   updatedAt: string;
   bulkId?: string | null;
+  facility: 'turf' | 'nets_with_machine' | 'nets_without_machine';
+  loungeHours: number;
+  loungeAmount: number;
+  products: Array<{ itemId: string; name: string; quantity: number; price: number }>;
+  productAmount: number;
 }
 
 export interface DevPayment {
@@ -232,7 +237,7 @@ export interface DevPayment {
   paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash' | 'split';
   paymentDate: string;
   referenceNumber: string;
-  cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
+  cashReceivedBy: string;
   referenceNote: string;
   discountAmount?: number;
   discountPercentage?: number;
@@ -240,7 +245,7 @@ export interface DevPayment {
     amount: number;
     paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash';
     referenceNumber: string;
-    cashReceivedBy: 'turf_staff' | 'turf_owner' | 'arjo' | '';
+    cashReceivedBy: string;
     referenceNote: string;
   }[];
   createdBy: string;
@@ -327,7 +332,7 @@ export function getDevStore(): DevStore {
       moduleMappings: [
         {
           _id: 'dev-module-map-committee-ops',
-          positionId: 'demo-position',
+          userId: '000000000000000000000002',
           moduleKey: 'daily_operations',
           accessLevel: 'full_control',
           enabledActions: ['view_checklist', 'upload_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist', 'edit_checklist'],
@@ -337,7 +342,7 @@ export function getDevStore(): DevStore {
         },
         {
           _id: 'dev-module-map-committee-users',
-          positionId: 'demo-position',
+          userId: '000000000000000000000002',
           moduleKey: 'user_permission',
           accessLevel: 'full_control',
           enabledActions: [
@@ -351,7 +356,7 @@ export function getDevStore(): DevStore {
         },
         {
           _id: 'dev-module-map-committee-attendance',
-          positionId: 'demo-position',
+          userId: '000000000000000000000002',
           moduleKey: 'smart_attendance',
           accessLevel: 'full_control',
           enabledActions: ['submit_attendance', 'verify_attendance', 'view_attendance_reports'],

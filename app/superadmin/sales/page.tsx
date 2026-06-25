@@ -138,14 +138,17 @@ export default function SalesPage() {
 
   const exportToExcel = () => {
     if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
-    const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => ({
-      Item: t.itemId?.name || '—',
-      Date: new Date(t.date).toLocaleDateString('en-IN'),
-      Type: t.type === 'sale' ? 'Sale' : 'Restock',
-      Quantity: t.quantity,
-      Amount: t.amount,
-      EnteredBy: t.enteredBy?.name || '—'
-    })));
+    const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => {
+      const isBooking = t.supplier && t.supplier.toLowerCase().includes('booking');
+      return {
+        Item: t.itemId?.name || '—',
+        Date: new Date(t.date).toLocaleDateString('en-IN'),
+        Type: t.type === 'sale' ? 'Sale' : 'Restock',
+        Quantity: t.quantity,
+        Amount: isBooking ? 'Amount received in booking' : t.amount,
+        EnteredBy: t.enteredBy?.name || '—'
+      };
+    }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales Log");
     XLSX.writeFile(wb, `Sales_Log_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -166,11 +169,12 @@ export default function SalesPage() {
     yPos += 5;
     filteredTransactions.forEach(t => {
       if (yPos > 280) { doc.addPage(); yPos = 20; }
+      const isBooking = t.supplier && t.supplier.toLowerCase().includes('booking');
       doc.text((t.itemId?.name || '—').substring(0, 15), 14, yPos);
       doc.text(new Date(t.date).toLocaleDateString('en-IN'), 60, yPos);
       doc.text(t.type === 'sale' ? 'Sale' : 'Restock', 90, yPos);
       doc.text(t.quantity.toString(), 120, yPos);
-      doc.text(t.amount.toString(), 140, yPos);
+      doc.text(isBooking ? 'In Booking' : t.amount.toString(), 140, yPos);
       doc.text((t.enteredBy?.name || '—').substring(0, 15), 170, yPos);
       yPos += 7;
     });
@@ -262,7 +266,12 @@ export default function SalesPage() {
                         <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
                         <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
-                        <td style={{ padding: 'var(--space-4)', fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</td>
+                        <td style={{ padding: 'var(--space-4)' }}>
+                          <div style={{ fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                          {t.supplier && t.supplier.toLowerCase().includes('booking') && (
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Amount received in booking</div>
+                          )}
+                        </td>
                         <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
                       </tr>
                     ))}
@@ -298,6 +307,9 @@ export default function SalesPage() {
                     <div>
                       <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                      {t.supplier && t.supplier.toLowerCase().includes('booking') && (
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>In booking</div>
+                      )}
                     </div>
                     <div>
                       <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>

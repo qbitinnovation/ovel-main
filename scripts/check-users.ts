@@ -17,7 +17,7 @@ async function run() {
 
   const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({}, { strict: false }));
   const PortalModuleMapping = mongoose.models.PortalModuleMapping || mongoose.model('PortalModuleMapping', new mongoose.Schema({}, { strict: false }));
-  const PositionModuleMapping = mongoose.models.PositionModuleMapping || mongoose.model('PositionModuleMapping', new mongoose.Schema({}, { strict: false }));
+  const UserModuleMapping = mongoose.models.UserModuleMapping || mongoose.model('UserModuleMapping', new mongoose.Schema({}, { strict: false }));
 
   const users = await User.find({});
   console.log('--- USERS ---');
@@ -27,9 +27,9 @@ async function run() {
   console.log('--- PORTAL MODULE MAPPINGS ---');
   console.log(portalMappings);
 
-  const positionMappings = await PositionModuleMapping.find({});
-  console.log('--- POSITION MODULE MAPPINGS ---');
-  console.log(positionMappings);
+  const userMappings = await UserModuleMapping.find({});
+  console.log('--- USER MODULE MAPPINGS ---');
+  console.log(userMappings);
 
   await mongoose.disconnect();
 }

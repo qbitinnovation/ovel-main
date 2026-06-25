@@ -1,5 +1,5 @@
 import dbConnect from '@/lib/db';
-import PositionModuleMapping from '@/models/PositionModuleMapping';
+import UserModuleMapping from '@/models/UserModuleMapping';
 import PortalModuleMapping from '@/models/PortalModuleMapping';
 import UserOverride from '@/models/UserOverride';
 import User from '@/models/User';
@@ -44,11 +44,10 @@ function checkDevPermission(
 
   // Committee
   if (user.portalType === 'committee') {
-    if (!user.positionId) return { allowed: false, accessLevel: null, reason: 'No position assigned (dev)' };
-    const mapping = store.moduleMappings.find((m: any) => m.positionId === user.positionId && m.moduleKey === moduleKey && m.isActive);
-    if (!mapping) return { allowed: false, accessLevel: null, reason: `Module not mapped to position (dev)` };
+    const mapping = store.moduleMappings.find((m: any) => m.userId === String(user._id) && m.moduleKey === moduleKey && m.isActive);
+    if (!mapping) return { allowed: false, accessLevel: null, reason: `Module not mapped to user (dev)` };
     if (!mapping.enabledActions.includes(requiredAction)) return { allowed: false, accessLevel: mapping.accessLevel, reason: `Action not enabled (dev)` };
-    return { allowed: true, accessLevel: mapping.accessLevel, reason: 'Position mapping (dev)' };
+    return { allowed: true, accessLevel: mapping.accessLevel, reason: 'User mapping (dev)' };
   }
 
   return { allowed: false, accessLevel: null, reason: 'No dev permission check implemented for this type' };
@@ -123,18 +122,10 @@ export async function checkPermission(
     }
   }
 
-  // Check position-based mapping for committee users
+  // Check user-based mapping for committee users
   if (user.portalType === 'committee') {
-    if (!user.positionId) {
-      return {
-        allowed: false,
-        accessLevel: null,
-        reason: 'No position assigned. Contact SuperAdmin.',
-      };
-    }
-
-    const mapping = await PositionModuleMapping.findOne({
-      positionId: user.positionId,
+    const mapping = await UserModuleMapping.findOne({
+      userId: user._id,
       moduleKey,
       isActive: true,
     });
@@ -143,7 +134,7 @@ export async function checkPermission(
       return {
         allowed: false,
         accessLevel: null,
-        reason: `Module "${moduleKey}" is not mapped to your position`,
+        reason: `Module "${moduleKey}" is not mapped to your user`,
       };
     }
 
@@ -151,14 +142,14 @@ export async function checkPermission(
       return {
         allowed: false,
         accessLevel: mapping.accessLevel,
-        reason: `Action "${requiredAction}" is not enabled for your position on this module`,
+        reason: `Action "${requiredAction}" is not enabled for your user on this module`,
       };
     }
 
     return {
       allowed: true,
       accessLevel: mapping.accessLevel,
-      reason: 'Access granted via position mapping',
+      reason: 'Access granted via user mapping',
     };
   }
 
@@ -241,9 +232,9 @@ async function getDevUserModuleAccess(
 
   const accessMap = new Map<string, ModuleAccess>();
 
-  // Get position mappings
-  if (user.portalType === 'committee' && user.positionId) {
-    const mappings = store.moduleMappings.filter((m: any) => m.positionId === user.positionId && m.isActive);
+  // Get user mappings
+  if (user.portalType === 'committee') {
+    const mappings = store.moduleMappings.filter((m: any) => m.userId === String(user._id) && m.isActive);
     for (const mapping of mappings) {
       accessMap.set(mapping.moduleKey, {
         moduleKey: mapping.moduleKey,
@@ -315,10 +306,10 @@ export async function getUserModuleAccess(
 
   const accessMap = new Map<string, ModuleAccess>();
 
-  // Get position mappings
-  if (user.portalType === 'committee' && user.positionId) {
-    const mappings = await PositionModuleMapping.find({
-      positionId: user.positionId,
+  // Get user mappings
+  if (user.portalType === 'committee') {
+    const mappings = await UserModuleMapping.find({
+      userId: user._id,
       isActive: true,
     });
 

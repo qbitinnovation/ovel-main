@@ -14,10 +14,12 @@ interface Setting {
 
 const VISIBLE_BOOKING_SETTING_KEYS = new Set([
   'booking_payment_reminder_days',
+  'lounge_hourly_rate',
 ]);
 
 const BOOKING_SETTING_FALLBACKS: Setting[] = [
   { _id: 'fallback-booking-payment-reminder-days', key: 'booking_payment_reminder_days', value: 3, label: 'Booking Payment Reminder (days)', category: 'bookings' },
+  { _id: 'fallback-lounge-hourly-rate', key: 'lounge_hourly_rate', value: 0, label: 'Lounge Hourly Rate', category: 'bookings' },
 ];
 
 export default function BookingPricingDashboard() {

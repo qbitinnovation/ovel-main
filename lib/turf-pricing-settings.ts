@@ -1,12 +1,19 @@
 import SystemSettings, { DEFAULT_SETTINGS } from '@/models/SystemSettings';
-import { type TurfHoliday, type TurfPricingConfig, normalizeSlotPriceRules } from '@/lib/turf-pricing';
+import { type TurfHoliday, type TurfPricingConfig, type AllFacilitiesPricingConfig, normalizeSlotPriceRules } from '@/lib/turf-pricing';
 import { createDevId, getDevStore } from '@/lib/dev-store';
 
 const PRICING_SETTING_KEYS = [
   'turf_slot_price_rules',
   'turf_weekday_rules',
   'turf_weekend_rules',
+  'nets_machine_weekday_rules',
+  'nets_machine_weekend_rules',
+  'nets_nomachine_weekday_rules',
+  'nets_nomachine_weekend_rules',
+  'lounge_hourly_rate',
   'turf_holidays',
+  'nets_machine_holidays',
+  'nets_nomachine_holidays',
   'turf_weekend_days',
 ] as const;
 
@@ -50,33 +57,60 @@ function ensureDevBookingSettings() {
   return store.settings;
 }
 
-export function getDevTurfPricingConfig(): TurfPricingConfig {
+export function getDevAllFacilitiesPricingConfig(): AllFacilitiesPricingConfig {
   const settings = ensureDevBookingSettings();
   const map = new Map(settings.map((setting) => [setting.key, setting.value]));
   const slotRulesValue = map.get('turf_slot_price_rules');
-  const weekdayRulesValue = map.get('turf_weekday_rules');
-  const weekendRulesValue = map.get('turf_weekend_rules');
-  const holidaysValue = map.get('turf_holidays');
+  const turfWeekdayRulesValue = map.get('turf_weekday_rules');
+  const turfWeekendRulesValue = map.get('turf_weekend_rules');
+  const netsMachineWeekdayRulesValue = map.get('nets_machine_weekday_rules');
+  const netsMachineWeekendRulesValue = map.get('nets_machine_weekend_rules');
+  const netsNoMachineWeekdayRulesValue = map.get('nets_nomachine_weekday_rules');
+  const netsNoMachineWeekendRulesValue = map.get('nets_nomachine_weekend_rules');
+  const loungeHourlyRateValue = map.get('lounge_hourly_rate');
+  const turfHolidaysValue = map.get('turf_holidays');
+  const netsMachineHolidaysValue = map.get('nets_machine_holidays');
+  const netsNoMachineHolidaysValue = map.get('nets_nomachine_holidays');
   const weekendDaysValue = map.get('turf_weekend_days');
 
-  let weekdayRules = normalizeSlotPriceRules(weekdayRulesValue);
-  let weekendRules = normalizeSlotPriceRules(weekendRulesValue);
+  let turfWeekdayRules = normalizeSlotPriceRules(turfWeekdayRulesValue);
+  let turfWeekendRules = normalizeSlotPriceRules(turfWeekendRulesValue);
 
-  if (weekdayRules.length === 0 && weekendRules.length === 0 && slotRulesValue) {
+  if (turfWeekdayRules.length === 0 && turfWeekendRules.length === 0 && slotRulesValue) {
     const legacyRules = normalizeSlotPriceRules(slotRulesValue);
-    weekdayRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekdays');
-    weekendRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekends');
+    turfWeekdayRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekdays');
+    turfWeekendRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekends');
   }
 
+  const turfHolidays = Array.isArray(turfHolidaysValue) ? turfHolidaysValue as import('@/lib/turf-pricing').TurfHoliday[] : [];
+  const netsMachineHolidays = Array.isArray(netsMachineHolidaysValue) ? netsMachineHolidaysValue as import('@/lib/turf-pricing').TurfHoliday[] : [];
+  const netsNoMachineHolidays = Array.isArray(netsNoMachineHolidaysValue) ? netsNoMachineHolidaysValue as import('@/lib/turf-pricing').TurfHoliday[] : [];
+  const weekendDays = Array.isArray(weekendDaysValue) ? (weekendDaysValue as number[]) : [0, 6];
+
   return {
-    weekdayRules,
-    weekendRules,
-    holidays: Array.isArray(holidaysValue) ? holidaysValue as import('@/lib/turf-pricing').TurfHoliday[] : [],
-    weekendDays: Array.isArray(weekendDaysValue) ? (weekendDaysValue as number[]) : [0, 6],
+    turf: {
+      weekdayRules: turfWeekdayRules,
+      weekendRules: turfWeekendRules,
+      holidays: turfHolidays,
+      weekendDays,
+    },
+    nets_with_machine: {
+      weekdayRules: normalizeSlotPriceRules(netsMachineWeekdayRulesValue),
+      weekendRules: normalizeSlotPriceRules(netsMachineWeekendRulesValue),
+      holidays: netsMachineHolidays,
+      weekendDays,
+    },
+    nets_without_machine: {
+      weekdayRules: normalizeSlotPriceRules(netsNoMachineWeekdayRulesValue),
+      weekendRules: normalizeSlotPriceRules(netsNoMachineWeekendRulesValue),
+      holidays: netsNoMachineHolidays,
+      weekendDays,
+    },
+    loungeHourlyRate: Number(loungeHourlyRateValue) || 0,
   };
 }
 
-export async function getTurfPricingConfig(): Promise<TurfPricingConfig> {
+export async function getAllFacilitiesPricingConfig(): Promise<AllFacilitiesPricingConfig> {
   const settings = await SystemSettings.find({
     key: {
       $in: PRICING_SETTING_KEYS,
@@ -85,34 +119,61 @@ export async function getTurfPricingConfig(): Promise<TurfPricingConfig> {
 
   const map = new Map(settings.map((setting) => [setting.key, setting.value]));
   const slotRulesValue = map.get('turf_slot_price_rules');
-  const weekdayRulesValue = map.get('turf_weekday_rules');
-  const weekendRulesValue = map.get('turf_weekend_rules');
-  const holidaysValue = map.get('turf_holidays');
+  const turfWeekdayRulesValue = map.get('turf_weekday_rules');
+  const turfWeekendRulesValue = map.get('turf_weekend_rules');
+  const netsMachineWeekdayRulesValue = map.get('nets_machine_weekday_rules');
+  const netsMachineWeekendRulesValue = map.get('nets_machine_weekend_rules');
+  const netsNoMachineWeekdayRulesValue = map.get('nets_nomachine_weekday_rules');
+  const netsNoMachineWeekendRulesValue = map.get('nets_nomachine_weekend_rules');
+  const loungeHourlyRateValue = map.get('lounge_hourly_rate');
+  const turfHolidaysValue = map.get('turf_holidays');
+  const netsMachineHolidaysValue = map.get('nets_machine_holidays');
+  const netsNoMachineHolidaysValue = map.get('nets_nomachine_holidays');
   const weekendDaysValue = map.get('turf_weekend_days');
 
-  let weekdayRules = normalizeSlotPriceRules(weekdayRulesValue);
-  let weekendRules = normalizeSlotPriceRules(weekendRulesValue);
+  let turfWeekdayRules = normalizeSlotPriceRules(turfWeekdayRulesValue);
+  let turfWeekendRules = normalizeSlotPriceRules(turfWeekendRulesValue);
   let usedLegacyRules = false;
 
-  if (weekdayRules.length === 0 && weekendRules.length === 0 && slotRulesValue) {
+  if (turfWeekdayRules.length === 0 && turfWeekendRules.length === 0 && slotRulesValue) {
     const legacyRules = normalizeSlotPriceRules(slotRulesValue);
-    weekdayRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekdays');
-    weekendRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekends');
+    turfWeekdayRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekdays');
+    turfWeekendRules = legacyRules.filter((r) => r.dayType === 'all_days' || r.dayType === 'weekends');
     usedLegacyRules = true;
   }
 
   if (!usedLegacyRules && !map.has('turf_weekday_rules')) {
-    weekdayRules = normalizeSlotPriceRules(getDefaultSettingValue('turf_weekday_rules'));
+    turfWeekdayRules = normalizeSlotPriceRules(getDefaultSettingValue('turf_weekday_rules'));
   }
 
   if (!usedLegacyRules && !map.has('turf_weekend_rules')) {
-    weekendRules = normalizeSlotPriceRules(getDefaultSettingValue('turf_weekend_rules'));
+    turfWeekendRules = normalizeSlotPriceRules(getDefaultSettingValue('turf_weekend_rules'));
   }
 
+  const turfHolidays = Array.isArray(turfHolidaysValue) ? turfHolidaysValue as TurfHoliday[] : getDefaultHolidays();
+  const netsMachineHolidays = Array.isArray(netsMachineHolidaysValue) ? netsMachineHolidaysValue as TurfHoliday[] : getDefaultHolidays();
+  const netsNoMachineHolidays = Array.isArray(netsNoMachineHolidaysValue) ? netsNoMachineHolidaysValue as TurfHoliday[] : getDefaultHolidays();
+  const weekendDays = Array.isArray(weekendDaysValue) ? (weekendDaysValue as number[]) : getDefaultWeekendDays();
+
   return {
-    weekdayRules,
-    weekendRules,
-    holidays: Array.isArray(holidaysValue) ? holidaysValue as TurfHoliday[] : getDefaultHolidays(),
-    weekendDays: Array.isArray(weekendDaysValue) ? (weekendDaysValue as number[]) : getDefaultWeekendDays(),
+    turf: {
+      weekdayRules: turfWeekdayRules,
+      weekendRules: turfWeekendRules,
+      holidays: turfHolidays,
+      weekendDays,
+    },
+    nets_with_machine: {
+      weekdayRules: normalizeSlotPriceRules(netsMachineWeekdayRulesValue) || normalizeSlotPriceRules(getDefaultSettingValue('nets_machine_weekday_rules')),
+      weekendRules: normalizeSlotPriceRules(netsMachineWeekendRulesValue) || normalizeSlotPriceRules(getDefaultSettingValue('nets_machine_weekend_rules')),
+      holidays: netsMachineHolidays,
+      weekendDays,
+    },
+    nets_without_machine: {
+      weekdayRules: normalizeSlotPriceRules(netsNoMachineWeekdayRulesValue) || normalizeSlotPriceRules(getDefaultSettingValue('nets_nomachine_weekday_rules')),
+      weekendRules: normalizeSlotPriceRules(netsNoMachineWeekendRulesValue) || normalizeSlotPriceRules(getDefaultSettingValue('nets_nomachine_weekend_rules')),
+      holidays: netsNoMachineHolidays,
+      weekendDays,
+    },
+    loungeHourlyRate: Number(loungeHourlyRateValue) || Number(getDefaultSettingValue('lounge_hourly_rate')) || 0,
   };
 }

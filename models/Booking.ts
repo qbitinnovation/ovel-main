@@ -41,6 +41,11 @@ export interface IBooking extends Document {
   createdAt: Date;
   updatedAt: Date;
   bulkId: string | null;
+  facility: 'turf' | 'nets_with_machine' | 'nets_without_machine';
+  loungeHours: number;
+  loungeAmount: number;
+  products: Array<{ itemId: Types.ObjectId | string; name: string; quantity: number; price: number }>;
+  productAmount: number;
   discountAmount: number;
   discountPercentage: number;
   editHistory?: IBookingEditHistory[];
@@ -86,6 +91,21 @@ const BookingSchema = new Schema<IBooking>(
     cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     bulkId: { type: String, default: null },
+    facility: { type: String, enum: ['turf', 'nets_with_machine', 'nets_without_machine'], default: 'turf' },
+    loungeHours: { type: Number, default: 0 },
+    loungeAmount: { type: Number, default: 0 },
+    products: {
+      type: [
+        {
+          itemId: { type: Schema.Types.ObjectId, ref: 'InventoryItem' },
+          name: String,
+          quantity: Number,
+          price: Number,
+        }
+      ],
+      default: []
+    },
+    productAmount: { type: Number, default: 0 },
     discountAmount: { type: Number, default: 0 },
     discountPercentage: { type: Number, default: 0 },
     editHistory: {

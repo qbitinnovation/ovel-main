@@ -13,8 +13,24 @@ interface Setting {
   category: string;
 }
 
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, idx) => {
+  const totalMinutes = idx * 30;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return { value, label: `${h12}:${m.toString().padStart(2, '0')} ${ampm}` };
+});
+
 export default function HolidayPricingPage() {
+  const [facility, setFacility] = useState<'turf' | 'nets_machine' | 'nets_nomachine'>('turf');
   const [holidays, setHolidays] = useState<TurfHoliday[]>([]);
+  const [allHolidays, setAllHolidays] = useState<Record<string, TurfHoliday[]>>({
+    turf: [],
+    nets_machine: [],
+    nets_nomachine: [],
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
@@ -30,10 +46,19 @@ export default function HolidayPricingPage() {
       const res = await fetch('/api/settings');
       const data = await res.json();
       if (data.success) {
-        const holidaysSetting = (data.data as Setting[]).find((s) => s.key === 'turf_holidays');
-        if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
-          setHolidays(holidaysSetting.value as TurfHoliday[]);
-        }
+        const settings = data.data as Setting[];
+        const getKey = (f: string) => f === 'turf' ? 'turf_holidays' : `${f}_holidays`;
+        const newHolidays = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfHoliday[]>;
+        
+        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
+          const holidaysSetting = settings.find((s) => s.key === getKey(f));
+          if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
+            newHolidays[f] = holidaysSetting.value as TurfHoliday[];
+          }
+        });
+        
+        setAllHolidays(newHolidays);
+        setHolidays(newHolidays[facility]);
       }
     } catch (error) {
       console.error(error);
@@ -47,15 +72,23 @@ export default function HolidayPricingPage() {
     fetchSettings();
   }, [fetchSettings]);
 
+  useEffect(() => {
+    setHolidays(allHolidays[facility] || []);
+  }, [facility, allHolidays]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalHolidays = { ...allHolidays, [facility]: holidays };
+
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: [
-            { key: 'turf_holidays', value: holidays }
+            { key: 'turf_holidays', value: finalHolidays.turf },
+            { key: 'nets_machine_holidays', value: finalHolidays.nets_machine },
+            { key: 'nets_nomachine_holidays', value: finalHolidays.nets_nomachine }
           ]
         }),
       });
@@ -64,11 +97,17 @@ export default function HolidayPricingPage() {
         showToast('Holiday pricing saved successfully');
         setHasChanges(false);
 
-        // Refresh state
-        const holidaysSetting = (data.data as Setting[]).find((s) => s.key === 'turf_holidays');
-        if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
-          setHolidays(holidaysSetting.value as TurfHoliday[]);
-        }
+        const settings = data.data as Setting[];
+        const getKey = (f: string) => f === 'turf' ? 'turf_holidays' : `${f}_holidays`;
+        const newHolidays = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfHoliday[]>;
+        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
+          const holidaysSetting = settings.find((s) => s.key === getKey(f));
+          if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
+            newHolidays[f] = holidaysSetting.value as TurfHoliday[];
+          }
+        });
+        setAllHolidays(newHolidays);
+        setHolidays(newHolidays[facility]);
       } else {
         showToast(data.message, 'error');
       }
@@ -80,25 +119,33 @@ export default function HolidayPricingPage() {
   };
 
   const updateHoliday = (index: number, patch: Partial<TurfHoliday>) => {
-    setHolidays((prev) => prev.map((hol, idx) => idx === index ? { ...hol, ...patch } : hol));
+    const updated = holidays.map((hol, idx) => idx === index ? { ...hol, ...patch } : hol);
+    setHolidays(updated);
+    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
   const addHoliday = () => {
-    setHolidays((prev) => [
-      ...prev,
+    const updated = [
+      ...holidays,
       {
         date: new Date().toISOString().split('T')[0],
         name: 'New Holiday',
+        startTime: '00:00',
+        endTime: '23:59',
         normalPricePerHour: 0,
         regularPricePerHour: 0,
       }
-    ]);
+    ];
+    setHolidays(updated);
+    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
   const removeHoliday = (index: number) => {
-    setHolidays((prev) => prev.filter((_, idx) => idx !== index));
+    const updated = holidays.filter((_, idx) => idx !== index);
+    setHolidays(updated);
+    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
@@ -129,19 +176,39 @@ export default function HolidayPricingPage() {
         <div className="loading-screen"><div className="spinner spinner-lg" /></div>
       ) : (
         <div className="card" style={{ marginTop: 'var(--space-4)' }}>
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-            <div>
-              <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
-                <Calendar size={16} /> <span>Holiday Customization Rules</span>
-              </h3>
+          <div className="card-header" style={{ paddingBottom: 0 }}>
+            <div style={{ display: 'flex', gap: 'var(--space-6)', borderBottom: '1px solid var(--border-primary)', marginBottom: 'var(--space-4)' }}>
+              <div 
+                onClick={() => setFacility('turf')}
+                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'turf' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'turf' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                Turf Booking
+              </div>
+              <div 
+                onClick={() => setFacility('nets_machine')}
+                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_machine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_machine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                Nets (With Machine)
+              </div>
+              <div 
+                onClick={() => setFacility('nets_nomachine')}
+                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_nomachine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_nomachine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                Nets (Without Machine)
+              </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={addHoliday}
-            >
-              + Add Holiday
-            </button>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)', paddingBottom: 'var(--space-4)' }}>
+              <div>
+                <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
+                  <Calendar size={16} /> <span>Holiday Customization Rules</span>
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={addHoliday}
+              >
+                + Add Holiday
+              </button>
+            </div>
           </div>
 
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -172,6 +239,19 @@ export default function HolidayPricingPage() {
                         placeholder="Christmas"
                         style={{ height: '34px', fontSize: 'var(--text-xs)' }}
                       />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Start Time</span>
+                      <select className="form-input" value={holiday.startTime || '00:00'} onChange={(e) => updateHoliday(index, { startTime: e.target.value })} style={{ height: '34px', padding: '0 6px', fontSize: 'var(--text-xs)' }}>
+                        {TIME_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>End Time</span>
+                      <select className="form-input" value={holiday.endTime || '23:59'} onChange={(e) => updateHoliday(index, { endTime: e.target.value })} style={{ height: '34px', padding: '0 6px', fontSize: 'var(--text-xs)' }}>
+                        {TIME_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        <option value="23:59">11:59 PM (Midnight)</option>
+                      </select>
                     </div>
                     <div>
                       <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Normal / Hour</span>

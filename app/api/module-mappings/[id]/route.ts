@@ -1,8 +1,8 @@
 import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
-import PositionModuleMapping from '@/models/PositionModuleMapping';
-import Position from '@/models/Position';
+import UserModuleMapping from '@/models/UserModuleMapping';
+import User from '@/models/User';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { MODULE_DEFINITIONS } from '@/lib/constants';
@@ -44,7 +44,7 @@ export async function PUT(
       return successResponse(mapping, 'Mapping updated successfully');
     }
 
-    const mapping = await PositionModuleMapping.findById(id);
+    const mapping = await UserModuleMapping.findById(id);
     if (!mapping) return errorResponse('Mapping not found', 404);
 
     const moduleDef = MODULE_DEFINITIONS.find((m) => m.moduleKey === mapping.moduleKey);
@@ -60,7 +60,7 @@ export async function PUT(
     mapping.enabledActions = actions;
     await mapping.save();
 
-    const position = await Position.findById(mapping.positionId);
+    const user = await User.findById(mapping.userId);
 
     const meta = getRequestMeta(request.headers);
     await auditAction(
@@ -71,7 +71,7 @@ export async function PUT(
         action: 'edit_module_mapping',
         module: 'user_permission',
         recordId: mapping._id,
-        description: `Updated ${moduleDef?.moduleName || mapping.moduleKey} mapping for ${position?.name || 'unknown'}`,
+        description: `Updated ${moduleDef?.moduleName || mapping.moduleKey} mapping for ${user?.name || 'unknown'}`,
         oldValue,
         newValue: { accessLevel, enabledActions: actions },
         ...meta,
@@ -112,13 +112,13 @@ export async function DELETE(
       return successResponse(null, 'Module mapping removed');
     }
 
-    const mapping = await PositionModuleMapping.findById(id);
+    const mapping = await UserModuleMapping.findById(id);
     if (!mapping) return errorResponse('Mapping not found', 404);
 
-    const position = await Position.findById(mapping.positionId);
+    const user = await User.findById(mapping.userId);
     const moduleDef = MODULE_DEFINITIONS.find((m) => m.moduleKey === mapping.moduleKey);
 
-    await PositionModuleMapping.findByIdAndDelete(id);
+    await UserModuleMapping.findByIdAndDelete(id);
 
     const meta = getRequestMeta(request.headers);
     await auditAction(
@@ -126,10 +126,10 @@ export async function DELETE(
         userId: session.user.id,
         userName: session.user.name || 'SuperAdmin',
         userType: session.user.userType,
-        action: 'remove_module_from_position',
+        action: 'remove_module_from_user',
         module: 'user_permission',
         recordId: mapping._id,
-        description: `Removed ${moduleDef?.moduleName || mapping.moduleKey} from ${position?.name || 'unknown'}`,
+        description: `Removed ${moduleDef?.moduleName || mapping.moduleKey} from ${user?.name || 'unknown'}`,
         oldValue: {
           moduleKey: mapping.moduleKey,
           accessLevel: mapping.accessLevel,

@@ -64,9 +64,6 @@ export async function PUT(
     const finalMode = paymentMode || payment.paymentMode;
     if (finalMode === 'cash') {
       if (cashReceivedBy !== undefined) {
-        if (!['turf_staff', 'turf_owner', 'arjo'].includes(cashReceivedBy)) {
-          return errorResponse('Invalid Cash Received By value');
-        }
         payment.cashReceivedBy = cashReceivedBy;
       }
       if (!payment.cashReceivedBy) {

@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (['all', 'sales'].includes(filter)) {
-        devTxns.push(...store.inventoryTransactions.map((s) => {
+        devTxns.push(...store.inventoryTransactions.filter(s => s.type === 'sale' && !(s.supplier && s.supplier.toLowerCase().includes('booking'))).map((s) => {
           const item = store.inventoryItems.find(i => i._id === s.itemId);
           const user = devUserRef(s.enteredBy);
           return {
@@ -178,9 +178,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Fetch Sales
+    // 2. Fetch Sales (Exclude those created during bookings)
     if (['all', 'sales'].includes(filter)) {
-      const sales = await InventoryTransaction.find({ type: 'sale' })
+      const sales = await InventoryTransaction.find({ 
+        type: 'sale',
+        supplier: { $not: /booking/i }
+      })
         .populate('itemId')
         .populate({
           path: 'enteredBy',

@@ -63,11 +63,7 @@ export async function GET(request: NextRequest) {
 
     let bankTransferTotal = 0;
     let cashTotal = 0;
-    const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {
-      turf_owner: { total: 0, transactions: [] },
-      arjo: { total: 0, transactions: [] },
-      turf_staff: { total: 0, transactions: [] },
-    };
+    const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {};
 
     for (const payment of allPayments) {
       if (payment.splits && payment.splits.length > 0) {
@@ -77,7 +73,10 @@ export async function GET(request: NextRequest) {
           } else if (s.paymentMode === 'cash') {
             cashTotal += s.amount;
             const holder = s.cashReceivedBy;
-            if (holder && cashHoldings[holder]) {
+            if (holder) {
+              if (!cashHoldings[holder]) {
+                cashHoldings[holder] = { total: 0, transactions: [] };
+              }
               cashHoldings[holder].total += s.amount;
               const parentBooking = bookings.find(b => b._id.toString() === payment.bookingId.toString());
               cashHoldings[holder].transactions.push({
@@ -99,7 +98,10 @@ export async function GET(request: NextRequest) {
         } else if (payment.paymentMode === 'cash') {
           cashTotal += payment.amountPaid;
           const holder = payment.cashReceivedBy;
-          if (holder && cashHoldings[holder]) {
+          if (holder) {
+            if (!cashHoldings[holder]) {
+              cashHoldings[holder] = { total: 0, transactions: [] };
+            }
             cashHoldings[holder].total += payment.amountPaid;
             const parentBooking = bookings.find(b => b._id.toString() === payment.bookingId.toString());
             cashHoldings[holder].transactions.push({
@@ -182,11 +184,7 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
   const partialPaymentsCount = bookings.filter((booking) => booking.paymentStatus === 'partial').length;
   let bankTransferTotal = 0;
   let cashTotal = 0;
-  const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {
-    turf_owner: { total: 0, transactions: [] },
-    arjo: { total: 0, transactions: [] },
-    turf_staff: { total: 0, transactions: [] },
-  };
+  const cashHoldings: Record<string, { total: number; transactions: unknown[] }> = {};
 
   for (const payment of allPayments) {
     if (payment.splits && payment.splits.length > 0) {
@@ -196,7 +194,10 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
         } else if (s.paymentMode === 'cash') {
           cashTotal += s.amount;
           const holder = s.cashReceivedBy;
-          if (holder && cashHoldings[holder]) {
+          if (holder) {
+            if (!cashHoldings[holder]) {
+              cashHoldings[holder] = { total: 0, transactions: [] };
+            }
             cashHoldings[holder].total += s.amount;
             const parentBooking = bookings.find((b) => b._id === payment.bookingId);
             cashHoldings[holder].transactions.push({
@@ -217,7 +218,10 @@ function getDevBookingDashboard(startDate: string | null, endDate: string | null
       } else if (payment.paymentMode === 'cash') {
         cashTotal += payment.amountPaid;
         const holder = payment.cashReceivedBy;
-        if (holder && cashHoldings[holder]) {
+        if (holder) {
+          if (!cashHoldings[holder]) {
+            cashHoldings[holder] = { total: 0, transactions: [] };
+          }
           cashHoldings[holder].total += payment.amountPaid;
           const parentBooking = bookings.find((b) => b._id === payment.bookingId);
           cashHoldings[holder].transactions.push({

@@ -30,6 +30,12 @@ export default function WeekendPricingPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [facility, setFacility] = useState<'turf' | 'nets_machine' | 'nets_nomachine'>('turf');
+  const [allRules, setAllRules] = useState<Record<string, TurfSlotPriceRule[]>>({
+    turf: [],
+    nets_machine: [],
+    nets_nomachine: [],
+  });
 
   const showToast = (message: string, type = 'success') => {
     setToast({ message, type });
@@ -42,14 +48,24 @@ export default function WeekendPricingPage() {
       const data = await res.json();
       if (data.success) {
         const daysSetting = (data.data as Setting[]).find((s) => s.key === 'turf_weekend_days');
-        const rulesSetting = (data.data as Setting[]).find((s) => s.key === 'turf_weekend_rules');
-
         if (daysSetting && Array.isArray(daysSetting.value)) {
           setWeekendDays(daysSetting.value as number[]);
         }
-        if (rulesSetting && Array.isArray(rulesSetting.value)) {
-          setWeekendRules(rulesSetting.value as TurfSlotPriceRule[]);
-        }
+
+        const settings = data.data as Setting[];
+        const getKey = (f: string) => f === 'turf' ? 'turf_weekend_rules' : `${f}_weekend_rules`;
+        
+        const newRules = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfSlotPriceRule[]>;
+        
+        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
+          const rulesSetting = settings.find((s) => s.key === getKey(f));
+          if (rulesSetting && Array.isArray(rulesSetting.value)) {
+            newRules[f] = rulesSetting.value as TurfSlotPriceRule[];
+          }
+        });
+        
+        setAllRules(newRules);
+        setWeekendRules(newRules[facility]);
       }
     } catch (error) {
       console.error(error);
@@ -58,21 +74,28 @@ export default function WeekendPricingPage() {
       setLoading(false);
     }
   }, []);
-
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
 
+  useEffect(() => {
+    setWeekendRules(allRules[facility] || []);
+  }, [facility, allRules]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalRules = { ...allRules, [facility]: weekendRules };
+
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: [
             { key: 'turf_weekend_days', value: weekendDays },
-            { key: 'turf_weekend_rules', value: weekendRules }
+            { key: 'turf_weekend_rules', value: finalRules.turf },
+            { key: 'nets_machine_weekend_rules', value: finalRules.nets_machine },
+            { key: 'nets_nomachine_weekend_rules', value: finalRules.nets_nomachine }
           ]
         }),
       });
@@ -81,15 +104,22 @@ export default function WeekendPricingPage() {
         showToast('Weekend configuration saved successfully');
         setHasChanges(false);
 
-        // Refresh state
         const daysSetting = (data.data as Setting[]).find((s) => s.key === 'turf_weekend_days');
-        const rulesSetting = (data.data as Setting[]).find((s) => s.key === 'turf_weekend_rules');
         if (daysSetting && Array.isArray(daysSetting.value)) {
           setWeekendDays(daysSetting.value as number[]);
         }
-        if (rulesSetting && Array.isArray(rulesSetting.value)) {
-          setWeekendRules(rulesSetting.value as TurfSlotPriceRule[]);
-        }
+        
+        const settings = data.data as Setting[];
+        const getKey = (f: string) => f === 'turf' ? 'turf_weekend_rules' : `${f}_weekend_rules`;
+        const newRules = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfSlotPriceRule[]>;
+        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
+          const rulesSetting = settings.find((s) => s.key === getKey(f));
+          if (rulesSetting && Array.isArray(rulesSetting.value)) {
+            newRules[f] = rulesSetting.value as TurfSlotPriceRule[];
+          }
+        });
+        setAllRules(newRules);
+        setWeekendRules(newRules[facility]);
       } else {
         showToast(data.message, 'error');
       }
@@ -101,29 +131,35 @@ export default function WeekendPricingPage() {
   };
 
   const updateRule = (index: number, patch: Partial<TurfSlotPriceRule>) => {
-    setWeekendRules((prev) => prev.map((rule, idx) => idx === index ? { ...rule, ...patch } : rule));
+    const updated = weekendRules.map((rule, idx) => idx === index ? { ...rule, ...patch } : rule);
+    setWeekendRules(updated);
+    setAllRules(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
   const addRule = () => {
-    setWeekendRules((prev) => [
-      ...prev,
+    const updated = [
+      ...weekendRules,
       {
-        id: `rule-we-${Date.now()}`,
+        id: `rule-we-${facility}-${Date.now()}`,
         name: 'New Weekend Slot',
         startTime: '06:00',
         endTime: '07:00',
         normalPricePerHour: 0,
         regularPricePerHour: 0,
-        dayType: 'weekends',
+        dayType: 'weekends' as const,
         isActive: true,
       }
-    ]);
+    ];
+    setWeekendRules(updated);
+    setAllRules(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
   const removeRule = (index: number) => {
-    setWeekendRules((prev) => prev.filter((_, idx) => idx !== index));
+    const updated = weekendRules.filter((_, idx) => idx !== index);
+    setWeekendRules(updated);
+    setAllRules(prev => ({ ...prev, [facility]: updated }));
     setHasChanges(true);
   };
 
@@ -203,20 +239,39 @@ export default function WeekendPricingPage() {
 
           {/* Slots pricing */}
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-              <div>
-                <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
-                  <Calendar size={16} /> <span>Weekend Price Customization Slots</span>
-                </h3>
+            <div className="card-header" style={{ paddingBottom: 0 }}>
+              <div style={{ display: 'flex', gap: 'var(--space-6)', borderBottom: '1px solid var(--border-primary)', marginBottom: 'var(--space-4)' }}>
+                <div 
+                  onClick={() => setFacility('turf')}
+                  style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'turf' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'turf' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  Turf Booking
+                </div>
+                <div 
+                  onClick={() => setFacility('nets_machine')}
+                  style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_machine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_machine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  Nets (With Machine)
+                </div>
+                <div 
+                  onClick={() => setFacility('nets_nomachine')}
+                  style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_nomachine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_nomachine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  Nets (Without Machine)
+                </div>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={addRule}
-              >
-                + Add Weekend Slot Rate
-              </button>
-            </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)', paddingBottom: 'var(--space-4)' }}>
+                <div>
+                  <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
+                    <Calendar size={16} /> <span>{facility === 'turf' ? 'Turf' : facility === 'nets_machine' ? 'Nets (Machine)' : 'Nets (No Machine)'} Weekend Pricing Slots</span>
+                  </h3>
+                </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={addRule}
+                  >
+                    + Add Weekend Slot Rate
+                  </button>
+                </div>
+              </div>
 
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {weekendRules.length === 0 ? (

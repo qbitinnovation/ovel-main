@@ -1,9 +1,11 @@
 export type TurfPriceType = 'normal' | 'regular';
-export type TurfDayType = 'all_days' | 'weekdays' | 'weekends';
+export type TurfDayType = 'all_days' | 'weekdays' | 'weekends' | 'holidays';
 
 export interface TurfHoliday {
   date: string;
   name: string;
+  startTime?: string;
+  endTime?: string;
   normalPricePerHour: number;
   regularPricePerHour?: number;
 }
@@ -26,6 +28,13 @@ export interface TurfPricingConfig {
   weekendRules: TurfSlotPriceRule[];
   holidays: TurfHoliday[];
   weekendDays: number[];
+}
+
+export interface AllFacilitiesPricingConfig {
+  turf: TurfPricingConfig;
+  nets_with_machine: TurfPricingConfig;
+  nets_without_machine: TurfPricingConfig;
+  loungeHourlyRate: number;
 }
 
 export interface TurfPricingResult {
@@ -54,6 +63,13 @@ export const DEFAULT_TURF_PRICING_CONFIG: TurfPricingConfig = {
   weekendRules: [],
   holidays: [],
   weekendDays: [0, 6],
+};
+
+export const DEFAULT_ALL_FACILITIES_PRICING_CONFIG: AllFacilitiesPricingConfig = {
+  turf: DEFAULT_TURF_PRICING_CONFIG,
+  nets_with_machine: DEFAULT_TURF_PRICING_CONFIG,
+  nets_without_machine: DEFAULT_TURF_PRICING_CONFIG,
+  loungeHourlyRate: 0,
 };
 
 export function normalizeTurfPriceType(value: unknown): TurfPriceType {
@@ -106,8 +122,8 @@ export function calculateTurfSlotPrice(args: {
   const bookingDate = parseDateOnly(dateKey);
   const day = bookingDate.getDay();
   const isWeekend = (args.weekendDays || [0, 6]).includes(day);
-  const holiday = (args.holidays || []).find((h) => h.date === dateKey);
-  const isHoliday = !!holiday;
+  const dateHolidays = (args.holidays || []).filter((h) => h.date === dateKey);
+  const isHoliday = dateHolidays.length > 0;
   const start = toMinutes(args.startTime);
   const end = toMinutes(args.endTime);
 
@@ -118,37 +134,25 @@ export function calculateTurfSlotPrice(args: {
   const appliedRules: TurfPricingResult['appliedRules'] = [];
   let amount = 0;
 
+  let holidayRules: TurfSlotPriceRule[] = [];
   if (isHoliday) {
-    const minutes = end - start;
-    const rate = priceType === 'regular' 
-      ? Number(holiday.regularPricePerHour || holiday.normalPricePerHour || 0) 
-      : Number(holiday.normalPricePerHour || 0);
-    
-    amount = (rate * minutes) / 60;
-    appliedRules.push({
-      name: holiday.name || 'Holiday Rule',
-      startTime: args.startTime,
-      endTime: args.endTime,
-      minutes,
-      rate,
-      amount: Math.round(amount),
-      dayType: 'all_days',
-    });
-
-    return {
-      amount: Math.round(amount),
-      durationHours: minutes / 60,
-      priceType,
-      isHoliday,
-      isWeekend,
-      appliedRules,
-    };
+    holidayRules = dateHolidays.map((h, index) => ({
+      id: `holiday-${index}`,
+      name: h.name || 'Holiday Rule',
+      startTime: h.startTime || '00:00',
+      endTime: h.endTime || '23:59',
+      normalPricePerHour: h.normalPricePerHour || 0,
+      regularPricePerHour: h.regularPricePerHour || 0,
+      dayType: 'holidays',
+      isActive: true,
+    }));
   }
 
   const primaryRules = normalizeSlotPriceRules(isWeekend ? args.weekendRules : args.weekdayRules);
   const fallbackRules = normalizeSlotPriceRules(isWeekend ? args.weekdayRules : args.weekendRules)
     .map((rule) => ({ ...rule, dayType: 'all_days' as TurfDayType }));
-  const activeRules = [...primaryRules, ...fallbackRules].filter((rule) => rule.isActive && getRuleRate(rule, priceType) > 0);
+  
+  const activeRules = [...holidayRules, ...primaryRules, ...fallbackRules].filter((rule) => rule.isActive && getRuleRate(rule, priceType) > 0);
   let cursor = start;
 
   while (cursor < end) {
@@ -225,6 +229,7 @@ export function formatMinutesToTime(minutes: number): string {
 function findBestRule(rules: TurfSlotPriceRule[], minute: number, isWeekend: boolean) {
   const candidates = rules.filter((rule) => ruleMatchesMinute(rule, minute, isWeekend));
   const priority: Record<TurfDayType, number> = {
+    holidays: 5,
     weekends: isWeekend ? 3 : 0,
     weekdays: isWeekend ? 0 : 3,
     all_days: 1,

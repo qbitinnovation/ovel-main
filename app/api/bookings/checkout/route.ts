@@ -2,20 +2,23 @@ import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Booking from '@/models/Booking';
+import InventoryItem from '@/models/InventoryItem';
+import InventoryTransaction from '@/models/InventoryTransaction';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
+import { getDevAllFacilitiesPricingConfig, getAllFacilitiesPricingConfig } from '@/lib/turf-pricing-settings';
 import {
   calculateTurfSlotPrice,
   normalizeTurfPriceType,
   type TurfPricingResult,
 } from '@/lib/turf-pricing';
-import { getDevTurfPricingConfig, getTurfPricingConfig } from '@/lib/turf-pricing-settings';
 import {
   createDevId,
   devUserRef,
   getDevStore,
   isDevFallbackEnabled,
   type DevBooking,
+  type DevInventoryTransaction,
 } from '@/lib/dev-store';
 
 export const dynamic = 'force-dynamic';
@@ -59,6 +62,10 @@ export async function POST(request: NextRequest) {
     const customerName = typeof body.customerName === 'string' ? body.customerName.trim() : '';
     const contactNumber = typeof body.contactNumber === 'string' ? body.contactNumber.trim() : '';
     const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
+    
+    const facility = ['turf', 'nets_with_machine', 'nets_without_machine'].includes(body.facility as string) ? (body.facility as 'turf' | 'nets_with_machine' | 'nets_without_machine') : 'turf';
+    const loungeHours = Number(body.loungeHours) || 0;
+    const productsPayload = Array.isArray(body.products) ? body.products : [];
 
     const internalOverlap = findInternalOverlap(items);
     if (internalOverlap) {
@@ -73,7 +80,9 @@ export async function POST(request: NextRequest) {
       useDevStore = true;
     }
 
-    const pricing = useDevStore ? getDevTurfPricingConfig() : await getTurfPricingConfig();
+    const allPricing = useDevStore ? getDevAllFacilitiesPricingConfig() : await getAllFacilitiesPricingConfig();
+    const pricing = allPricing[facility] || allPricing.turf;
+    const loungeHourlyRate = allPricing.loungeHourlyRate || 0;
     const quotedItems = items.map((item) => ({
       ...item,
       quote: calculateTurfSlotPrice({
@@ -88,43 +97,117 @@ export async function POST(request: NextRequest) {
       }),
     }));
 
-    const baseAmount = quotedItems.reduce((sum, item) => sum + item.quote.amount, 0);
+    let baseAmount = quotedItems.reduce((sum, item) => sum + item.quote.amount, 0);
     if (baseAmount <= 0 || quotedItems.some((item) => item.quote.amount <= 0)) {
       return errorResponse('Calculated slot price must be greater than 0');
     }
 
-    const discount = normalizeDiscount(body.discount, baseAmount);
+    let loungeAmount = 0;
+    if (loungeHours > 0) {
+      loungeAmount = loungeHours * loungeHourlyRate; 
+    }
+
+    // Process products
+    let productAmount = 0;
+    const validatedProducts: Array<{ itemId: string, name: string, quantity: number, price: number }> = [];
+    
+    if (!useDevStore) {
+      for (const p of productsPayload) {
+        if (!p.itemId || !p.quantity || p.quantity <= 0) continue;
+        const item = await InventoryItem.findById(p.itemId);
+        if (!item) return errorResponse(`Product ${p.itemId} not found`);
+        if (item.currentStock < p.quantity) return errorResponse(`Insufficient stock for ${item.name}. Current: ${item.currentStock}`);
+        
+        const price = item.unitPrice * p.quantity;
+        productAmount += price;
+        validatedProducts.push({
+          itemId: item._id.toString(),
+          name: item.name,
+          quantity: p.quantity,
+          price,
+        });
+      }
+    } else {
+      const devStore1 = getDevStore();
+      for (const p of productsPayload) {
+        if (!p.itemId || !p.quantity || p.quantity <= 0) continue;
+        const item = devStore1.inventoryItems.find((entry) => entry._id === p.itemId);
+        if (!item) return errorResponse(`Product ${p.itemId} not found`);
+        if (item.currentStock < p.quantity) return errorResponse(`Insufficient stock for ${item.name}. Current: ${item.currentStock}`);
+        
+        const price = item.unitPrice * p.quantity;
+        productAmount += price;
+        validatedProducts.push({
+          itemId: item._id,
+          name: item.name,
+          quantity: p.quantity,
+          price,
+        });
+      }
+    }
+
+    const totalExpectedAmount = baseAmount + loungeAmount + productAmount;
+
+    const discount = normalizeDiscount(body.discount, totalExpectedAmount);
+    // Discount distribution is based on the baseAmount for now, or just total
     const discountDistribution = distributeDiscount(quotedItems.map((item) => item.quote.amount), discount.amount);
     const preparedItems: PreparedCheckoutItem[] = quotedItems.map((item, index) => ({
       ...item,
       discountAmount: discountDistribution[index] || 0,
     }));
-    const finalAmount = Math.max(0, baseAmount - discount.amount);
+    const finalAmount = Math.max(0, totalExpectedAmount - discount.amount);
     const bulkId = `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     if (useDevStore) {
-      const conflict = findDevConflict(preparedItems);
+      const conflict = findDevConflict(preparedItems, facility);
       if (conflict) {
         return errorResponse(`Time slot conflict! An existing booking (${conflict.startTime} - ${conflict.endTime}) overlaps with the requested slot.`);
       }
 
+      // Drop inventory and log transactions
+      const devStore2 = getDevStore();
       const now = new Date().toISOString();
-      const bookings: DevBooking[] = preparedItems.map((item) => ({
+      for (const p of validatedProducts) {
+        const item = devStore2.inventoryItems.find((entry) => entry._id === p.itemId);
+        if (item) {
+          item.currentStock -= p.quantity;
+          item.updatedAt = now;
+          devStore2.inventoryTransactions.unshift({
+            _id: createDevId('txn'),
+            itemId: item._id,
+            type: 'sale',
+            quantity: p.quantity,
+            amount: p.price,
+            supplier: 'Amount received by booking',
+            customerName: customerName || 'Amount received by booking',
+            customerContact: contactNumber,
+            date: now,
+            enteredBy: session.user.id,
+            createdAt: now,
+          } as DevInventoryTransaction);
+        }
+      }
+      const bookings: DevBooking[] = preparedItems.map((item, index) => ({
         _id: createDevId('booking'),
         bookingDate: new Date(item.bookingDate).toISOString(),
         startTime: item.startTime,
         endTime: item.endTime,
         customerName,
         contactNumber,
-        expectedAmount: item.quote.amount,
+        expectedAmount: item.quote.amount + (index === 0 ? loungeAmount : 0) + (index === 0 ? productAmount : 0),
         discountAmount: item.discountAmount,
         discountPercentage: discount.percentage,
         priceType,
+        facility,
+        loungeHours: index === 0 ? loungeHours : 0,
+        loungeAmount: index === 0 ? loungeAmount : 0,
+        products: index === 0 ? validatedProducts : [],
+        productAmount: index === 0 ? productAmount : 0,
         pricingSnapshot: buildPricingSnapshot(item, {
-          baseAmount,
-          discountAmount: discount.amount,
+          baseAmount: item.quote.amount,
+          discountAmount: item.discountAmount,
           discountPercentage: discount.percentage,
-          finalAmount,
+          finalAmount: item.quote.amount + (index === 0 ? loungeAmount : 0) + (index === 0 ? productAmount : 0) - item.discountAmount,
           discountType: discount.type,
         }),
         notes: buildItemNotes(notes, item),
@@ -140,8 +223,7 @@ export async function POST(request: NextRequest) {
         updatedAt: now,
       }));
 
-      const store = getDevStore();
-      store.bookings.unshift(...bookings);
+      devStore2.bookings.unshift(...bookings);
       return successResponse(
         {
           bulkId,
@@ -158,6 +240,7 @@ export async function POST(request: NextRequest) {
     }
 
     const conflicts = await Booking.find({
+      facility,
       bookingStatus: 'confirmed',
       $or: preparedItems.map((item) => {
         const { start, end } = dateBounds(item.bookingDate);
@@ -187,6 +270,26 @@ export async function POST(request: NextRequest) {
       return errorResponse(`Time slot conflict! An existing booking (${conflictSlot}) overlaps with the requested slot.`);
     }
 
+    // Drop inventory and log transactions
+    for (const p of validatedProducts) {
+      const item = await InventoryItem.findById(p.itemId);
+      if (item) {
+        item.currentStock -= p.quantity;
+        await item.save();
+        await InventoryTransaction.create({
+          itemId: item._id,
+          type: 'sale',
+          quantity: p.quantity,
+          amount: p.price,
+          customerName: customerName || 'Amount received by booking',
+          supplier: 'Amount received by booking', // In case supplier is used as a tag field in DB
+          customerContact: contactNumber,
+          date: new Date(),
+          enteredBy: session.user.id,
+        });
+      }
+    }
+
     const isBulk = preparedItems.length > 1;
     const primaryItem = preparedItems[0];
     
@@ -202,15 +305,20 @@ export async function POST(request: NextRequest) {
       })),
       customerName,
       contactNumber,
-      expectedAmount: baseAmount,
+      expectedAmount: totalExpectedAmount,
+      facility,
+      loungeHours,
+      loungeAmount,
+      products: validatedProducts,
+      productAmount,
       discountAmount: discount.amount,
       discountPercentage: discount.percentage,
       priceType,
       pricingSnapshot: preparedItems.map(item => buildPricingSnapshot(item, {
-        baseAmount,
+        baseAmount, // Only slot base amount
         discountAmount: discount.amount,
         discountPercentage: discount.percentage,
-        finalAmount,
+        finalAmount, // Full final
         discountType: discount.type,
       })),
       notes: notes || (isBulk ? 'Bulk booking' : buildItemNotes(notes, primaryItem)),
@@ -229,13 +337,15 @@ export async function POST(request: NextRequest) {
       action: 'create_booking_checkout',
       module: 'bookings',
       recordId: doc._id,
-      description: `Created booking checkout ${bulkId} with ${preparedItems.length} item(s). Base: Rs.${baseAmount}. Discount: Rs.${discount.amount}. Final: Rs.${finalAmount}`,
+      description: `Created ${facility} checkout ${bulkId}. Base: ₹${baseAmount}, Lounge: ₹${loungeAmount}, Products: ₹${productAmount}. Discount: ₹${discount.amount}. Final: ₹${finalAmount}`,
       newValue: {
         bulkId,
+        facility,
         itemCount: preparedItems.length,
         baseAmount,
+        loungeAmount,
+        productAmount,
         discountAmount: discount.amount,
-        discountPercentage: discount.percentage,
         finalAmount,
         priceType,
       },
@@ -349,9 +459,10 @@ function findInternalOverlap(items: CheckoutItem[]) {
   return null;
 }
 
-function findDevConflict(items: CheckoutItem[]) {
+function findDevConflict(items: CheckoutItem[], facility: string) {
   const store = getDevStore();
   return store.bookings.find((booking) => (
+    booking.facility === facility &&
     booking.bookingStatus === 'confirmed' &&
     items.some((item) => (
       toDateKey(booking.bookingDate) === item.bookingDate &&

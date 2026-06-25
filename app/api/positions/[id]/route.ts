@@ -2,7 +2,6 @@ import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Position from '@/models/Position';
-import PositionModuleMapping from '@/models/PositionModuleMapping';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, sanitizeInput, getRequestMeta } from '@/lib/utils';
 
@@ -97,19 +96,7 @@ export async function PATCH(
     position.isActive = !position.isActive;
     await position.save();
 
-    // If deactivating, also deactivate all module mappings for this position
-    if (!position.isActive) {
-      await PositionModuleMapping.updateMany(
-        { positionId: position._id },
-        { isActive: false }
-      );
-    } else {
-      // Reactivating — restore module mappings
-      await PositionModuleMapping.updateMany(
-        { positionId: position._id },
-        { isActive: true }
-      );
-    }
+    // Note: We used to deactivate module mappings here, but those are now user-based.
 
     const meta = getRequestMeta(request.headers);
     await auditAction(
