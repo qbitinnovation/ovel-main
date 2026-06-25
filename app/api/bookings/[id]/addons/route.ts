@@ -57,7 +57,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       const validatedProducts: Array<{ itemId: string, name: string, quantity: number, price: number }> = [];
       let addedProductAmount = 0;
       
-      const now = new Date().toISOString();
       for (const p of productsPayload) {
         if (!p.itemId || !p.quantity || p.quantity <= 0) continue;
         const item = store.inventoryItems.find((entry) => entry._id === p.itemId);
@@ -74,7 +73,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         });
       }
 
-      // Commit changes
+      if (loungeHours > 0) {
+        const targetDate = booking.bookingDate.split('T')[0];
+        const existingLounge = store.bookings.find(b => 
+          b.bookingStatus === 'confirmed' &&
+          b._id !== booking._id &&
+          b.loungeHours > 0 &&
+          b.bookingDate.split('T')[0] === targetDate
+        );
+        if (existingLounge) {
+          return errorResponse('Lounge area is already reserved by another team for this day.');
+        }
+      }
+
+      const now = new Date().toISOString();
       for (const p of validatedProducts) {
         const item = store.inventoryItems.find((entry) => entry._id === p.itemId);
         if (item) {
@@ -92,6 +104,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             date: now,
             enteredBy: session.user.id,
             createdAt: now,
+            bookingId: booking._id,
           } as DevInventoryTransaction);
           
           const existingProductIndex = booking.products.findIndex(prod => prod.itemId === p.itemId);
@@ -106,7 +119,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       
       let newLoungeAmount = 0;
       if (loungeHours > 0) {
-        newLoungeAmount = loungeHours * loungeHourlyRate;
+        newLoungeAmount = loungeHourlyRate;
       }
 
       const loungeAmountDiff = newLoungeAmount - booking.loungeAmount;
@@ -146,6 +159,30 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       });
     }
 
+    if (loungeHours > 0) {
+      const targetDate = booking.bookingDate || (booking.slots && booking.slots[0]?.bookingDate);
+      if (!targetDate) {
+        return errorResponse('Booking date is missing.');
+      }
+      const start = new Date(targetDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(targetDate);
+      end.setHours(23, 59, 59, 999);
+
+      const existingLounge = await Booking.findOne({
+        _id: { $ne: booking._id },
+        bookingStatus: 'confirmed',
+        loungeHours: { $gt: 0 },
+        $or: [
+          { bookingDate: { $gte: start, $lte: end } },
+          { 'slots.bookingDate': { $gte: start, $lte: end } }
+        ]
+      });
+      if (existingLounge) {
+        return errorResponse('Lounge area is already reserved by another team for this day.');
+      }
+    }
+
     for (const p of validatedProducts) {
       const item = await InventoryItem.findById(p.itemId);
       if (item) {
@@ -161,6 +198,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           customerContact: booking.contactNumber,
           date: new Date(),
           enteredBy: session.user.id,
+          bookingId: booking._id,
         });
 
         const existingProductIndex = booking.products.findIndex(prod => prod.itemId.toString() === p.itemId);
@@ -175,7 +213,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     let newLoungeAmount = 0;
     if (loungeHours > 0) {
-      newLoungeAmount = loungeHours * loungeHourlyRate;
+      newLoungeAmount = loungeHourlyRate;
     }
 
     const loungeAmountDiff = newLoungeAmount - booking.loungeAmount;

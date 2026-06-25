@@ -1,4 +1,5 @@
 import { type NextRequest } from 'next/server';
+import mongoose from 'mongoose';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Booking from '@/models/Booking';
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
     }));
     const finalAmount = Math.max(0, totalExpectedAmount - discount.amount);
     const bulkId = `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const primaryItem = preparedItems[0];
 
     if (useDevStore) {
       const conflict = findDevConflict(preparedItems, facility);
@@ -164,8 +166,22 @@ export async function POST(request: NextRequest) {
         return errorResponse(`Time slot conflict! An existing booking (${conflict.startTime} - ${conflict.endTime}) overlaps with the requested slot.`);
       }
 
-      // Drop inventory and log transactions
       const devStore2 = getDevStore();
+      if (loungeHours > 0) {
+        const targetDate = toDateKey(primaryItem.bookingDate);
+        const existingLounge = devStore2.bookings.find(b => 
+          b.bookingStatus === 'confirmed' &&
+          b.loungeHours > 0 &&
+          toDateKey(b.bookingDate) === targetDate
+        );
+        if (existingLounge) {
+          return errorResponse('Lounge area is already reserved by another team for this day.');
+        }
+      }
+
+      const primaryBookingId = createDevId('booking');
+
+      // Drop inventory and log transactions
       const now = new Date().toISOString();
       for (const p of validatedProducts) {
         const item = devStore2.inventoryItems.find((entry) => entry._id === p.itemId);
@@ -184,11 +200,12 @@ export async function POST(request: NextRequest) {
             date: now,
             enteredBy: session.user.id,
             createdAt: now,
+            bookingId: primaryBookingId,
           } as DevInventoryTransaction);
         }
       }
       const bookings: DevBooking[] = preparedItems.map((item, index) => ({
-        _id: createDevId('booking'),
+        _id: index === 0 ? primaryBookingId : createDevId('booking'),
         bookingDate: new Date(item.bookingDate).toISOString(),
         startTime: item.startTime,
         endTime: item.endTime,
@@ -270,6 +287,30 @@ export async function POST(request: NextRequest) {
       return errorResponse(`Time slot conflict! An existing booking (${conflictSlot}) overlaps with the requested slot.`);
     }
 
+    const isBulk = preparedItems.length > 1;
+
+    if (loungeHours > 0) {
+      const targetDate = parseDateOnly(primaryItem.bookingDate);
+      const start = new Date(targetDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(targetDate);
+      end.setHours(23, 59, 59, 999);
+
+      const existingLounge = await Booking.findOne({
+        bookingStatus: 'confirmed',
+        loungeHours: { $gt: 0 },
+        $or: [
+          { bookingDate: { $gte: start, $lte: end } },
+          { 'slots.bookingDate': { $gte: start, $lte: end } }
+        ]
+      });
+      if (existingLounge) {
+        return errorResponse('Lounge area is already reserved by another team for this day.');
+      }
+    }
+
+    const bookingId = new mongoose.Types.ObjectId();
+
     // Drop inventory and log transactions
     for (const p of validatedProducts) {
       const item = await InventoryItem.findById(p.itemId);
@@ -286,14 +327,13 @@ export async function POST(request: NextRequest) {
           customerContact: contactNumber,
           date: new Date(),
           enteredBy: session.user.id,
+          bookingId: bookingId,
         });
       }
     }
 
-    const isBulk = preparedItems.length > 1;
-    const primaryItem = preparedItems[0];
-    
     const doc = await Booking.create({
+      _id: bookingId,
       bookingType: isBulk ? 'bulk' : 'standard',
       bookingDate: parseDateOnly(primaryItem.bookingDate),
       startTime: primaryItem.startTime,

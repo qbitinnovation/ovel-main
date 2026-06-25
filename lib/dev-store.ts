@@ -99,6 +99,7 @@ export interface DevInventoryTransaction {
   date: string;
   enteredBy: string;
   createdAt: string;
+  bookingId?: string | null;
 }
 
 export interface DevTurfInventoryItem {

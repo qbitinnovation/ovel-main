@@ -132,6 +132,8 @@ export default function BookingsPage() {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Record<string, number>>({});
   const [showInventoryOptions, setShowInventoryOptions] = useState(false);
+  const [loungeBookedDates, setLoungeBookedDates] = useState<Set<string>>(new Set());
+  const [loungeChecking, setLoungeChecking] = useState(false);
 
   const { checkPermission } = usePermissions();
   const canCreateBooking = checkPermission('bookings', 'create_booking');
@@ -219,6 +221,52 @@ export default function BookingsPage() {
       setBookingsLoading(false);
     }
   }, [showToast, visibleDates]);
+
+  const checkLoungeAvailability = useCallback(async () => {
+    if (visibleDates.length === 0) return;
+    setLoungeChecking(true);
+    try {
+      const sorted = [...visibleDates].sort();
+      const minDate = sorted[0];
+      const maxDate = sorted[sorted.length - 1];
+      const params = new URLSearchParams({
+        startDate: minDate,
+        endDate: maxDate,
+        bookingStatus: 'confirmed',
+        limit: '100',
+      });
+      const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json() as ApiResponse<{ bookings: any[] }>;
+      if (data.success && data.data.bookings) {
+        const booked = new Set<string>();
+        for (const b of data.data.bookings) {
+          if (b.loungeHours > 0) {
+            const dateStr = new Date(b.bookingDate).toISOString().split('T')[0];
+            booked.add(dateStr);
+            if (b.slots && b.slots.length > 0) {
+              for (const slot of b.slots) {
+                const sDate = new Date(slot.bookingDate).toISOString().split('T')[0];
+                booked.add(sDate);
+              }
+            }
+          }
+        }
+        setLoungeBookedDates(booked);
+      }
+    } catch (e) {
+      console.error('Failed to check lounge availability:', e);
+    } finally {
+      setLoungeChecking(false);
+    }
+  }, [visibleDates]);
+
+  useEffect(() => {
+    checkLoungeAvailability();
+  }, [checkLoungeAvailability]);
+
+  const isLoungeUnavailable = useMemo(() => {
+    return visibleDates.some(d => loungeBookedDates.has(d));
+  }, [visibleDates, loungeBookedDates]);
 
   useEffect(() => {
     fetchBookedSlots();
@@ -699,35 +747,25 @@ export default function BookingsPage() {
                 </h3>
               </div>
               <div className="card-body" style={{ display: 'grid', gap: 'var(--space-4)' }}>
-                <div className="booking-rate-option" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', width: 'fit-content', padding: 'var(--space-3)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
+                <div className="booking-rate-option" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', width: 'fit-content', padding: 'var(--space-3)', opacity: isLoungeUnavailable ? 0.6 : 1 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: isLoungeUnavailable ? 'not-allowed' : 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={Number(loungeHours) > 0}
+                      disabled={isLoungeUnavailable}
                       onChange={(e) => setLoungeHours(e.target.checked ? 1 : '')}
-                      style={{ width: '18px', height: '18px' }}
+                      style={{ width: '18px', height: '18px', cursor: isLoungeUnavailable ? 'not-allowed' : 'pointer' }}
                     />
                     <span>
                       <strong>Include Lounge Area</strong>
-                      <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                        Billed hourly (Rate: {fmtMoney(summary.hourlyRate)}/hr)
+                      <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: isLoungeUnavailable ? 'var(--status-danger)' : 'var(--text-secondary)' }}>
+                        {isLoungeUnavailable 
+                          ? 'Lounge is already reserved by another team on this day' 
+                          : `Daily Flat Rate (Rate: ${fmtMoney(summary.hourlyRate)}/day)`
+                        }
                       </span>
                     </span>
                   </label>
-                  
-                  {Number(loungeHours) > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)', paddingLeft: '26px' }}>
-                      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Hours:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        className="form-input"
-                        value={loungeHours}
-                        onChange={(e) => setLoungeHours(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
-                        style={{ width: '80px', padding: '4px 8px' }}
-                      />
-                    </div>
-                  )}
                 </div>
 
                 {inventoryItems.length > 0 && (

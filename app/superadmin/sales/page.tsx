@@ -7,7 +7,28 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 
 interface Item { _id: string; name: string; unit: string; unitPrice?: number; currentStock: number; lowStockThreshold: number; }
-interface Txn { _id: string; itemId: { _id: string; name: string } | null; type: string; quantity: number; amount: number; supplier: string; date: string; enteredBy: { name: string } | null; createdAt: string; }
+interface Txn { 
+  _id: string; 
+  itemId: { _id: string; name: string } | null; 
+  type: string; 
+  quantity: number; 
+  amount: number; 
+  supplier: string; 
+  customerName?: string;
+  customerContact?: string;
+  bookingId?: {
+    _id: string;
+    customerName: string;
+    contactNumber: string;
+    paymentStatus: 'pending' | 'partial' | 'paid';
+    bookingStatus: 'confirmed' | 'cancelled';
+    expectedAmount: number;
+    totalPaid: number;
+  } | null;
+  date: string; 
+  enteredBy: { name: string } | null; 
+  createdAt: string; 
+}
 
 export default function SalesPage() {
   const [items, setItems] = useState<Item[]>([]);
@@ -139,13 +160,28 @@ export default function SalesPage() {
   const exportToExcel = () => {
     if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
     const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => {
-      const isBooking = t.supplier && t.supplier.toLowerCase().includes('booking');
+      const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+      let paymentStatusText = 'Paid';
+      if (t.type === 'restock') paymentStatusText = '—';
+      else if (t.bookingId) {
+        const status = t.bookingId.paymentStatus || 'pending';
+        paymentStatusText = status === 'paid' ? 'Paid (Booking)' : status === 'partial' ? 'Partially Paid' : 'Pending (Booking)';
+      } else {
+        paymentStatusText = 'Paid (Direct)';
+      }
+      let paymentDetails = 'Direct Sale';
+      if (t.type === 'restock') paymentDetails = t.supplier || 'Restock';
+      else if (t.bookingId) paymentDetails = `Booking ID: #${t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : ''}`;
+
       return {
         Item: t.itemId?.name || '—',
         Date: new Date(t.date).toLocaleDateString('en-IN'),
+        Customer: customer,
         Type: t.type === 'sale' ? 'Sale' : 'Restock',
         Quantity: t.quantity,
-        Amount: isBooking ? 'Amount received in booking' : t.amount,
+        Amount: t.amount,
+        'Payment Status': paymentStatusText,
+        'Payment Details': paymentDetails,
         EnteredBy: t.enteredBy?.name || '—'
       };
     }));
@@ -156,26 +192,44 @@ export default function SalesPage() {
 
   const exportToPDF = () => {
     if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
-    const doc = new jsPDF();
+    const doc = new jsPDF('landscape');
     doc.text('Sales Log', 14, 15);
     let yPos = 30;
     doc.setFontSize(10);
     doc.text('Item', 14, yPos);
-    doc.text('Date', 60, yPos);
-    doc.text('Type', 90, yPos);
-    doc.text('Qty', 120, yPos);
-    doc.text('Amount', 140, yPos);
-    doc.text('Entered By', 170, yPos);
+    doc.text('Date', 50, yPos);
+    doc.text('Customer', 80, yPos);
+    doc.text('Type', 130, yPos);
+    doc.text('Qty', 150, yPos);
+    doc.text('Amount', 170, yPos);
+    doc.text('P. Status', 190, yPos);
+    doc.text('Details', 225, yPos);
+    doc.text('Entered By', 255, yPos);
     yPos += 5;
     filteredTransactions.forEach(t => {
-      if (yPos > 280) { doc.addPage(); yPos = 20; }
-      const isBooking = t.supplier && t.supplier.toLowerCase().includes('booking');
+      if (yPos > 190) { doc.addPage(); yPos = 20; }
+      const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+      let paymentStatusText = 'Paid';
+      if (t.type === 'restock') paymentStatusText = '—';
+      else if (t.bookingId) {
+        const status = t.bookingId.paymentStatus || 'pending';
+        paymentStatusText = status === 'paid' ? 'Paid (Booking)' : status === 'partial' ? 'Partially Paid' : 'Pending (Booking)';
+      } else {
+        paymentStatusText = 'Paid (Direct)';
+      }
+      let paymentDetails = 'Direct Sale';
+      if (t.type === 'restock') paymentDetails = t.supplier || 'Restock';
+      else if (t.bookingId) paymentDetails = `Booking: #${t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : ''}`;
+
       doc.text((t.itemId?.name || '—').substring(0, 15), 14, yPos);
-      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 60, yPos);
-      doc.text(t.type === 'sale' ? 'Sale' : 'Restock', 90, yPos);
-      doc.text(t.quantity.toString(), 120, yPos);
-      doc.text(isBooking ? 'In Booking' : t.amount.toString(), 140, yPos);
-      doc.text((t.enteredBy?.name || '—').substring(0, 15), 170, yPos);
+      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 50, yPos);
+      doc.text(customer.substring(0, 20), 80, yPos);
+      doc.text(t.type === 'sale' ? 'Sale' : 'Restock', 130, yPos);
+      doc.text(t.quantity.toString(), 150, yPos);
+      doc.text(t.amount.toString(), 170, yPos);
+      doc.text(paymentStatusText, 190, yPos);
+      doc.text(paymentDetails, 225, yPos);
+      doc.text((t.enteredBy?.name || '—').substring(0, 12), 255, yPos);
       yPos += 7;
     });
     doc.save(`Sales_Log_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -248,33 +302,73 @@ export default function SalesPage() {
             {/* DESKTOP TABLE VIEW */}
             <div className="card desktop-only" style={{ padding: 0 }}>
               <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
-                <table className="data-table" style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse' }}>
+                <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
                       <th style={{ padding: 'var(--space-4)' }}>Item</th>
                       <th style={{ padding: 'var(--space-4)' }}>Date</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Customer / Supplier</th>
                       <th style={{ padding: 'var(--space-4)' }}>Type</th>
                       <th style={{ padding: 'var(--space-4)' }}>Quantity</th>
                       <th style={{ padding: 'var(--space-4)' }}>Amount</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Payment Status</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Payment Details</th>
                       <th style={{ padding: 'var(--space-4)' }}>Entered By</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTransactions.map(t => (
-                      <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
-                        <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
-                        <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                        <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
-                        <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
-                        <td style={{ padding: 'var(--space-4)' }}>
-                          <div style={{ fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
-                          {t.supplier && t.supplier.toLowerCase().includes('booking') && (
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Amount received in booking</div>
-                          )}
-                        </td>
-                        <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
-                      </tr>
-                    ))}
+                    {filteredTransactions.map(t => {
+                      const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+                      let paymentStatusText = 'Paid';
+                      let paymentStatusBadge = 'badge-success';
+                      if (t.type === 'restock') {
+                        paymentStatusText = '—';
+                        paymentStatusBadge = '';
+                      } else if (t.bookingId) {
+                        const status = t.bookingId.paymentStatus || 'pending';
+                        if (status === 'paid') {
+                          paymentStatusText = 'Paid (Booking)';
+                          paymentStatusBadge = 'badge-success';
+                        } else if (status === 'partial') {
+                          paymentStatusText = 'Partially Paid';
+                          paymentStatusBadge = 'badge-warning';
+                        } else {
+                          paymentStatusText = 'Pending (Booking)';
+                          paymentStatusBadge = 'badge-danger';
+                        }
+                      } else {
+                        paymentStatusText = 'Paid (Direct)';
+                        paymentStatusBadge = 'badge-success';
+                      }
+
+                      let paymentDetails = 'Direct Sale';
+                      if (t.type === 'restock') {
+                        paymentDetails = t.supplier || 'Restock';
+                      } else if (t.bookingId) {
+                        const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
+                        paymentDetails = `Booking ID: #${bIdShort}`;
+                      }
+
+                      return (
+                        <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
+                          <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-primary)' }}>{customer}</td>
+                          <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
+                          <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                          </td>
+                          <td style={{ padding: 'var(--space-4)' }}>
+                            {paymentStatusBadge ? (
+                              <span className={`badge ${paymentStatusBadge}`} style={{ padding: '4px 8px' }}>{paymentStatusText}</span>
+                            ) : '—'}
+                          </td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{paymentDetails}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -282,42 +376,88 @@ export default function SalesPage() {
 
             {/* MOBILE CARDS VIEW */}
             <div className="cards-grid mobile-only" style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
-              {filteredTransactions.map((t) => (
-                <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {/* Header: Item Name + Date */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
-                        <Package size={18} />
+              {filteredTransactions.map((t) => {
+                const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+                let paymentStatusText = 'Paid';
+                let paymentStatusBadge = 'badge-success';
+                if (t.type === 'restock') {
+                  paymentStatusText = '—';
+                  paymentStatusBadge = '';
+                } else if (t.bookingId) {
+                  const status = t.bookingId.paymentStatus || 'pending';
+                  if (status === 'paid') {
+                    paymentStatusText = 'Paid (Booking)';
+                    paymentStatusBadge = 'badge-success';
+                  } else if (status === 'partial') {
+                    paymentStatusText = 'Partially Paid';
+                    paymentStatusBadge = 'badge-warning';
+                  } else {
+                    paymentStatusText = 'Pending (Booking)';
+                    paymentStatusBadge = 'badge-danger';
+                  }
+                } else {
+                  paymentStatusText = 'Paid (Direct)';
+                  paymentStatusBadge = 'badge-success';
+                }
+
+                let paymentDetails = 'Direct Sale';
+                if (t.type === 'restock') {
+                  paymentDetails = t.supplier || 'Restock';
+                } else if (t.bookingId) {
+                  const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
+                  paymentDetails = `Booking: #${bIdShort}`;
+                }
+
+                return (
+                  <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {/* Header: Item Name + Date */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                          <Package size={18} />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{t.itemId?.name || '—'}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        </div>
+                      </div>
+                      <span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span>
+                    </div>
+
+                    {/* Info details grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Customer/Supplier</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{customer}</div>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{t.itemId?.name || '—'}</div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Payment Status</div>
+                        <div style={{ fontWeight: 600 }}>
+                          {paymentStatusBadge ? (
+                            <span className={`badge ${paymentStatusBadge}`} style={{ padding: '2px 6px', fontSize: '10px' }}>{paymentStatusText}</span>
+                          ) : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Details</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{paymentDetails}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Quantity</div>
+                        <div style={{ fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>
+                        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{t.enteredBy?.name || '—'}</div>
                       </div>
                     </div>
-                    <span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span>
                   </div>
-
-                  {/* Info details grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                    <div>
-                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Quantity</div>
-                      <div style={{ fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
-                      {t.supplier && t.supplier.toLowerCase().includes('booking') && (
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>In booking</div>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>
-                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{t.enteredBy?.name || '—'}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             </></div>
           )}

@@ -34,6 +34,7 @@ interface Booking {
   paymentStatus: 'pending' | 'partial' | 'paid';
   facility: 'turf' | 'nets_with_machine' | 'nets_without_machine';
   hasLounge: boolean;
+  loungeHours: number;
   loungeAmount: number;
   products: Array<{ itemId: string; name: string; quantity: number; price: number }>;
   productAmount: number;
@@ -192,6 +193,8 @@ export default function ManageBookingsPage() {
   const [addonProducts, setAddonProducts] = useState<Record<string, number>>({});
   const [savingAddons, setSavingAddons] = useState(false);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [loungeAddonUnavailable, setLoungeAddonUnavailable] = useState(false);
+  const [checkingLoungeAddon, setCheckingLoungeAddon] = useState(false);
 
   const { checkPermission } = usePermissions();
   const canCreateBooking = checkPermission('bookings', 'create_booking');
@@ -502,10 +505,12 @@ export default function ManageBookingsPage() {
       setSavingPayment(false);
     }
   };
-  const openAddonsModal = () => {
-    setAddonLoungeHours('');
+  const openAddonsModal = async () => {
+    if (!selectedBooking) return;
+    setAddonLoungeHours(selectedBooking.loungeHours || '');
     setAddonProducts({});
     setShowAddonsModal(true);
+    setLoungeAddonUnavailable(false);
 
     if (inventoryItems.length === 0) {
       fetch('/api/inventory')
@@ -516,6 +521,31 @@ export default function ManageBookingsPage() {
           }
         })
         .catch(err => console.error('Failed to fetch inventory:', err));
+    }
+
+    if (!selectedBooking.loungeHours || selectedBooking.loungeHours === 0) {
+      setCheckingLoungeAddon(true);
+      try {
+        const dateStr = new Date(selectedBooking.bookingDate).toISOString().split('T')[0];
+        const params = new URLSearchParams({
+          startDate: dateStr,
+          endDate: dateStr,
+          bookingStatus: 'confirmed',
+          limit: '100',
+        });
+        const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && data.data.bookings) {
+          const hasOtherLounge = data.data.bookings.some((b: any) => 
+            b._id !== selectedBooking._id && b.loungeHours > 0
+          );
+          setLoungeAddonUnavailable(hasOtherLounge);
+        }
+      } catch (e) {
+        console.error('Failed to check lounge availability:', e);
+      } finally {
+        setCheckingLoungeAddon(false);
+      }
     }
   };
 
@@ -1706,19 +1736,26 @@ export default function ManageBookingsPage() {
             </div>
             <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Clock size={16} /> Lounge Area Add-On (Hours)
-                </label>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: (checkingLoungeAddon || loungeAddonUnavailable) ? 'not-allowed' : 'pointer' }}>
                   <input
-                    type="number"
-                    min="1"
-                    placeholder="Enter additional hours"
-                    className="form-input"
-                    value={addonLoungeHours}
-                    onChange={(e) => setAddonLoungeHours(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
+                    type="checkbox"
+                    checked={Number(addonLoungeHours) > 0}
+                    disabled={checkingLoungeAddon || loungeAddonUnavailable}
+                    onChange={(e) => setAddonLoungeHours(e.target.checked ? 1 : '')}
+                    style={{ width: '18px', height: '18px', cursor: (checkingLoungeAddon || loungeAddonUnavailable) ? 'not-allowed' : 'pointer' }}
                   />
-                </div>
+                  <span>
+                    <strong>Include Lounge Area</strong>
+                    <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: loungeAddonUnavailable ? 'var(--status-danger)' : 'var(--text-secondary)', fontWeight: 'normal' }}>
+                      {checkingLoungeAddon 
+                        ? 'Checking lounge availability...'
+                        : loungeAddonUnavailable
+                          ? 'Lounge is already reserved by another team on this day'
+                          : 'Daily Flat Rate Add-On'
+                      }
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {inventoryItems.length > 0 && (
@@ -1768,7 +1805,7 @@ export default function ManageBookingsPage() {
               <button 
                 className={`btn btn-primary btn-md ${savingAddons ? 'btn-loading' : ''}`} 
                 onClick={handleSaveAddons}
-                disabled={savingAddons || (!addonLoungeHours && Object.keys(addonProducts).length === 0)}
+                disabled={savingAddons || (addonLoungeHours === (selectedBooking.loungeHours || '') && !Object.values(addonProducts).some(qty => qty > 0))}
               >
                 <CheckCircle size={18} /> Apply Addons
               </button>

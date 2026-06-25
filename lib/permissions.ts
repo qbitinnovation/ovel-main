@@ -68,9 +68,129 @@ export async function checkPermission(
     return checkDevPermission(user, moduleKey, requiredAction, store);
   }
 
-  // Fetch user
-  const user = await User.findById(userId);
-  if (!user) {
+  try {
+    // Fetch user
+    const user = await User.findById(userId);
+    if (!user) {
+      if (isDevFallbackEnabled()) {
+        const store = getDevStore();
+        const devUser = store.users.find((u) => String(u._id) === String(userId));
+        if (devUser) {
+          return checkDevPermission(devUser, moduleKey, requiredAction, store);
+        }
+      }
+      if (String(userId) === '000000000000000000000001') {
+        return { allowed: true, accessLevel: 'full_control', reason: 'Demo SuperAdmin' };
+      }
+      return { allowed: false, accessLevel: null, reason: 'User not found' };
+    }
+
+    if (!user.isActive || user.isArchived) {
+      return { allowed: false, accessLevel: null, reason: 'User account is inactive or archived' };
+    }
+
+    // SuperAdmin has full access to everything
+    if (user.userType === USER_TYPES.SUPERADMIN) {
+      return { allowed: true, accessLevel: 'full_control', reason: 'SuperAdmin has full access' };
+    }
+
+    // Check individual override first (it can extend or restrict)
+    const override = await UserOverride.findOne({
+      userId: user._id,
+      moduleKey,
+      isActive: true,
+    });
+
+    // If there's a restrict override that disables this action
+    if (override && override.overrideType === 'restrict') {
+      if (override.disabledActions.includes(requiredAction)) {
+        return {
+          allowed: false,
+          accessLevel: null,
+          reason: `Action "${requiredAction}" is restricted by individual override`,
+        };
+      }
+    }
+
+    // If there's an extend override that enables this action
+    if (override && override.overrideType === 'extend') {
+      if (override.enabledActions.includes(requiredAction)) {
+        return {
+          allowed: true,
+          accessLevel: override.accessLevel || 'edit',
+          reason: 'Access granted via individual override',
+        };
+      }
+    }
+
+    // Check user-based mapping for committee users
+    if (user.portalType === 'committee') {
+      const mapping = await UserModuleMapping.findOne({
+        userId: user._id,
+        moduleKey,
+        isActive: true,
+      });
+
+      if (!mapping) {
+        return {
+          allowed: false,
+          accessLevel: null,
+          reason: `Module "${moduleKey}" is not mapped to your user`,
+        };
+      }
+
+      if (!mapping.enabledActions.includes(requiredAction)) {
+        return {
+          allowed: false,
+          accessLevel: mapping.accessLevel,
+          reason: `Action "${requiredAction}" is not enabled for your user on this module`,
+        };
+      }
+
+      return {
+        allowed: true,
+        accessLevel: mapping.accessLevel,
+        reason: 'Access granted via user mapping',
+      };
+    }
+
+    // Check portal-based mapping for turf/shareholder users
+    if (user.portalType === 'turf' || user.portalType === 'shareholder') {
+      const mapping = await PortalModuleMapping.findOne({
+        portalType: user.portalType,
+        moduleKey,
+        isActive: true,
+      });
+
+      if (!mapping) {
+        return {
+          allowed: false,
+          accessLevel: null,
+          reason: `Module "${moduleKey}" is not mapped to the ${user.portalType} portal`,
+        };
+      }
+
+      if (!mapping.enabledActions.includes(requiredAction)) {
+        return {
+          allowed: false,
+          accessLevel: mapping.accessLevel,
+          reason: `Action "${requiredAction}" is not enabled for the ${user.portalType} portal on this module`,
+        };
+      }
+
+      return {
+        allowed: true,
+        accessLevel: mapping.accessLevel,
+        reason: 'Access granted via portal mapping',
+      };
+    }
+
+    return {
+      allowed: false,
+      accessLevel: null,
+      reason: 'Unknown portal type',
+    };
+  } catch (error) {
     if (isDevFallbackEnabled()) {
       const store = getDevStore();
       const devUser = store.users.find((u) => String(u._id) === String(userId));
@@ -78,117 +198,8 @@ export async function checkPermission(
         return checkDevPermission(devUser, moduleKey, requiredAction, store);
       }
     }
-    if (String(userId) === '000000000000000000000001') {
-      return { allowed: true, accessLevel: 'full_control', reason: 'Demo SuperAdmin' };
-    }
-    return { allowed: false, accessLevel: null, reason: 'User not found' };
+    throw error;
   }
-
-  if (!user.isActive || user.isArchived) {
-    return { allowed: false, accessLevel: null, reason: 'User account is inactive or archived' };
-  }
-
-  // SuperAdmin has full access to everything
-  if (user.userType === USER_TYPES.SUPERADMIN) {
-    return { allowed: true, accessLevel: 'full_control', reason: 'SuperAdmin has full access' };
-  }
-
-  // Check individual override first (it can extend or restrict)
-  const override = await UserOverride.findOne({
-    userId: user._id,
-    moduleKey,
-    isActive: true,
-  });
-
-  // If there's a restrict override that disables this action
-  if (override && override.overrideType === 'restrict') {
-    if (override.disabledActions.includes(requiredAction)) {
-      return {
-        allowed: false,
-        accessLevel: null,
-        reason: `Action "${requiredAction}" is restricted by individual override`,
-      };
-    }
-  }
-
-  // If there's an extend override that enables this action
-  if (override && override.overrideType === 'extend') {
-    if (override.enabledActions.includes(requiredAction)) {
-      return {
-        allowed: true,
-        accessLevel: override.accessLevel || 'edit',
-        reason: 'Access granted via individual override',
-      };
-    }
-  }
-
-  // Check user-based mapping for committee users
-  if (user.portalType === 'committee') {
-    const mapping = await UserModuleMapping.findOne({
-      userId: user._id,
-      moduleKey,
-      isActive: true,
-    });
-
-    if (!mapping) {
-      return {
-        allowed: false,
-        accessLevel: null,
-        reason: `Module "${moduleKey}" is not mapped to your user`,
-      };
-    }
-
-    if (!mapping.enabledActions.includes(requiredAction)) {
-      return {
-        allowed: false,
-        accessLevel: mapping.accessLevel,
-        reason: `Action "${requiredAction}" is not enabled for your user on this module`,
-      };
-    }
-
-    return {
-      allowed: true,
-      accessLevel: mapping.accessLevel,
-      reason: 'Access granted via user mapping',
-    };
-  }
-
-  // Check portal-based mapping for turf/shareholder users
-  if (user.portalType === 'turf' || user.portalType === 'shareholder') {
-    const mapping = await PortalModuleMapping.findOne({
-      portalType: user.portalType,
-      moduleKey,
-      isActive: true,
-    });
-
-    if (!mapping) {
-      return {
-        allowed: false,
-        accessLevel: null,
-        reason: `Module "${moduleKey}" is not mapped to the ${user.portalType} portal`,
-      };
-    }
-
-    if (!mapping.enabledActions.includes(requiredAction)) {
-      return {
-        allowed: false,
-        accessLevel: mapping.accessLevel,
-        reason: `Action "${requiredAction}" is not enabled for the ${user.portalType} portal on this module`,
-      };
-    }
-
-    return {
-      allowed: true,
-      accessLevel: mapping.accessLevel,
-      reason: 'Access granted via portal mapping',
-    };
-  }
-
-  return {
-    allowed: false,
-    accessLevel: null,
-    reason: 'Unknown portal type',
-  };
 }
 
 /**

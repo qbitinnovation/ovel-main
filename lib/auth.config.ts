@@ -20,12 +20,14 @@ const getBaseUrl = () => {
     return primaryFqdn.startsWith('http') ? primaryFqdn : `https://${primaryFqdn}`;
   }
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
+  return undefined;
 };
 
 const baseUrl = getBaseUrl();
-process.env.AUTH_URL = baseUrl;
-process.env.NEXTAUTH_URL = baseUrl;
+if (baseUrl) {
+  process.env.AUTH_URL = baseUrl;
+  process.env.NEXTAUTH_URL = baseUrl;
+}
 process.env.AUTH_TRUST_HOST = 'true';
 
 type AuthUserFields = {
@@ -84,8 +86,17 @@ export const authConfig: NextAuthConfig = {
         '/turf/login',
         '/shareholder/login',
         '/api/auth',
+        '/public-feedback',
+        '/api/feedback',
       ];
-      if (publicPaths.some((p) => pathname.startsWith(p))) {
+      const isPublic = publicPaths.some((p) => {
+        if (p === '/api/feedback') {
+          return pathname === '/api/feedback';
+        }
+        return pathname.startsWith(p);
+      });
+
+      if (isPublic) {
         const requestedPortal = getPortalFromPath(pathname);
         if (isLoggedIn && requestedPortal) {
           const user = auth?.user as { role?: string; userType?: string; portalType?: string };
