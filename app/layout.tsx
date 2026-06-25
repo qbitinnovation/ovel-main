@@ -39,6 +39,7 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="preload" href="/logo.png" as="image" type="image/png" />
       </head>
       <body suppressHydrationWarning>
         <SessionProvider>
