@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
+import NotificationDropdown from '@/components/ui/NotificationDropdown';
 
 import { ReactNode } from 'react';
 import {
@@ -24,6 +25,7 @@ interface NavItem {
 // Dashboard is always visible. Module-specific items are shown based on user's access.
 const defaultNav: NavItem[] = [
   { label: 'Dashboard', href: '/committee/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'My Transactions', href: '/committee/my-transactions', icon: <Wallet size={20} /> },
 ];
 
 const moduleNavItems: NavItem[] = [
@@ -32,10 +34,10 @@ const moduleNavItems: NavItem[] = [
   { label: 'Sales', href: '/committee/sales', icon: <ShoppingCart size={20} />, moduleKey: 'inventory_sales' },
   { label: 'Maintenance', href: '/committee/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
   { label: 'Checklists', href: '/committee/checklists', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations', alternativeActions: ['upload_checklist', 'view_checklist', 'verify_checklist', 'approve_checklist', 'reject_checklist'] },
-  { label: 'Feedback & Support', href: '/committee/feedback', icon: <MessageSquare size={20} /> },
   { label: 'MOM', href: '/committee/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/committee/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
   { label: 'Attendance', href: '/committee/attendance', icon: <Building2 size={20} />, moduleKey: 'smart_attendance' },
+  { label: 'Feedback & Support', href: '/committee/feedback', icon: <MessageSquare size={20} /> },
 ];
 
 export default function CommitteeLayout({ children }: { children: React.ReactNode }) {
@@ -134,10 +136,7 @@ export default function CommitteeLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <div className="topbar-right">
-            <button className="notification-bell" aria-label="Notifications">
-              <Bell size={20} />
-              <span className="bell-badge" />
-            </button>
+            <NotificationDropdown />
           </div>
         </header>
 

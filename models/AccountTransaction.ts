@@ -12,6 +12,7 @@ export interface IAccountTransaction extends Document {
   referenceNumber: string;
   date: Date;
   createdBy: Types.ObjectId;
+  receivedBy?: Types.ObjectId;
   bookingId?: Types.ObjectId;
   inventoryTransactionId?: Types.ObjectId;
   createdAt: Date;
@@ -30,6 +31,7 @@ const AccountTransactionSchema = new Schema<IAccountTransaction>(
     referenceNumber: { type: String, default: '' },
     date: { type: Date, required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    receivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     bookingId: { type: Schema.Types.ObjectId, ref: 'Booking' },
     inventoryTransactionId: { type: Schema.Types.ObjectId, ref: 'InventoryTransaction' },
   },

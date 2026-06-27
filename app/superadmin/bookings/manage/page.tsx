@@ -15,6 +15,7 @@ import {
   type TurfPricingConfig,
 } from '@/lib/turf-pricing';
 import { jsPDF } from 'jspdf';
+import { generateTaxInvoice } from '@/lib/invoice-generator';
 
 import * as XLSX from 'xlsx';
 
@@ -583,7 +584,7 @@ export default function ManageBookingsPage() {
     if (!bookings.length) return showToast('No bookings to export', 'error');
     
     const exportData = bookings.map(b => {
-      const dateStr = getDateStr(b.bookingDate as unknown as string);
+      const dateStr = getDateStr(String(b.bookingDate));
       return {
         'Booking ID': b._id.substring(b._id.length - 6).toUpperCase(),
         'Date': formatDate(dateStr),
@@ -605,169 +606,102 @@ export default function ManageBookingsPage() {
     XLSX.writeFile(workbook, `Bookings_Export_${new Date().getTime()}.xlsx`);
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     if (!bookings.length) return showToast('No bookings to export', 'error');
     
-    const doc = new jsPDF('landscape');
-    doc.setFontSize(16);
-    doc.text('Bookings History Export', 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 22);
-
-    let y = 35;
-    doc.setFontSize(9);
-    doc.text('ID', 14, y);
-    doc.text('Date', 35, y);
-    doc.text('Customer', 65, y);
-    doc.text('Total', 120, y);
-    doc.text('Paid', 140, y);
-    doc.text('Pending', 160, y);
-    doc.text('P. Status', 180, y);
-    doc.text('B. Status', 205, y);
-    
-    y += 5;
-    doc.line(14, y, 280, y);
-    y += 7;
-
-    bookings.forEach((b) => {
-      if (y > 190) {
-        doc.addPage();
-        y = 20;
+    let logoBase64 = '';
+    try {
+      const img = new window.Image();
+      img.src = '/logo.png';
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        logoBase64 = canvas.toDataURL('image/png');
       }
-      const dateStr = getDateStr(b.bookingDate as unknown as string);
-      const pending = Math.max(0, b.expectedAmount - (b.totalPaid || 0));
-      
-      doc.text(b._id.substring(b._id.length - 6).toUpperCase(), 14, y);
-      doc.text(formatDate(dateStr), 35, y);
-      doc.text((b.customerName || 'Walk-in').substring(0, 20), 65, y);
-      doc.text(b.expectedAmount.toString(), 120, y);
-      doc.text((b.totalPaid || 0).toString(), 140, y);
-      doc.text(pending.toString(), 160, y);
-      doc.text((b.paymentStatus || 'pending').toUpperCase(), 180, y);
-      doc.text((b.bookingStatus || 'confirmed').toUpperCase(), 205, y);
-      
-      y += 8;
-    });
+    } catch (e) {
+      console.warn('Could not load logo for PDF', e);
+    }
 
-    doc.save(`Bookings_Export_${new Date().getTime()}.pdf`);
+    const { generateStandardReport } = await import('@/lib/report-generator');
+
+    const formatCurrency = (n: number) => 'Rs.' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
+
+    const totalBookings = bookings.length;
+    const totalAmount = bookings.reduce((sum, b) => sum + b.expectedAmount, 0);
+    const totalPaid = bookings.reduce((sum, b) => sum + (b.totalPaid || 0), 0);
+
+    let reportPeriodStr = 'All Time';
+    if (startDate || endDate) {
+       reportPeriodStr = `${startDate || 'Start'} to ${endDate || 'End'}`;
+    }
+
+    generateStandardReport({
+      title: 'Bookings History Export',
+      reportPeriod: reportPeriodStr,
+      summary: [
+        { label: 'Total Bookings', value: totalBookings.toString() },
+        { label: 'Total Amount', value: formatCurrency(totalAmount) },
+        { label: 'Total Paid', value: formatCurrency(totalPaid) }
+      ],
+      columns: [
+        { header: 'ID', dataKey: 'id', width: 60 },
+        { header: 'Date', dataKey: 'date' },
+        { header: 'Type', dataKey: 'type' },
+        { header: 'Customer', dataKey: 'customer' },
+        { header: 'Total', dataKey: 'total', align: 'right' },
+        { header: 'Paid', dataKey: 'paid', align: 'right' },
+        { header: 'Pending', dataKey: 'pending', align: 'right' },
+        { header: 'Status', dataKey: 'status' }
+      ],
+      data: bookings.map(b => {
+        const dateStr = getDateStr(String(b.bookingDate));
+        const pending = Math.max(0, b.expectedAmount - (b.totalPaid || 0));
+        return {
+          id: String(b._id).substring(String(b._id).length - 6).toUpperCase(),
+          date: formatDate(dateStr),
+          type: b.bookingType === 'bulk' ? 'Bulk' : 'Standard',
+          customer: (b.customerName || 'Walk-in').substring(0, 20),
+          total: formatCurrency(b.expectedAmount),
+          paid: formatCurrency(b.totalPaid || 0),
+          pending: formatCurrency(pending),
+          status: (b.paymentStatus || 'pending').toUpperCase()
+        };
+      }),
+      filename: `Bookings_Export_${new Date().getTime()}.pdf`,
+      logoBase64
+    });
   };
 
-  const handleDownloadReceipt = () => {
+  const handleDownloadReceipt = async () => {
     if (!selectedBooking) return;
     try {
-      const doc = new jsPDF();
-      doc.setFontSize(22);
-      doc.text('Booking Confirmation', 14, 25);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(100);
-      doc.text(`Booking ID: ${selectedBooking._id.substring(selectedBooking._id.length - 6).toUpperCase()}`, 14, 35);
-      
-      doc.setTextColor(0);
-      doc.setFontSize(14);
-      doc.text('Customer Details', 14, 50);
-      doc.setFontSize(11);
-      doc.text(`Name: ${selectedBooking.customerName || 'Walk-in'}`, 14, 60);
-      doc.text(`Contact: ${selectedBooking.contactNumber || 'N/A'}`, 14, 68);
-      
-      doc.setFontSize(14);
-      doc.text('Booking Details', 100, 50);
-      doc.setFontSize(11);
-      const dateStr = getDateStr(selectedBooking.bookingDate);
-      doc.text(`Date: ${formatDate(dateStr)}`, 100, 60);
-      
-      const slots = getInitialSlotsForBooking(selectedBooking, dateStr);
-      let timeStr = 'N/A';
-      if (slots.length > 0) {
-        const firstSlot = slots[0];
-        const lastSlot = slots[slots.length - 1];
-        const endSlotObj = TIME_SLOTS.find(s => s.start === lastSlot);
-        timeStr = `${formatTime(firstSlot)} - ${formatTime(endSlotObj ? endSlotObj.end : lastSlot)}`;
-      }
-      doc.text(`Time: ${timeStr}`, 100, 68);
-      
-      doc.setDrawColor(200);
-      doc.line(14, 80, 196, 80);
-      
-      let currentY = 95;
-
-      // Bill Breakdown
-      doc.setFontSize(14);
-      doc.text('Bill Breakdown', 14, currentY);
-      currentY += 10;
-      
-      doc.setFontSize(11);
-      const baseFee = selectedBooking.expectedAmount - (selectedBooking.loungeAmount || 0) - (selectedBooking.productAmount || 0);
-      doc.text('Slot Base Fee:', 14, currentY);
-      doc.text(`Rs ${baseFee}`, 100, currentY);
-      currentY += 8;
-
-      if ((selectedBooking.loungeAmount || 0) > 0) {
-        doc.text('Lounge Area Fee:', 14, currentY);
-        doc.text(`Rs ${selectedBooking.loungeAmount}`, 100, currentY);
-        currentY += 8;
-      }
-
-      if (selectedBooking.products && selectedBooking.products.length > 0) {
-        doc.text(`Products (${selectedBooking.products.length}):`, 14, currentY);
-        doc.text(`Rs ${selectedBooking.productAmount || 0}`, 100, currentY);
-        currentY += 6;
-        
-        doc.setFontSize(9);
-        doc.setTextColor(100);
-        selectedBooking.products.forEach((p: any) => {
-          doc.text(`- ${p.quantity}x ${p.name}`, 18, currentY);
-          doc.text(`Rs ${p.price}`, 100, currentY);
-          currentY += 5;
+      let logoBase64 = '';
+      try {
+        const img = new window.Image();
+        img.src = '/logo.png';
+        await new Promise((resolve) => {
+          img.onload = resolve;
+          img.onerror = resolve;
         });
-        doc.setFontSize(11);
-        doc.setTextColor(0);
-        currentY += 3;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          logoBase64 = canvas.toDataURL('image/png');
+        }
+      } catch (e) {
+        console.warn('Could not load logo for PDF', e);
       }
-
-      doc.setDrawColor(200);
-      doc.line(14, currentY - 2, 196, currentY - 2);
-      currentY += 6;
-
-      doc.setFontSize(14);
-      doc.text('Payment Summary', 14, currentY);
-      currentY += 10;
-
-      doc.setFontSize(11);
-      doc.text(`Total Amount: Rs ${selectedBooking.expectedAmount}`, 14, currentY);
-      currentY += 8;
-      doc.text(`Amount Paid: Rs ${selectedBooking.totalPaid}`, 14, currentY);
-      currentY += 8;
-      
-      const pending = Math.max(0, selectedBooking.expectedAmount - selectedBooking.totalPaid);
-      doc.text(`Pending Balance: Rs ${pending}`, 14, currentY);
-      currentY += 14;
-      
-      let finalY = currentY;
-      if (selectedBooking.editHistory && selectedBooking.editHistory.length > 0) {
-        doc.setFontSize(14);
-        doc.text('Edit Adjustments', 14, finalY);
-        doc.setFontSize(10);
-        finalY += 8;
-        selectedBooking.editHistory.forEach((edit, i) => {
-          const diff = edit.newExpectedAmount - edit.oldExpectedAmount;
-          doc.setTextColor(100);
-          doc.text(`${i + 1}. Changed to ${formatDate(getDateStr(edit.newDate as unknown as string))} (${formatTime(edit.newStartTime)} - ${formatTime(edit.newEndTime)})`, 14, finalY);
-          if (diff !== 0) {
-            doc.setTextColor(diff > 0 ? 200 : 0, diff < 0 ? 150 : 0, 0); // Red if price increased, green/gray if decreased
-            doc.text(`   Price Difference: ${diff > 0 ? '+' : ''}Rs ${diff} (Old: Rs ${edit.oldExpectedAmount} -> New: Rs ${edit.newExpectedAmount})`, 14, finalY + 6);
-            finalY += 14;
-          } else {
-            finalY += 8;
-          }
-        });
-      }
-      
-      doc.setFontSize(10);
-      doc.setTextColor(150);
-      doc.text('Generated by OMS System', 14, 280);
-      
-      doc.save(`Receipt_${selectedBooking.customerName || 'WalkIn'}_${dateStr}.pdf`);
+      generateTaxInvoice(selectedBooking, logoBase64);
     } catch (error) {
       console.error('Failed to generate PDF', error);
       showToast('Failed to download receipt', 'error');
@@ -801,7 +735,7 @@ export default function ManageBookingsPage() {
     const initialRanges = mergeSelectedSlots(initialSlots);
     const currentRanges = mergeSelectedSlots(editSelectedSlots);
     const isSameDate = editBookingDate === getDateStr(selectedBooking.bookingDate);
-    const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r, i) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
+    const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r: any, i: number) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
     
     if (!slotsChanged) return selectedBooking.expectedAmount;
     
@@ -837,7 +771,7 @@ export default function ManageBookingsPage() {
       const initialRanges = mergeSelectedSlots(initialSlots);
       const currentRanges = mergeSelectedSlots(editSelectedSlots);
       const isSameDate = editBookingDate === getDateStr(selectedBooking.bookingDate);
-      const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r, i) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
+      const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r: any, i: number) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
 
       if (slotsChanged) {
         if (currentRanges.length === 0) {
@@ -1317,12 +1251,12 @@ export default function ManageBookingsPage() {
               )}
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-start', gap: 'var(--space-3)', width: '100%', marginTop: 'auto', flexWrap: 'wrap' }}>
-              {selectedBooking.bookingStatus !== 'cancelled' && canEditBooking && !isSlotInPast(getDateStr(selectedBooking.bookingDate as unknown as string), selectedBooking.endTime) && (
+              {selectedBooking.bookingStatus !== 'cancelled' && canEditBooking && !isSlotInPast(getDateStr(String(selectedBooking.bookingDate)), selectedBooking.endTime) && (
                   <button className="btn btn-primary btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => openEditModal(selectedBooking)}>
                     <Edit size={16} /> Edit Booking
                   </button>
                 )}
-                {selectedBooking.bookingStatus !== 'cancelled' && canCancelBooking && !isSlotInPast(getDateStr(selectedBooking.bookingDate as unknown as string), selectedBooking.endTime) && (
+                {selectedBooking.bookingStatus !== 'cancelled' && canCancelBooking && !isSlotInPast(getDateStr(String(selectedBooking.bookingDate)), selectedBooking.endTime) && (
                   <button className="btn btn-danger btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => { setCancelReason(''); setShowCancelModal(true); }}>
                     <Trash2 size={16} /> Cancel Booking
                   </button>
@@ -1464,16 +1398,18 @@ export default function ManageBookingsPage() {
                       </div>
                     </div>
 
-                    {split.paymentMode === 'cash' ? (
-                      <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
-                        <div className="form-group">
-                          <label className="form-label required" style={{ fontSize: 'var(--text-xs)' }}>Received By</label>
-                          <CustomSelect
-                            options={users.map((u: any) => ({ value: u.name, label: getUserLabel(u) }))}
-                            value={split.cashReceivedBy}
-                            onChange={(v) => updateSplit(index, 'cashReceivedBy', v)}
-                          />
-                        </div>
+                    <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
+                      <div className="form-group">
+                        <label className={`form-label ${split.paymentMode === 'cash' ? 'required' : ''}`} style={{ fontSize: 'var(--text-xs)' }}>
+                          Received By {split.paymentMode !== 'cash' && '(Optional)'}
+                        </label>
+                        <CustomSelect
+                          options={users.map((u: any) => ({ value: u._id, label: getUserLabel(u) }))}
+                          value={split.cashReceivedBy}
+                          onChange={(v) => updateSplit(index, 'cashReceivedBy', v)}
+                        />
+                      </div>
+                      {split.paymentMode === 'cash' ? (
                         <div className="form-group">
                           <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Note (Optional)</label>
                           <input
@@ -1483,18 +1419,18 @@ export default function ManageBookingsPage() {
                             placeholder="Details..."
                           />
                         </div>
-                      </div>
-                    ) : (
-                      <div className="form-group">
-                        <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Reference / UTR (Optional)</label>
-                        <input
-                          className="form-input form-input-sm"
-                          value={split.referenceNumber}
-                          onChange={(e) => updateSplit(index, 'referenceNumber', e.target.value)}
-                          placeholder="Transaction ID"
-                        />
-                      </div>
-                    )}
+                      ) : (
+                        <div className="form-group">
+                          <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Reference / UTR (Optional)</label>
+                          <input
+                            className="form-input form-input-sm"
+                            value={split.referenceNumber}
+                            onChange={(e) => updateSplit(index, 'referenceNumber', e.target.value)}
+                            placeholder="Transaction ID"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

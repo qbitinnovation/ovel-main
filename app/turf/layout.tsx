@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
+import NotificationDropdown from '@/components/ui/NotificationDropdown';
 
 import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu, Wallet, Package, ShoppingCart, BarChart3, FileText, Calendar, ClipboardList } from 'lucide-react';
 
@@ -50,10 +51,10 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
     { label: 'ചെക്ക്ലിസ്റ്റ്', labelEn: 'Checklist', href: '/turf-manager/checklist', icon: <CheckSquare size={20} />, moduleKey: 'daily_operations' },
     { label: 'മെയിൻറനൻസ്', labelEn: 'Tasks', href: '/turf-manager/maintenance', icon: <Wrench size={20} />, moduleKey: 'maintenance_tasks' },
     { label: 'സേഫ്റ്റി', labelEn: 'Safety', href: '/turf-manager/safety-checkout', icon: <Shield size={20} />, moduleKey: 'safety_checklist' },
-    { label: 'റിപ്പോർട്ടുകൾ', labelEn: 'Reports', href: '/turf-manager/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
     { label: 'MOM', labelEn: 'MOM', href: '/turf-manager/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
     { label: 'ബുക്കിംഗ്', labelEn: 'Bookings', href: '/turf-manager/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
     { label: 'ഓഡിറ്റ് ലോഗ്', labelEn: 'Audit Log', href: '/turf-manager/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
+    { label: 'റിപ്പോർട്ടുകൾ', labelEn: 'Reports', href: '/turf-manager/reports', icon: <BarChart3 size={20} />, moduleKey: 'reports_analytics' },
   ];
 
   const visibleNavItems = [
@@ -133,9 +134,7 @@ export default function TurfLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
           <div className="topbar-right">
-            <button className="notification-bell" aria-label="Notifications">
-              <Bell size={20} />
-            </button>
+            <NotificationDropdown />
           </div>
         </header>
 

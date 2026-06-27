@@ -4,6 +4,7 @@ import dbConnect from '@/lib/db';
 import Booking from '@/models/Booking';
 import PaymentEntry from '@/models/PaymentEntry';
 import AccountTransaction from '@/models/AccountTransaction';
+import Notification from '@/models/Notification';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevPayment } from '@/lib/dev-store';
@@ -189,23 +190,25 @@ export async function POST(
         };
         store.payments.unshift(devPayment);
 
-        const devAccountTxn = {
-          _id: createDevId('account_txn'),
-          type: 'income' as const,
-          source: 'booking' as const,
-          amount: totalPaidAmount,
-          paymentMode: finalSplits.length === 1 ? firstSplit.paymentMode : 'split',
-          customerName: booking.customerName || '',
-          customerContact: booking.contactNumber || '',
-          summary: `Booking payment for Bulk Booking (ID: ${booking.bulkId})`,
-          referenceNumber: firstSplit.referenceNumber || '',
-          date: new Date(paymentDate).toISOString(),
-          createdBy: session.user.id,
-          bookingId: booking._id,
-          createdAt: now,
-          updatedAt: now,
-        };
-        store.accountTransactions.unshift(devAccountTxn);
+        finalSplits.forEach((split: any) => {
+          store.accountTransactions.unshift({
+            _id: createDevId('account_txn'),
+            type: 'income' as const,
+            source: 'booking' as const,
+            amount: split.amount,
+            paymentMode: split.paymentMode,
+            customerName: booking.customerName || '',
+            customerContact: booking.contactNumber || '',
+            summary: `Booking payment for Bulk Booking (ID: ${booking.bulkId})`,
+            referenceNumber: split.referenceNumber || '',
+            date: new Date(paymentDate).toISOString(),
+            createdBy: session.user.id,
+            receivedBy: split.cashReceivedBy || undefined,
+            bookingId: booking._id,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
 
         return successResponse({ payments: [devPayment], booking: { bulkId: booking.bulkId, totalPaid: totalPaidAmount } }, 'Payment recorded successfully', 201);
       } else {
@@ -235,23 +238,25 @@ export async function POST(
         };
         store.payments.unshift(devPayment);
 
-        const devAccountTxn = {
-          _id: createDevId('account_txn'),
-          type: 'income' as const,
-          source: 'booking' as const,
-          amount: totalPaidAmount,
-          paymentMode: finalSplits.length === 1 ? firstSplit.paymentMode : 'split',
-          customerName: booking.customerName || '',
-          customerContact: booking.contactNumber || '',
-          summary: `Booking payment for ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}`,
-          referenceNumber: firstSplit.referenceNumber || '',
-          date: new Date(paymentDate).toISOString(),
-          createdBy: session.user.id,
-          bookingId: booking._id,
-          createdAt: now,
-          updatedAt: now,
-        };
-        store.accountTransactions.unshift(devAccountTxn);
+        finalSplits.forEach((split: any) => {
+          store.accountTransactions.unshift({
+            _id: createDevId('account_txn'),
+            type: 'income' as const,
+            source: 'booking' as const,
+            amount: split.amount,
+            paymentMode: split.paymentMode,
+            customerName: booking.customerName || '',
+            customerContact: booking.contactNumber || '',
+            summary: `Booking payment for ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}`,
+            referenceNumber: split.referenceNumber || '',
+            date: new Date(paymentDate).toISOString(),
+            createdBy: session.user.id,
+            receivedBy: split.cashReceivedBy || undefined,
+            bookingId: booking._id,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
 
         return successResponse({ payment: devPayment, booking: { totalPaid: booking.totalPaid, paymentStatus: booking.paymentStatus } }, 'Payment recorded successfully', 201);
       }
@@ -311,19 +316,34 @@ export async function POST(
       });
 
       await AccountTransaction.deleteMany({ bookingId: { $in: groupBookingIds } });
-      await AccountTransaction.create({
+      const txns = finalSplits.map((split: any) => ({
         type: 'income',
         source: 'booking',
-        amount: totalPaidAmount,
-        paymentMode: finalSplits.length === 1 ? firstSplit.paymentMode : 'split',
+        amount: split.amount,
+        paymentMode: split.paymentMode,
         customerName: booking.customerName || '',
         customerContact: booking.contactNumber || '',
         summary: `Booking payment for Bulk Booking (ID: ${booking.bulkId})`,
-        referenceNumber: firstSplit.referenceNumber || '',
+        referenceNumber: split.referenceNumber || '',
         date: new Date(paymentDate),
         createdBy: session.user.id,
+        receivedBy: split.cashReceivedBy || undefined,
         bookingId: booking._id,
-      });
+      }));
+      await AccountTransaction.insertMany(txns);
+      
+      for (const txn of txns) {
+        if (txn.receivedBy) {
+          await Notification.create({
+            userId: txn.receivedBy,
+            type: 'cash_assignment',
+            title: 'Cash Assigned',
+            message: `You have been assigned as the receiver for a cash payment of ₹${txn.amount}.`,
+            moduleKey: 'bookings',
+            recordId: booking._id,
+          });
+        }
+      }
 
       const meta = getRequestMeta(request.headers);
       const modesDesc = finalSplits.map((s: any) => `${s.amount} via ${s.paymentMode}`).join(', ');
@@ -377,19 +397,34 @@ export async function POST(
     });
 
     await AccountTransaction.deleteMany({ bookingId: id });
-    await AccountTransaction.create({
+    const txns = finalSplits.map((split: any) => ({
       type: 'income',
       source: 'booking',
-      amount: totalPaidAmount,
-      paymentMode: finalSplits.length === 1 ? firstSplit.paymentMode : 'split',
+      amount: split.amount,
+      paymentMode: split.paymentMode,
       customerName: booking.customerName || '',
       customerContact: booking.contactNumber || '',
       summary: `Booking payment for ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-IN') : 'Unknown Date'} ${booking.startTime}-${booking.endTime}`,
-      referenceNumber: firstSplit.referenceNumber || '',
+      referenceNumber: split.referenceNumber || '',
       date: new Date(paymentDate),
       createdBy: session.user.id,
+      receivedBy: split.cashReceivedBy || undefined,
       bookingId: id,
-    });
+    }));
+    await AccountTransaction.insertMany(txns);
+    
+    for (const txn of txns) {
+      if (txn.receivedBy) {
+        await Notification.create({
+          userId: txn.receivedBy,
+          type: 'cash_assignment',
+          title: 'Cash Assigned',
+          message: `You have been assigned as the receiver for a cash payment of ₹${txn.amount}.`,
+          moduleKey: 'bookings',
+          recordId: payment._id,
+        });
+      }
+    }
 
     const meta = getRequestMeta(request.headers);
     const modesDesc = finalSplits.map((s: any) => `${s.amount} via ${s.paymentMode}`).join(', ');

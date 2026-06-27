@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface PDFOptions {
   title: string;
@@ -126,6 +127,6 @@ export const generatePDF = (options: PDFOptions) => {
     });
   }
 
-  // Save the PDF
-  doc.save(`${options.title.replace(/\s+/g, '_').toLowerCase()}_report.pdf`);
+  const filename = `${options.title.replace(/\s+/g, '_').toLowerCase()}_report.pdf`;
+  doc.save(filename);
 };

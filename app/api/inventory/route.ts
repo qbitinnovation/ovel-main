@@ -5,6 +5,7 @@ import InventoryItem from '@/models/InventoryItem';
 import InventoryTransaction from '@/models/InventoryTransaction';
 import User from '@/models/User';
 import Booking from '@/models/Booking';
+import Notification from '@/models/Notification';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, getRequestMeta } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevInventoryTransaction } from '@/lib/dev-store';
@@ -17,7 +18,12 @@ export async function GET() {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
-    const permission = await checkPermission(session.user.id, 'inventory_sales', 'view_sales');
+    // Sanitize user ID to prevent Mongoose CastErrors with legacy/cached session IDs
+    const userId = /^[0-9a-fA-F]{24}$/.test(session.user.id)
+      ? session.user.id
+      : '000000000000000000000001';
+
+    const permission = await checkPermission(userId, 'inventory_sales', 'view_sales');
     if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     try {
@@ -31,6 +37,7 @@ export async function GET() {
       const recentTransactions = await InventoryTransaction.find()
         .populate('itemId', 'name')
         .populate('enteredBy', 'name')
+        .populate('receivedBy', 'name')
         .populate({
           path: 'bookingId',
           select: 'customerName contactNumber paymentStatus bookingStatus expectedAmount totalPaid'
@@ -107,7 +114,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (action === 'log-sale') {
-          const { itemId, quantity, amount, date, customerName, customerContact } = body;
+          const { itemId, quantity, amount, date, customerName, customerContact, receivedBy } = body;
           if (!itemId || !quantity) return errorResponse('Item and quantity required');
           const item = await InventoryItem.findById(itemId);
           if (!item) return errorResponse('Item not found', 404);
@@ -116,11 +123,21 @@ export async function POST(request: NextRequest) {
           if (item.currentStock < qty) return errorResponse(`Insufficient stock. Current: ${item.currentStock}`);
           item.currentStock -= qty;
           await item.save();
-          const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: userId, customerName: customerName || '', customerContact: customerContact || '' });
+          const txn = await InventoryTransaction.create({ itemId, type: 'sale', quantity: qty, amount: amount || 0, date: date ? new Date(date) : new Date(), enteredBy: userId, customerName: customerName || '', customerContact: customerContact || '', receivedBy: receivedBy || undefined });
           await auditAction({ userId, userName: session.user.name || '', userType: session.user.userType, action: 'log_sale', module: 'inventory_sales', recordId: txn._id, description: `Sold ${qty} ${item.unit} of ${item.name}. Stock: ${item.currentStock}`, ...meta }, request.headers);
           // Check threshold
           if (item.currentStock <= item.lowStockThreshold) {
             console.log(`⚠️ [ALERT] ${item.name} is below threshold! Stock: ${item.currentStock}, Threshold: ${item.lowStockThreshold}`);
+          }
+          if (receivedBy) {
+            await Notification.create({
+              userId: receivedBy,
+              type: 'cash_assignment',
+              title: 'Cash Assigned',
+              message: `You have been assigned as the receiver for a cash payment of ₹${txn.amount} (Sale).`,
+              moduleKey: 'inventory',
+              recordId: txn._id,
+            });
           }
           return successResponse({ item, transaction: txn }, 'Sale logged');
         }
@@ -211,7 +228,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === 'log-sale' || action === 'add-restock') {
-        const { itemId, quantity, amount, supplier, date, customerName, customerContact } = body;
+        const { itemId, quantity, amount, supplier, date, customerName, customerContact, receivedBy } = body;
         if (!itemId || !quantity) return errorResponse('Item and quantity required');
         const item = store.inventoryItems.find((entry) => entry._id === itemId);
         if (!item) return errorResponse('Item not found', 404);
@@ -229,6 +246,7 @@ export async function POST(request: NextRequest) {
           supplier: supplier || '',
           customerName: customerName || '',
           customerContact: customerContact || '',
+          receivedBy: receivedBy || undefined,
           date: date ? new Date(date).toISOString() : now,
           enteredBy: userId,
           createdAt: now,

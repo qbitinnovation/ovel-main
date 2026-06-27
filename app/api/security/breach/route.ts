@@ -20,7 +20,11 @@ export async function POST(req: Request) {
     };
 
     if (session?.user?.id) {
-      meta.user = session.user.id;
+      // Sanitize user ID to prevent Mongoose CastErrors with legacy/cached session IDs
+      const safeUserId = /^[0-9a-fA-F]{24}$/.test(session.user.id)
+        ? session.user.id
+        : '000000000000000000000001';
+      meta.user = safeUserId;
       meta.userName = session.user.name || 'unknown';
       meta.portal = session.user.portalType || 'unknown';
     }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Search } from 'lucide-react';
 
 export interface SelectOption {
   value: string;
@@ -17,11 +17,14 @@ interface CustomSelectProps {
   className?: string;
   style?: React.CSSProperties;
   disabled?: boolean;
+  searchable?: boolean;
 }
 
-export function CustomSelect({ options, value, onChange, placeholder = 'Select...', className = '', style, disabled = false }: CustomSelectProps) {
+export function CustomSelect({ options, value, onChange, placeholder = 'Select...', className = '', style, disabled = false, searchable = true }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedOption = options.find(opt => opt.value === value);
 
@@ -34,6 +37,19 @@ export function CustomSelect({ options, value, onChange, placeholder = 'Select..
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (isOpen && searchable && inputRef.current) {
+      inputRef.current.focus();
+    }
+    if (!isOpen) {
+      setSearch('');
+    }
+  }, [isOpen, searchable]);
+
+  const filteredOptions = searchable 
+    ? options.filter(opt => opt.label.toLowerCase().includes(search.toLowerCase()))
+    : options;
 
   return (
     <div className={`custom-select-container ${className}`} style={style} ref={dropdownRef}>
@@ -53,11 +69,25 @@ export function CustomSelect({ options, value, onChange, placeholder = 'Select..
 
       {isOpen && (
         <div className="custom-select-dropdown">
-          {options.length === 0 ? (
+          {searchable && (
+            <div style={{ padding: '8px', borderBottom: '1px solid var(--surface-glass-border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Search size={14} color="var(--text-muted)" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search..."
+                style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '13px', color: 'var(--text-primary)' }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+          {filteredOptions.length === 0 ? (
             <div className="custom-select-empty">No options</div>
           ) : (
             <div className="custom-select-options">
-              {options.map((option) => {
+              {filteredOptions.map((option) => {
                 const isSelected = option.value === value;
                 return (
                   <button

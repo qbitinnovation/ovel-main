@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Calendar, Check, X } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Calendar, Check, X, HelpCircle, Plus } from 'lucide-react';
 import { type TurfHoliday } from '@/lib/turf-pricing';
+import { CustomTimePicker } from '@/components/ui/CustomTimePicker';
 
 interface Setting {
   _id: string;
@@ -13,24 +14,26 @@ interface Setting {
   category: string;
 }
 
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, idx) => {
-  const totalMinutes = idx * 30;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  const value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return { value, label: `${h12}:${m.toString().padStart(2, '0')} ${ampm}` };
-});
+interface UnifiedHolidaySlot {
+  id: string;
+  startTime: string;
+  endTime: string;
+  turfNormal: number;
+  turfRegular: number;
+  netsMachineNormal: number;
+  netsMachineRegular: number;
+  netsNoMachineNormal: number;
+  netsNoMachineRegular: number;
+}
+
+interface GroupedHoliday {
+  date: string;
+  name: string;
+  slots: UnifiedHolidaySlot[];
+}
 
 export default function HolidayPricingPage() {
-  const [facility, setFacility] = useState<'turf' | 'nets_machine' | 'nets_nomachine'>('turf');
-  const [holidays, setHolidays] = useState<TurfHoliday[]>([]);
-  const [allHolidays, setAllHolidays] = useState<Record<string, TurfHoliday[]>>({
-    turf: [],
-    nets_machine: [],
-    nets_nomachine: [],
-  });
+  const [groupedHolidays, setGroupedHolidays] = useState<GroupedHoliday[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
@@ -41,24 +44,94 @@ export default function HolidayPricingPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const mergeGroupedHolidays = (
+    turfHols: TurfHoliday[],
+    netsMachineHols: TurfHoliday[],
+    netsNoMachineHols: TurfHoliday[]
+  ): GroupedHoliday[] => {
+    const datesMap = new Map<string, { date: string; name: string }>();
+
+    const addHolsToDates = (hols: TurfHoliday[]) => {
+      if (!Array.isArray(hols)) return;
+      hols.forEach(h => {
+        if (!datesMap.has(h.date)) {
+          datesMap.set(h.date, { date: h.date, name: h.name });
+        }
+      });
+    };
+
+    addHolsToDates(turfHols);
+    addHolsToDates(netsMachineHols);
+    addHolsToDates(netsNoMachineHols);
+
+    const grouped: GroupedHoliday[] = [];
+
+    datesMap.forEach(({ date, name }) => {
+      const slotsMap = new Map<string, { startTime: string; endTime: string }>();
+
+      const addSlotsForDate = (hols: TurfHoliday[]) => {
+        if (!Array.isArray(hols)) return;
+        hols.forEach(h => {
+          if (h.date === date) {
+            const start = h.startTime || '00:00';
+            const end = h.endTime || '23:30';
+            const key = `${start}-${end}`;
+            if (!slotsMap.has(key)) {
+              slotsMap.set(key, { startTime: start, endTime: end });
+            }
+          }
+        });
+      };
+
+      addSlotsForDate(turfHols);
+      addSlotsForDate(netsMachineHols);
+      addSlotsForDate(netsNoMachineHols);
+
+      const slots: UnifiedHolidaySlot[] = [];
+      let slotIdx = 0;
+
+      slotsMap.forEach(({ startTime, endTime }) => {
+        const turfHol = turfHols?.find(h => h.date === date && (h.startTime || '00:00') === startTime && (h.endTime || '23:30') === endTime);
+        const machineHol = netsMachineHols?.find(h => h.date === date && (h.startTime || '00:00') === startTime && (h.endTime || '23:30') === endTime);
+        const noMachineHol = netsNoMachineHols?.find(h => h.date === date && (h.startTime || '00:00') === startTime && (h.endTime || '23:30') === endTime);
+
+        slots.push({
+          id: `slot-${date}-${slotIdx++}`,
+          startTime,
+          endTime,
+          turfNormal: turfHol?.normalPricePerHour ?? 0,
+          turfRegular: turfHol?.regularPricePerHour ?? 0,
+          netsMachineNormal: machineHol?.normalPricePerHour ?? 0,
+          netsMachineRegular: machineHol?.regularPricePerHour ?? 0,
+          netsNoMachineNormal: noMachineHol?.normalPricePerHour ?? 0,
+          netsNoMachineRegular: noMachineHol?.regularPricePerHour ?? 0
+        });
+      });
+
+      slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+      grouped.push({
+        date,
+        name,
+        slots
+      });
+    });
+
+    return grouped.sort((a, b) => a.date.localeCompare(b.date));
+  };
+
   const fetchSettings = useCallback(async () => {
     try {
       const res = await fetch('/api/settings');
       const data = await res.json();
       if (data.success) {
         const settings = data.data as Setting[];
-        const getKey = (f: string) => f === 'turf' ? 'turf_holidays' : `${f}_holidays`;
-        const newHolidays = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfHoliday[]>;
-        
-        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
-          const holidaysSetting = settings.find((s) => s.key === getKey(f));
-          if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
-            newHolidays[f] = holidaysSetting.value as TurfHoliday[];
-          }
-        });
-        
-        setAllHolidays(newHolidays);
-        setHolidays(newHolidays[facility]);
+        const turfHols = settings.find((s) => s.key === 'turf_holidays')?.value as TurfHoliday[] || [];
+        const machineHols = settings.find((s) => s.key === 'nets_machine_holidays')?.value as TurfHoliday[] || [];
+        const nomachineHols = settings.find((s) => s.key === 'nets_nomachine_holidays')?.value as TurfHoliday[] || [];
+
+        const merged = mergeGroupedHolidays(turfHols, machineHols, nomachineHols);
+        setGroupedHolidays(merged);
       }
     } catch (error) {
       console.error(error);
@@ -72,42 +145,61 @@ export default function HolidayPricingPage() {
     fetchSettings();
   }, [fetchSettings]);
 
-  useEffect(() => {
-    setHolidays(allHolidays[facility] || []);
-  }, [facility, allHolidays]);
-
   const handleSave = async () => {
     setSaving(true);
     try {
-      const finalHolidays = { ...allHolidays, [facility]: holidays };
+      const turfHols: TurfHoliday[] = [];
+      const netsMachineHols: TurfHoliday[] = [];
+      const netsNoMachineHols: TurfHoliday[] = [];
+
+      groupedHolidays.forEach(g => {
+        g.slots.forEach(slot => {
+          turfHols.push({
+            date: g.date,
+            name: g.name,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            normalPricePerHour: slot.turfNormal,
+            regularPricePerHour: slot.turfRegular
+          });
+
+          netsMachineHols.push({
+            date: g.date,
+            name: g.name,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            normalPricePerHour: slot.netsMachineNormal,
+            regularPricePerHour: slot.netsMachineRegular
+          });
+
+          netsNoMachineHols.push({
+            date: g.date,
+            name: g.name,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            normalPricePerHour: slot.netsNoMachineNormal,
+            regularPricePerHour: slot.netsNoMachineRegular
+          });
+        });
+      });
 
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: [
-            { key: 'turf_holidays', value: finalHolidays.turf },
-            { key: 'nets_machine_holidays', value: finalHolidays.nets_machine },
-            { key: 'nets_nomachine_holidays', value: finalHolidays.nets_nomachine }
+            { key: 'turf_holidays', value: turfHols },
+            { key: 'nets_machine_holidays', value: netsMachineHols },
+            { key: 'nets_nomachine_holidays', value: netsNoMachineHols }
           ]
         }),
       });
+
       const data = await res.json();
       if (data.success) {
-        showToast('Holiday pricing saved successfully');
+        showToast('Holiday pricing rules saved successfully');
         setHasChanges(false);
-
-        const settings = data.data as Setting[];
-        const getKey = (f: string) => f === 'turf' ? 'turf_holidays' : `${f}_holidays`;
-        const newHolidays = { turf: [], nets_machine: [], nets_nomachine: [] } as Record<string, TurfHoliday[]>;
-        ['turf', 'nets_machine', 'nets_nomachine'].forEach((f) => {
-          const holidaysSetting = settings.find((s) => s.key === getKey(f));
-          if (holidaysSetting && Array.isArray(holidaysSetting.value)) {
-            newHolidays[f] = holidaysSetting.value as TurfHoliday[];
-          }
-        });
-        setAllHolidays(newHolidays);
-        setHolidays(newHolidays[facility]);
+        fetchSettings(); // Refresh
       } else {
         showToast(data.message, 'error');
       }
@@ -118,34 +210,81 @@ export default function HolidayPricingPage() {
     }
   };
 
-  const updateHoliday = (index: number, patch: Partial<TurfHoliday>) => {
-    const updated = holidays.map((hol, idx) => idx === index ? { ...hol, ...patch } : hol);
-    setHolidays(updated);
-    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
+  const updateHolidayGroup = (groupIndex: number, patch: Partial<GroupedHoliday>) => {
+    const updated = groupedHolidays.map((group, idx) => idx === groupIndex ? { ...group, ...patch } : group);
+    setGroupedHolidays(updated);
     setHasChanges(true);
   };
 
-  const addHoliday = () => {
+  const updateHolidaySlot = (groupIndex: number, slotIndex: number, patch: Partial<UnifiedHolidaySlot>) => {
+    const updated = groupedHolidays.map((group, gIdx) => {
+      if (gIdx !== groupIndex) return group;
+      const updatedSlots = group.slots.map((slot, sIdx) => sIdx === slotIndex ? { ...slot, ...patch } : slot);
+      return { ...group, slots: updatedSlots };
+    });
+    setGroupedHolidays(updated);
+    setHasChanges(true);
+  };
+
+  const addHolidayGroup = () => {
     const updated = [
-      ...holidays,
+      ...groupedHolidays,
       {
         date: new Date().toISOString().split('T')[0],
-        name: 'New Holiday',
-        startTime: '00:00',
-        endTime: '23:59',
-        normalPricePerHour: 0,
-        regularPricePerHour: 0,
+        name: 'New Holiday Date',
+        slots: [
+          {
+            id: `slot-${Date.now()}-0`,
+            startTime: '00:00',
+            endTime: '23:30',
+            turfNormal: 0,
+            turfRegular: 0,
+            netsMachineNormal: 0,
+            netsMachineRegular: 0,
+            netsNoMachineNormal: 0,
+            netsNoMachineRegular: 0
+          }
+        ]
       }
     ];
-    setHolidays(updated);
-    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
+    setGroupedHolidays(updated);
     setHasChanges(true);
   };
 
-  const removeHoliday = (index: number) => {
-    const updated = holidays.filter((_, idx) => idx !== index);
-    setHolidays(updated);
-    setAllHolidays(prev => ({ ...prev, [facility]: updated }));
+  const addHolidaySlot = (groupIndex: number) => {
+    const updated = groupedHolidays.map((group, gIdx) => {
+      if (gIdx !== groupIndex) return group;
+      const newSlot = {
+        id: `slot-${Date.now()}-${group.slots.length}`,
+        startTime: '06:00',
+        endTime: '12:00',
+        turfNormal: 0,
+        turfRegular: 0,
+        netsMachineNormal: 0,
+        netsMachineRegular: 0,
+        netsNoMachineNormal: 0,
+        netsNoMachineRegular: 0
+      };
+      return { ...group, slots: [...group.slots, newSlot] };
+    });
+    setGroupedHolidays(updated);
+    setHasChanges(true);
+  };
+
+  const removeHolidayGroup = (groupIndex: number) => {
+    const updated = groupedHolidays.filter((_, idx) => idx !== groupIndex);
+    setGroupedHolidays(updated);
+    setHasChanges(true);
+  };
+
+  const removeHolidaySlot = (groupIndex: number, slotIndex: number) => {
+    const updated = groupedHolidays.map((group, gIdx) => {
+      if (gIdx !== groupIndex) return group;
+      const updatedSlots = group.slots.filter((_, sIdx) => sIdx !== slotIndex);
+      return { ...group, slots: updatedSlots };
+    }).filter(group => group.slots.length > 0); // Remove group if it has no slots left
+
+    setGroupedHolidays(updated);
     setHasChanges(true);
   };
 
@@ -168,146 +307,267 @@ export default function HolidayPricingPage() {
         </div>
         <div style={{ marginTop: 'var(--space-2)' }}>
           <h1>Holiday Pricing Rules</h1>
-          <p className="page-subtitle">Configure custom flat hourly rates for specific calendar dates</p>
+          <p className="page-subtitle">Configure custom flat hourly rates for specific calendar dates and time slots side-by-side</p>
         </div>
       </div>
 
       {loading ? (
         <div className="loading-screen"><div className="spinner spinner-lg" /></div>
       ) : (
-        <div className="card" style={{ marginTop: 'var(--space-4)' }}>
-          <div className="card-header" style={{ paddingBottom: 0 }}>
-            <div style={{ display: 'flex', gap: 'var(--space-6)', borderBottom: '1px solid var(--border-primary)', marginBottom: 'var(--space-4)' }}>
-              <div 
-                onClick={() => setFacility('turf')}
-                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'turf' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'turf' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                Turf Booking
-              </div>
-              <div 
-                onClick={() => setFacility('nets_machine')}
-                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_machine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_machine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                Nets (With Machine)
-              </div>
-              <div 
-                onClick={() => setFacility('nets_nomachine')}
-                style={{ padding: '0 0 var(--space-3) 0', cursor: 'pointer', fontWeight: 600, borderBottom: facility === 'nets_nomachine' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: facility === 'nets_nomachine' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                Nets (Without Machine)
-              </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', marginTop: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+              <HelpCircle size={14} />
+              <span>Define holiday calendar dates. You can add multiple time slots for each holiday date with different rate models.</span>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)', paddingBottom: 'var(--space-4)' }}>
-              <div>
-                <h3 style={{ fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
-                  <Calendar size={16} /> <span>Holiday Customization Rules</span>
-                </h3>
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={addHoliday}
-              >
-                + Add Holiday
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={addHolidayGroup}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              + Add Holiday Date
+            </button>
           </div>
 
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            {holidays.length === 0 ? (
-              <div style={{ padding: 'var(--space-8)', textAlign: 'center', fontSize: 'var(--text-sm)', color: 'var(--text-muted)', border: '1px dashed var(--surface-glass-border)', borderRadius: '8px' }}>
-                No holidays configured. Click the button above to add a custom holiday date.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {holidays.map((holiday, index) => (
-                  <div key={index} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-3)', alignItems: 'end', background: 'var(--bg-tertiary)', border: '1px solid var(--surface-glass-border)', borderRadius: '8px', padding: 'var(--space-3)' }}>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Holiday Date</span>
-                      <input
-                        type="date"
-                        className="form-input"
-                        value={holiday.date || ''}
-                        onChange={(e) => updateHoliday(index, { date: e.target.value })}
-                        style={{ height: '34px', fontSize: 'var(--text-xs)' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Holiday Name</span>
-                      <input
-                        className="form-input"
-                        value={holiday.name || ''}
-                        onChange={(e) => updateHoliday(index, { name: e.target.value })}
-                        placeholder="Christmas"
-                        style={{ height: '34px', fontSize: 'var(--text-xs)' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Start Time</span>
-                      <select className="form-input" value={holiday.startTime || '00:00'} onChange={(e) => updateHoliday(index, { startTime: e.target.value })} style={{ height: '34px', padding: '0 6px', fontSize: 'var(--text-xs)' }}>
-                        {TIME_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>End Time</span>
-                      <select className="form-input" value={holiday.endTime || '23:59'} onChange={(e) => updateHoliday(index, { endTime: e.target.value })} style={{ height: '34px', padding: '0 6px', fontSize: 'var(--text-xs)' }}>
-                        {TIME_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        <option value="23:59">11:59 PM (Midnight)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Normal / Hour</span>
-                      <input
-                        type="number"
-                        min="0"
-                        className="form-input"
-                        value={holiday.normalPricePerHour === 0 ? '' : holiday.normalPricePerHour}
-                        placeholder="0"
-                        onChange={(e) => updateHoliday(index, { normalPricePerHour: e.target.value === '' ? 0 : Number(e.target.value) })}
-                        style={{ height: '34px', fontSize: 'var(--text-xs)' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Regular / Hour</span>
-                      <input
-                        type="number"
-                        min="0"
-                        className="form-input"
-                        value={holiday.regularPricePerHour === 0 ? '' : holiday.regularPricePerHour}
-                        placeholder="0"
-                        onChange={(e) => updateHoliday(index, { regularPricePerHour: e.target.value === '' ? 0 : Number(e.target.value) })}
-                        style={{ height: '34px', fontSize: 'var(--text-xs)' }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => removeHoliday(index)}
-                        style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', padding: '6px 8px' }}
-                        title="Remove holiday"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+          {groupedHolidays.length === 0 ? (
+            <div style={{ padding: 'var(--space-12)', textAlign: 'center', fontSize: 'var(--text-sm)', color: 'var(--text-muted)', border: '1px dashed var(--surface-glass-border)', borderRadius: '12px', background: 'var(--bg-secondary)' }}>
+              No holiday dates configured. Click the button above to add a custom holiday date.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+              {groupedHolidays.map((group, groupIndex) => {
+                return (
+                  <div
+                    key={groupIndex}
+                    className="card"
+                    style={{
+                      border: '1px solid var(--surface-glass-border)',
+                      borderRadius: '12px',
+                      background: 'var(--bg-secondary)',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <div className="card-body" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                      {/* Holiday Date and Name Header */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-3)' }}>
+                        <div style={{ flex: '0 0 160px' }}>
+                          <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Holiday Date</label>
+                          <input
+                            type="date"
+                            className="form-input"
+                            value={group.date || ''}
+                            onChange={(e) => updateHolidayGroup(groupIndex, { date: e.target.value })}
+                            style={{ height: '36px', fontSize: '13px' }}
+                          />
+                        </div>
+                        <div style={{ flex: '1 1 200px' }}>
+                          <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Holiday Name</label>
+                          <input
+                            className="form-input"
+                            value={group.name || ''}
+                            onChange={(e) => updateHolidayGroup(groupIndex, { name: e.target.value })}
+                            placeholder="e.g. Christmas"
+                            style={{ height: '36px', fontSize: '13px' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto', paddingTop: '14px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => removeHolidayGroup(groupIndex)}
+                            style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', padding: '6px 8px', height: '36px' }}
+                            title="Remove Entire Holiday Date"
+                          >
+                            <Trash2 size={16} /> Remove Date
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Time Slots List */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+                        {group.slots.map((slot, slotIndex) => (
+                          <div
+                            key={slot.id || slotIndex}
+                            style={{
+                              padding: '14px',
+                              background: 'var(--bg-tertiary)',
+                              borderRadius: '8px',
+                              border: '1px solid var(--surface-glass-border)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '12px'
+                            }}
+                          >
+                            {/* Slot Header: Time picker and remove slot */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', borderBottom: '1px dashed var(--surface-glass-border)', paddingBottom: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 auto' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Slot Time Range:</span>
+                                <div style={{ width: '130px' }}>
+                                  <CustomTimePicker
+                                    value={slot.startTime}
+                                    onChange={(time) => updateHolidaySlot(groupIndex, slotIndex, { startTime: time })}
+                                  />
+                                </div>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>to</span>
+                                <div style={{ width: '130px' }}>
+                                  <CustomTimePicker
+                                    value={slot.endTime}
+                                    onChange={(time) => updateHolidaySlot(groupIndex, slotIndex, { endTime: time })}
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => removeHolidaySlot(groupIndex, slotIndex)}
+                                style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', padding: '4px 6px', height: '28px' }}
+                                title="Remove Slot"
+                              >
+                                <Trash2 size={14} /> Remove Slot
+                              </button>
+                            </div>
+
+                            {/* Pricing Grid */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-4)' }}>
+                              {/* Turf Booking */}
+                              <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px', border: '1px solid var(--surface-glass-border)' }}>
+                                <div style={{ fontWeight: 600, fontSize: '11px', marginBottom: '6px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)' }}></span>
+                                  Turf Booking
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Normal / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.turfNormal === 0 ? '' : slot.turfNormal}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { turfNormal: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Regular / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.turfRegular === 0 ? '' : slot.turfRegular}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { turfRegular: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Nets With Machine */}
+                              <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px', border: '1px solid var(--surface-glass-border)' }}>
+                                <div style={{ fontWeight: 600, fontSize: '11px', marginBottom: '6px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-secondary)' }}></span>
+                                  Nets (With Machine)
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Normal / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.netsMachineNormal === 0 ? '' : slot.netsMachineNormal}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { netsMachineNormal: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Regular / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.netsMachineRegular === 0 ? '' : slot.netsMachineRegular}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { netsMachineRegular: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Nets Without Machine */}
+                              <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px', border: '1px solid var(--surface-glass-border)' }}>
+                                <div style={{ fontWeight: 600, fontSize: '11px', marginBottom: '6px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-secondary)' }}></span>
+                                  Nets (Without Machine)
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Normal / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.netsNoMachineNormal === 0 ? '' : slot.netsNoMachineNormal}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { netsNoMachineNormal: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Regular / Hr</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      className="form-input"
+                                      value={slot.netsNoMachineRegular === 0 ? '' : slot.netsNoMachineRegular}
+                                      placeholder="0"
+                                      onChange={(e) => updateHolidaySlot(groupIndex, slotIndex, { netsNoMachineRegular: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                      style={{ height: '30px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Add Slot Button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 'var(--space-2)' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => addHolidaySlot(groupIndex)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Plus size={14} /> Add Time Slot
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
-              All prices entered here should be inclusive of GST. Holiday rules take maximum priority over both weekday and weekend rules when the booking date matches.
+                );
+              })}
             </div>
+          )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
-              <button 
-                type="button"
-                className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} 
-                onClick={handleSave} 
-                disabled={!hasChanges || saving} 
-                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-              >
-                <Save size={16} /> Save Changes
-              </button>
-            </div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
+            All prices entered here should be inclusive of GST. Holiday rules take maximum priority over both weekday and weekend rules when the booking date matches.
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
+            <button 
+              type="button"
+              className={`btn btn-primary btn-md ${saving ? 'btn-loading' : ''}`} 
+              onClick={handleSave} 
+              disabled={!hasChanges || saving} 
+              style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              <Save size={16} /> Save Changes
+            </button>
           </div>
         </div>
       )}

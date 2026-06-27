@@ -31,7 +31,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) return errorResponse('Unauthorized', 401);
-    if (session.user.userType !== 'superadmin') return errorResponse('Forbidden', 403);
+    if (!['superadmin', 'management', 'staff'].includes(session.user.userType)) {
+      return errorResponse('Forbidden', 403);
+    }
 
     const sp = request.nextUrl.searchParams;
     const { page, limit } = parsePagination(sp);

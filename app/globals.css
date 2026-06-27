@@ -2833,6 +2833,7 @@ h6 { font-size: var(--text-base); font-weight: 500; }
 .pill-toggle-group {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .pill-toggle {
@@ -3185,6 +3186,22 @@ h6 { font-size: var(--text-base); font-weight: 500; }
   .pill-toggle {
     padding: var(--space-2) var(--space-3);
     font-size: var(--text-xs);
+  }
+  .booking-rate-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-6);
+}
+
+@media (max-width: 768px) {
+
+  .analytics-grid {
+    grid-template-columns: 1fr;
   }
 
   .full-day-bar {
@@ -3590,3 +3607,5 @@ h6 { font-size: var(--text-base); font-weight: 500; }
     color: black !important;
   }
 }
+
+.toast-container { z-index: 9999 !important; }

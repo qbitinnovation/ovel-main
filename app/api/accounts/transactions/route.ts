@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import PaymentEntry from '@/models/PaymentEntry';
 import InventoryTransaction from '@/models/InventoryTransaction';
+import InventoryItem from '@/models/InventoryItem';
 import Booking from '@/models/Booking';
 import AccountTransaction from '@/models/AccountTransaction';
 import User from '@/models/User';
@@ -119,6 +120,10 @@ export async function GET(request: NextRequest) {
           select: 'name userType portalType positionId',
           populate: { path: 'positionId', select: 'title', model: Position }
         })
+        .populate({
+          path: 'bookingId',
+          populate: { path: 'products.itemId', model: InventoryItem }
+        })
         .sort({ date: -1 })
         .limit(limit)
         .lean();
@@ -140,12 +145,16 @@ export async function GET(request: NextRequest) {
             portal: user?.portalType,
             position: user?.positionId?.title || user?.userType
           },
+          receivedUser: t.receivedBy ? { name: typeof t.receivedBy === 'string' ? t.receivedBy : (t.receivedBy as any).name || t.receivedBy } : null,
           details: t
         });
       }
 
       const payments = await PaymentEntry.find()
-        .populate('bookingId')
+        .populate({
+          path: 'bookingId',
+          populate: { path: 'products.itemId', model: InventoryItem }
+        })
         .populate({
           path: 'createdBy',
           select: 'name userType portalType positionId',
@@ -173,6 +182,7 @@ export async function GET(request: NextRequest) {
             portal: user?.portalType,
             position: user?.positionId?.title || user?.userType
           },
+          receivedUser: p.cashReceivedBy ? { name: typeof p.cashReceivedBy === 'string' ? p.cashReceivedBy : (p.cashReceivedBy as any).name || p.cashReceivedBy } : null,
           details: p
         });
       }
@@ -184,7 +194,7 @@ export async function GET(request: NextRequest) {
         type: 'sale',
         supplier: { $not: /booking/i }
       })
-        .populate('itemId')
+        .populate({ path: 'itemId', model: InventoryItem })
         .populate({
           path: 'enteredBy',
           select: 'name userType portalType positionId',

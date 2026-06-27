@@ -5,10 +5,11 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { getInitials } from '@/lib/utils';
+import NotificationDropdown from '@/components/ui/NotificationDropdown';
 
 import {
   LayoutDashboard, Users, Link as LinkIcon, Wallet, Package, ShoppingCart, Wrench, CheckSquare, FileText, Calendar,
-  BarChart3, Bell, ClipboardList, Settings, Building2, Camera, Receipt, MapPin, CheckCircle, MessageSquare
+  BarChart3, Bell, ClipboardList, Settings, Building2, Camera, Receipt, MapPin, CheckCircle, MessageSquare, Banknote
 } from 'lucide-react';
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { label: 'Module Mapping', href: '/superadmin/modules', icon: <LinkIcon size={20} /> },
   { divider: true, label: 'Operations' },
   { label: 'Accounts', href: '/superadmin/accounts', icon: <Wallet size={20} /> },
+  { label: 'Cash Assignment', href: '/superadmin/cash-assignment', icon: <Banknote size={20} /> },
   { label: 'Inventory', href: '/superadmin/inventory', icon: <Package size={20} /> },
   { label: 'Sales', href: '/superadmin/sales', icon: <ShoppingCart size={20} /> },
   { label: 'Maintenance', href: '/superadmin/maintenance', icon: <Wrench size={20} /> },
@@ -24,12 +26,11 @@ const navItems = [
   { label: 'MOM', href: '/superadmin/mom', icon: <FileText size={20} /> },
   { label: 'Bookings', href: '/superadmin/bookings', icon: <Calendar size={20} /> },
   { divider: true, label: 'Smart Attendance' },
-  { label: 'Submit Attendance', href: '/superadmin/attendance/submit', icon: <MapPin size={20} /> },
-  { label: 'Verify Attendance', href: '/superadmin/attendance/verify', icon: <CheckCircle size={20} /> },
+  { label: 'Attendance', href: '/superadmin/attendance', icon: <CheckCircle size={20} /> },
   { divider: true, label: 'System' },
-  { label: 'Feedback & Support', href: '/superadmin/feedback', icon: <MessageSquare size={20} /> },
   { label: 'Audit Log', href: '/superadmin/audit-log', icon: <ClipboardList size={20} /> },
   { label: 'Settings', href: '/superadmin/settings', icon: <Settings size={20} /> },
+  { label: 'Feedback & Support', href: '/superadmin/feedback', icon: <MessageSquare size={20} /> },
 ];
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
@@ -119,10 +120,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             </div>
           </div>
           <div className="topbar-right">
-            <button className="notification-bell" aria-label="Notifications">
-              <Bell size={20} />
-              <span className="bell-badge" />
-            </button>
+            <NotificationDropdown />
           </div>
         </header>
 

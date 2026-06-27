@@ -13,6 +13,7 @@ export interface IInventoryTransaction extends Document {
   enteredBy: Types.ObjectId;
   createdAt: Date;
   bookingId?: Types.ObjectId | null;
+  receivedBy?: Types.ObjectId;
 }
 
 const InventoryTransactionSchema = new Schema<IInventoryTransaction>(
@@ -27,6 +28,7 @@ const InventoryTransactionSchema = new Schema<IInventoryTransaction>(
     date: { type: Date, required: true },
     enteredBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', default: null },
+    receivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );

@@ -12,8 +12,9 @@ export default function TurfManagerDashboard() {
       <WelcomeMessage />
 
       <div className="grid" style={{ gridTemplateColumns: '1fr', gap: 'var(--space-4)' }}>
-        <div className="card">
-          <div className="card-header">
+        {/* Today's Checklist */}
+        <div className="card" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.02) 100%)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(59, 130, 246, 0.1)' }}>
             <h3 style={{ fontSize: 'var(--text-md)' }}>Today&apos;s Checklist</h3>
             <span className="badge badge-warning badge-dot">Pending</span>
           </div>
@@ -29,8 +30,9 @@ export default function TurfManagerDashboard() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
+        {/* My Tasks */}
+        <div className="card" style={{ background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.02) 100%)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(34, 197, 94, 0.1)' }}>
             <h3 style={{ fontSize: 'var(--text-md)' }}>My Tasks</h3>
           </div>
           <div className="card-body">
@@ -42,14 +44,15 @@ export default function TurfManagerDashboard() {
           </div>
         </div>
 
-        <div className="card" style={{ borderColor: 'var(--status-warning-border)' }}>
+        {/* Safety Checkout */}
+        <div className="card" style={{ background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(234, 179, 8, 0.02) 100%)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
           <div className="card-body" style={{ padding: 'var(--space-5)' }}>
             <div className="flex items-center gap-4">
               <div style={{
                 width: '48px',
                 height: '48px',
                 borderRadius: 'var(--radius-lg)',
-                background: 'var(--status-warning-soft)',
+                background: 'rgba(234, 179, 8, 0.2)',
                 color: 'var(--status-warning)',
                 display: 'flex',
                 alignItems: 'center',

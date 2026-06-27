@@ -27,6 +27,7 @@ interface Txn {
   } | null;
   date: string; 
   enteredBy: { name: string } | null; 
+  receivedBy?: { name: string } | null;
   createdAt: string; 
 }
 
@@ -48,6 +49,8 @@ export default function SalesPage() {
   const [txnSupplier, setTxnSupplier] = useState('');
   const [txnCustomerName, setTxnCustomerName] = useState('');
   const [txnCustomerContact, setTxnCustomerContact] = useState('');
+  const [txnReceivedBy, setTxnReceivedBy] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
@@ -66,7 +69,20 @@ export default function SalesPage() {
   const canViewHistory = checkPermission('inventory_sales', 'view_sales_history');
 
   const fetchData = useCallback(async () => {
-    try { const res = await fetch('/api/inventory'); const d = await res.json(); if (d.success) { setItems(d.data.items); setTransactions(d.data.recentTransactions); } } catch (e) { console.error(e); } finally { setLoading(false); }
+    try { 
+      const res = await fetch('/api/inventory'); 
+      const d = await res.json(); 
+      if (d.success) { 
+        setItems(d.data.items); 
+        setTransactions(d.data.recentTransactions); 
+      } 
+      
+      const usersRes = await fetch('/api/users');
+      const usersJson = await usersRes.json();
+      if (usersJson.success && usersJson.data?.users) {
+        setUsers(usersJson.data.users);
+      }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -86,6 +102,7 @@ export default function SalesPage() {
     setTxnSupplier('');
     setTxnCustomerName('');
     setTxnCustomerContact('');
+    setTxnReceivedBy('');
   };
 
   const updateTxnQty = (quantity: number) => {
@@ -105,7 +122,7 @@ export default function SalesPage() {
     setSaving(true);
     const act = showTxn?.type === 'sale' ? 'log-sale' : 'add-restock';
     const amount = showTxn?.type === 'sale' ? getSaleAmount(txnItemId, txnQty) : txnAmount;
-    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount, supplier: txnSupplier, customerName: txnCustomerName, customerContact: txnCustomerContact }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); setTxnCustomerName(''); setTxnCustomerContact(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
+    try { const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act, itemId: txnItemId, quantity: txnQty, amount, supplier: txnSupplier, customerName: txnCustomerName, customerContact: txnCustomerContact, receivedBy: txnReceivedBy }) }); const d = await res.json(); if (d.success) { showToast(d.message); setShowTxn(null); setTxnQty(1); setTxnAmount(0); setTxnSupplier(''); setTxnCustomerName(''); setTxnCustomerContact(''); setTxnReceivedBy(''); fetchData(); } else showToast(d.message, 'error'); } catch { showToast('Error', 'error'); } finally { setSaving(false); }
   };
 
   const handleDeleteItem = async (itemId: string) => {
@@ -190,49 +207,96 @@ export default function SalesPage() {
     XLSX.writeFile(wb, `Sales_Log_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
-    const doc = new jsPDF('landscape');
-    doc.text('Sales Log', 14, 15);
-    let yPos = 30;
-    doc.setFontSize(10);
-    doc.text('Item', 14, yPos);
-    doc.text('Date', 50, yPos);
-    doc.text('Customer', 80, yPos);
-    doc.text('Type', 130, yPos);
-    doc.text('Qty', 150, yPos);
-    doc.text('Amount', 170, yPos);
-    doc.text('P. Status', 190, yPos);
-    doc.text('Details', 225, yPos);
-    doc.text('Entered By', 255, yPos);
-    yPos += 5;
-    filteredTransactions.forEach(t => {
-      if (yPos > 190) { doc.addPage(); yPos = 20; }
-      const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
-      let paymentStatusText = 'Paid';
-      if (t.type === 'restock') paymentStatusText = '—';
-      else if (t.bookingId) {
-        const status = t.bookingId.paymentStatus || 'pending';
-        paymentStatusText = status === 'paid' ? 'Paid (Booking)' : status === 'partial' ? 'Partially Paid' : 'Pending (Booking)';
-      } else {
-        paymentStatusText = 'Paid (Direct)';
+    
+    let logoBase64 = '';
+    try {
+      const img = new window.Image();
+      img.src = '/logo.png';
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        logoBase64 = canvas.toDataURL('image/png');
       }
-      let paymentDetails = 'Direct Sale';
-      if (t.type === 'restock') paymentDetails = t.supplier || 'Restock';
-      else if (t.bookingId) paymentDetails = `Booking: #${t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : ''}`;
+    } catch (e) {
+      console.warn('Could not load logo for PDF', e);
+    }
 
-      doc.text((t.itemId?.name || '—').substring(0, 15), 14, yPos);
-      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 50, yPos);
-      doc.text(customer.substring(0, 20), 80, yPos);
-      doc.text(t.type === 'sale' ? 'Sale' : 'Restock', 130, yPos);
-      doc.text(t.quantity.toString(), 150, yPos);
-      doc.text(t.amount.toString(), 170, yPos);
-      doc.text(paymentStatusText, 190, yPos);
-      doc.text(paymentDetails, 225, yPos);
-      doc.text((t.enteredBy?.name || '—').substring(0, 12), 255, yPos);
-      yPos += 7;
+    const { generateStandardReport } = await import('@/lib/report-generator');
+
+    const formatCurrency = (n: number) => 'Rs.' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
+
+    const totalSales = filteredTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0);
+    const totalRestock = filteredTransactions.filter(t => t.type === 'restock').reduce((sum, t) => sum + t.amount, 0);
+    const netAmount = totalSales - totalRestock;
+
+    let reportPeriodStr = 'All Time';
+    if (exportDateRange !== 'all') {
+       reportPeriodStr = exportDateRange === 'today' ? 'Today' : 
+                         exportDateRange === 'yesterday' ? 'Yesterday' :
+                         exportDateRange === 'last7' ? 'Last 7 Days' :
+                         exportDateRange === 'last30' ? 'Last 30 Days' :
+                         `${exportFromDate} to ${exportToDate}`;
+    }
+
+    generateStandardReport({
+      title: 'Sales & Restock Log',
+      reportPeriod: reportPeriodStr,
+      summary: [
+        { label: 'Total Sales', value: formatCurrency(totalSales) },
+        { label: 'Total Restock Cost', value: formatCurrency(totalRestock) },
+        { label: 'Net Amount', value: formatCurrency(netAmount) }
+      ],
+      columns: [
+        { header: 'Item', dataKey: 'item', width: 120 },
+        { header: 'Date', dataKey: 'date' },
+        { header: 'Customer', dataKey: 'customer' },
+        { header: 'Type', dataKey: 'type' },
+        { header: 'Qty', dataKey: 'qty', align: 'center' },
+        { header: 'Amount', dataKey: 'amount', align: 'right' },
+        { header: 'Payment Status', dataKey: 'status' },
+        { header: 'Details', dataKey: 'details' },
+        { header: 'Entered By', dataKey: 'enteredBy' },
+        { header: 'Received By', dataKey: 'receivedBy' }
+      ],
+      data: filteredTransactions.map(t => {
+        const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+        let paymentStatusText = 'Paid';
+        if (t.type === 'restock') paymentStatusText = '—';
+        else if (t.bookingId) {
+          const status = t.bookingId.paymentStatus || 'pending';
+          paymentStatusText = status === 'paid' ? 'Paid (Booking)' : status === 'partial' ? 'Partially Paid' : 'Pending (Booking)';
+        } else {
+          paymentStatusText = 'Paid (Direct)';
+        }
+        let paymentDetails = 'Direct Sale';
+        if (t.type === 'restock') paymentDetails = t.supplier || 'Restock';
+        else if (t.bookingId) paymentDetails = `Booking: #${t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : ''}`;
+
+        return {
+          item: (t.itemId?.name || '—').substring(0, 20),
+          date: new Date(t.date).toLocaleDateString('en-IN'),
+          customer: customer.substring(0, 20),
+          type: t.type === 'sale' ? 'Sale' : 'Restock',
+          qty: t.quantity.toString(),
+          amount: formatCurrency(t.amount),
+          status: paymentStatusText,
+          details: paymentDetails,
+          enteredBy: (t.enteredBy?.name || '—').substring(0, 15),
+          receivedBy: (t.receivedBy?.name || '—').substring(0, 15)
+        };
+      }),
+      filename: `Sales_Log_${new Date().toISOString().split('T')[0]}.pdf`,
+      logoBase64
     });
-    doc.save(`Sales_Log_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   return (
@@ -314,6 +378,7 @@ export default function SalesPage() {
                       <th style={{ padding: 'var(--space-4)' }}>Payment Status</th>
                       <th style={{ padding: 'var(--space-4)' }}>Payment Details</th>
                       <th style={{ padding: 'var(--space-4)' }}>Entered By</th>
+                      <th style={{ padding: 'var(--space-4)' }}>Received By</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -366,6 +431,7 @@ export default function SalesPage() {
                           </td>
                           <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{paymentDetails}</td>
                           <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
+                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.receivedBy?.name || '—'}</td>
                         </tr>
                       );
                     })}
@@ -526,10 +592,20 @@ export default function SalesPage() {
             </div>
             {showTxn.type === 'sale' && <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--surface-secondary)' }}><div className="stat-label">Sale Amount</div><div className="stat-value">Rs. {getSaleAmount(txnItemId, txnQty)}</div></div>}
             {showTxn.type === 'sale' && (
-              <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
-                <div className="form-group"><label className="form-label">Customer Name</label><input className="form-input" value={txnCustomerName} onChange={(e) => setTxnCustomerName(e.target.value)} placeholder="e.g. John Doe" /></div>
-                <div className="form-group"><label className="form-label">Customer Contact</label><input className="form-input" value={txnCustomerContact} onChange={(e) => setTxnCustomerContact(e.target.value)} placeholder="Phone number" /></div>
-              </div>
+              <>
+                <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+                  <div className="form-group"><label className="form-label">Customer Name</label><input className="form-input" value={txnCustomerName} onChange={(e) => setTxnCustomerName(e.target.value)} placeholder="e.g. John Doe" /></div>
+                  <div className="form-group"><label className="form-label">Customer Contact</label><input className="form-input" value={txnCustomerContact} onChange={(e) => setTxnCustomerContact(e.target.value)} placeholder="Phone number" /></div>
+                </div>
+                <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+                  <label className="form-label">Received By (Optional)</label>
+                  <CustomSelect
+                    options={users.map((u: any) => ({ value: u._id, label: u.name + (u.positionId?.title ? ` (${u.positionId.title})` : '') }))}
+                    value={txnReceivedBy}
+                    onChange={(v) => setTxnReceivedBy(v)}
+                  />
+                </div>
+              </>
             )}
             {showTxn.type === 'restock' && <div className="form-group" style={{ marginTop: 'var(--space-4)' }}><label className="form-label">Supplier</label><input className="form-input" value={txnSupplier} onChange={(e) => setTxnSupplier(e.target.value)} placeholder="Supplier name" /></div>}
           </div>

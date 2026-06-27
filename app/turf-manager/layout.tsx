@@ -5,11 +5,13 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getInitials } from '@/lib/utils';
+import NotificationDropdown from '@/components/ui/NotificationDropdown';
 
 import { LayoutDashboard, CheckSquare, Wrench, Shield, Building2, Bell, Menu, Wallet, Package, ShoppingCart, BarChart3, FileText, Calendar, ClipboardList, MessageSquare } from 'lucide-react';
 
 const defaultNav = [
   { label: 'Dashboard', href: '/turf-manager/dashboard', icon: <LayoutDashboard size={20} /> },
+  { label: 'My Transactions', href: '/turf-manager/my-transactions', icon: <Wallet size={20} /> },
 ];
 
 const moduleNavItems = [
@@ -23,8 +25,8 @@ const moduleNavItems = [
   { label: 'MOM', href: '/turf-manager/mom', icon: <FileText size={20} />, moduleKey: 'malayalam_mom' },
   { label: 'Bookings', href: '/turf-manager/bookings', icon: <Calendar size={20} />, moduleKey: 'bookings' },
   { label: 'Attendance', href: '/turf-manager/attendance', icon: <Building2 size={20} />, moduleKey: 'smart_attendance' },
-  { label: 'Feedback & Support', href: '/turf-manager/feedback', icon: <MessageSquare size={20} /> },
   { label: 'Audit Log', href: '/turf-manager/audit-log', icon: <ClipboardList size={20} />, moduleKey: 'audit_log' },
+  { label: 'Feedback & Support', href: '/turf-manager/feedback', icon: <MessageSquare size={20} /> },
 ];
 
 export default function TurfManagerLayout({ children }: { children: React.ReactNode }) {
@@ -136,9 +138,7 @@ export default function TurfManagerLayout({ children }: { children: React.ReactN
             </div>
           </div>
           <div className="topbar-right">
-            <button className="notification-bell" aria-label="Notifications">
-              <Bell size={20} />
-            </button>
+            <NotificationDropdown />
           </div>
         </header>
 

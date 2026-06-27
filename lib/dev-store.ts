@@ -62,6 +62,7 @@ export interface DevAccountTransaction {
   createdBy: string;
   bookingId?: string;
   inventoryTransactionId?: string;
+  receivedBy?: string;
   createdAt: string;
   updatedAt: string;
 }

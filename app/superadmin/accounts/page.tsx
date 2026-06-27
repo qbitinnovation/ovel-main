@@ -2,11 +2,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import { CustomAutocomplete } from '@/components/ui/CustomAutocomplete';
 import { Wallet, Package, ShoppingCart, Calendar, FileText, Plus, X, ChevronRight, Receipt } from 'lucide-react';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { useScreenshotBlocker } from '@/hooks/useScreenshotBlocker';
+import SeparateReportView from './SeparateReportView';
+import AnalyticsDashboard from './AnalyticsDashboard';
 
 interface UnifiedTransaction {
   _id: string;
@@ -18,8 +21,13 @@ interface UnifiedTransaction {
   summary: string;
   user: {
     name: string;
-    portal: string;
-    position: string;
+    portal?: string;
+    position?: string;
+  };
+  receivedUser?: {
+    name: string;
+    portal?: string;
+    position?: string;
   };
   details: any;
 }
@@ -35,7 +43,7 @@ export default function AccountsPage() {
   const { isBlurred } = useScreenshotBlocker();
   const [transactions, setTransactions] = useState<UnifiedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual' | 'separate-report' | 'analytics'>('analytics');
   const [view, setView] = useState<'list' | 'form'>('list');
   
   // Manual Entry Form State
@@ -53,8 +61,14 @@ export default function AccountsPage() {
   const [exportDateRange, setExportDateRange] = useState('all');
   const [exportFromDate, setExportFromDate] = useState('');
   const [exportToDate, setExportToDate] = useState('');
+  const [receivedByFilter, setReceivedByFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [selectedTxn, setSelectedTxn] = useState<UnifiedTransaction | null>(null);
+
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<{ name: string; contact?: string } | null>(null);
+  const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
 
   const { checkPermission } = usePermissions();
   const canSubmitEntry = checkPermission('accounts_finance', 'add_transaction');
@@ -123,8 +137,53 @@ export default function AccountsPage() {
     }
   };
 
+  const uniqueCustomers = useMemo(() => {
+    const map = new Map<string, { name: string; contact?: string }>();
+    transactions.forEach(t => {
+      if (t.customerName) {
+        const key = `${t.customerName.toLowerCase()}_${(t.customerContact || '').toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            name: t.customerName,
+            contact: t.customerContact || undefined
+          });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
+    
+    if (receivedByFilter !== 'all') {
+      filtered = filtered.filter(t => t.receivedUser?.name === receivedByFilter);
+    }
+    
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(t => {
+        if (t.type === 'booking') {
+          return t.details?.bookingId?.paymentStatus === statusFilter;
+        }
+        return statusFilter === 'paid';
+      });
+    }
+
+    if (selectedCustomer) {
+      filtered = filtered.filter(t => 
+        (t.customerName || '').toLowerCase() === selectedCustomer.name.toLowerCase() &&
+        (t.customerContact || '').toLowerCase() === (selectedCustomer.contact || '').toLowerCase()
+      );
+    } else if (customerSearch.trim()) {
+      const q = customerSearch.toLowerCase();
+      const exactMatchExists = transactions.some(t => t.customerName?.toLowerCase() === q);
+      if (exactMatchExists) {
+        filtered = filtered.filter(t => t.customerName?.toLowerCase() === q);
+      } else {
+        filtered = filtered.filter(t => t.customerName?.toLowerCase().includes(q) || t.customerContact?.toLowerCase().includes(q));
+      }
+    }
+
     const now = new Date();
     
     if (exportDateRange === 'today') {
@@ -156,7 +215,7 @@ export default function AccountsPage() {
       }
     }
     return filtered;
-  }, [transactions, exportDateRange, exportFromDate, exportToDate]);
+  }, [transactions, exportDateRange, exportFromDate, exportToDate, receivedByFilter, statusFilter, customerSearch, selectedCustomer]);
 
   const exportToExcel = () => {
     const dataToExport = filteredTransactions;
@@ -170,7 +229,8 @@ export default function AccountsPage() {
         'Contact': t.customerContact || 'N/A',
         'Summary': t.summary,
         'Amount': t.amount,
-        'Processed By': t.user?.name || 'System',
+        'Processed By': t.user?.name || 'Admin',
+        'Received By': t.receivedUser?.name || '—',
         'Portal': t.user?.portal || 'System',
       };
     });
@@ -181,46 +241,77 @@ export default function AccountsPage() {
     XLSX.writeFile(workbook, `Finance_Export_${new Date().getTime()}.xlsx`);
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const dataToExport = filteredTransactions;
     if (!dataToExport.length) return showToast('No transactions in selected date range', 'error');
     
-    const doc = new jsPDF('landscape');
-    doc.setFontSize(16);
-    doc.text('Finance Transactions Export', 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 22);
-
-    let y = 35;
-    doc.setFontSize(9);
-    doc.text('Date', 14, y);
-    doc.text('Type', 40, y);
-    doc.text('Customer', 65, y);
-    doc.text('Summary', 105, y);
-    doc.text('Amount', 190, y);
-    doc.text('Processed By', 220, y);
-    
-    y += 5;
-    doc.line(14, y, 280, y);
-    y += 7;
-
-    dataToExport.forEach((t) => {
-      if (y > 190) {
-        doc.addPage();
-        y = 20;
+    // Load logo
+    let logoBase64 = '';
+    try {
+      const img = new window.Image();
+      img.src = '/logo.png';
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        logoBase64 = canvas.toDataURL('image/png');
       }
-      
-      doc.text(new Date(t.date).toLocaleDateString('en-IN'), 14, y);
-      doc.text(t.type.toUpperCase(), 40, y);
-      doc.text((t.customerName || 'N/A').substring(0, 20), 65, y);
-      doc.text(t.summary.substring(0, 45), 105, y);
-      doc.text(t.amount.toString(), 190, y);
-      doc.text((t.user?.name || 'System').substring(0, 15), 220, y);
-      
-      y += 8;
-    });
+    } catch (e) {
+      console.warn('Could not load logo for PDF', e);
+    }
 
-    doc.save(`Finance_Export_${new Date().getTime()}.pdf`);
+    const { generateStandardReport } = await import('@/lib/report-generator');
+
+    const formatCurrency = (n: number) => 'Rs.' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
+
+    const totalBookings = dataToExport.filter(t => t.type === 'booking').reduce((sum, t) => sum + t.amount, 0);
+    const totalSales = dataToExport.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0);
+    const grandTotal = dataToExport.reduce((sum, t) => sum + t.amount, 0);
+
+    let reportPeriodStr = 'All Time';
+    if (exportDateRange !== 'all') {
+       reportPeriodStr = exportDateRange === 'today' ? 'Today' : 
+                         exportDateRange === 'yesterday' ? 'Yesterday' :
+                         exportDateRange === 'last7' ? 'Last 7 Days' :
+                         exportDateRange === 'last30' ? 'Last 30 Days' :
+                         `${exportFromDate} to ${exportToDate}`;
+    }
+
+    generateStandardReport({
+      title: 'Finance Transactions Report',
+      reportPeriod: reportPeriodStr,
+      summary: [
+        { label: 'Total Booking Amount', value: formatCurrency(totalBookings) },
+        { label: 'Total Sales Amount', value: formatCurrency(totalSales) },
+        { label: 'Grand Total', value: formatCurrency(grandTotal) }
+      ],
+      columns: [
+        { header: 'Date', dataKey: 'date' },
+        { header: 'Type', dataKey: 'type' },
+        { header: 'Customer / Supplier', dataKey: 'customer' },
+        { header: 'Summary', dataKey: 'summary' },
+        { header: 'Amount', dataKey: 'amount', align: 'right' },
+        { header: 'Processed By', dataKey: 'processedBy' },
+        { header: 'Received By', dataKey: 'receivedBy' }
+      ],
+      data: dataToExport.map(t => ({
+        date: new Date(t.date).toLocaleDateString('en-IN'),
+        type: t.type.toUpperCase(),
+        customer: t.customerName || '—',
+        summary: t.summary,
+        amount: formatCurrency(Math.abs(t.amount)),
+        processedBy: t.user?.name || 'Admin',
+        receivedBy: t.receivedUser?.name || '—'
+      })),
+      filename: `Finance_Report_${new Date().getTime()}.pdf`,
+      logoBase64
+    });
   };
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
@@ -262,7 +353,7 @@ export default function AccountsPage() {
           <h1>Accounts</h1>
           <p className="page-subtitle">Centralized tracking system for Bookings, Sales, Inventory, and Manual Entries</p>
         </div>
-        {view === 'list' && (
+        {view === 'list' && !['separate-report', 'analytics'].includes(activeTab) && (
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             {canExportReports && (
               <>
@@ -289,20 +380,68 @@ export default function AccountsPage() {
       </div>
 
       {view === 'list' && (
-        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <button className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('analytics')}>Analytics Dashboard</button>
             <button className={`btn ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('all')}>All Transactions</button>
             <button className={`btn ${activeTab === 'bookings' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('bookings')}>Bookings</button>
             <button className={`btn ${activeTab === 'sales' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('sales')}>Sales</button>
             <button className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('manual')}>Manual</button>
+            <button className={`btn ${activeTab === 'separate-report' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('separate-report')}>Separate Report</button>
           </div>
           
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          {activeTab !== 'analytics' && (
+            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+              <CustomAutocomplete
+                options={uniqueCustomers}
+                value={customerSearch}
+                onChange={setCustomerSearch}
+                onSelect={setSelectedCustomer}
+                placeholder="Search Customer..."
+                style={{ width: 'auto', minWidth: '220px' }}
+              />
+              {selectedBills.size > 0 && (
+                <button 
+                  className="btn btn-primary btn-sm"
+                  onClick={async () => {
+                    const selectedData = filteredTransactions.filter(t => selectedBills.has(t._id));
+                    if (selectedData.length > 0) {
+                      const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
+                      generateConsolidatedReport(selectedData);
+                    }
+                  }}
+                  style={{ height: '36px' }}
+                >
+                  Generate Bill ({selectedBills.size})
+                </button>
+              )}
+              <select 
+              className="form-select" 
+              value={statusFilter} 
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '120px', width: 'auto' }}
+            >
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+            </select>
+            <select 
+              className="form-select" 
+              value={receivedByFilter} 
+              onChange={(e) => setReceivedByFilter(e.target.value)}
+              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px', width: 'auto' }}
+            >
+              <option value="all">All Receivers</option>
+              {Array.from(new Set(transactions.map(t => t.receivedUser?.name).filter(Boolean))).map(name => (
+                <option key={name as string} value={name as string}>{name}</option>
+              ))}
+            </select>
             <select 
               className="form-select" 
               value={exportDateRange} 
               onChange={(e) => setExportDateRange(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px' }}
+              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px', width: 'auto' }}
             >
               <option value="all">All Time</option>
               <option value="today">Today</option>
@@ -314,12 +453,13 @@ export default function AccountsPage() {
             
             {exportDateRange === 'custom' && (
               <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} />
+                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px', width: '140px' }} value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} />
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>to</span>
-                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px' }} value={exportToDate} onChange={e => setExportToDate(e.target.value)} />
+                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px', width: '140px' }} value={exportToDate} onChange={e => setExportToDate(e.target.value)} />
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -387,6 +527,20 @@ export default function AccountsPage() {
             </button>
           </div>
         </div>
+      ) : activeTab === 'separate-report' ? (
+        <SeparateReportView 
+          exportDateRange={exportDateRange} 
+          exportFromDate={exportFromDate} 
+          exportToDate={exportToDate} 
+          statusFilter={statusFilter}
+          showToast={showToast} 
+          fmt={fmt} 
+        />
+      ) : activeTab === 'analytics' ? (
+        <AnalyticsDashboard 
+          showToast={showToast} 
+          fmt={fmt} 
+        />
       ) : loading ? (
         <div className="loading-screen"><div className="spinner spinner-lg" /><div className="loading-text">Loading transactions...</div></div>
       ) : filteredTransactions.length === 0 ? (
@@ -396,40 +550,68 @@ export default function AccountsPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: '40px', textAlign: 'center' }}>
+                  <input 
+                    type="checkbox" 
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedBills(new Set(filteredTransactions.map(t => t._id)));
+                      } else {
+                        setSelectedBills(new Set());
+                      }
+                    }}
+                    checked={filteredTransactions.length > 0 && selectedBills.size === filteredTransactions.length}
+                  />
+                </th>
                 <th>Date</th>
                 <th>Type</th>
                 <th>Customer / Supplier</th>
                 <th>Summary</th>
                 <th>Amount</th>
                 <th>Processed By</th>
+                <th>Received By</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {filteredTransactions.map((t) => (
-                <tr key={t._id} onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }} className="hover-row">
-                  <td style={{ fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td>
+                <tr key={t._id} className="hover-row">
+                  <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedBills.has(t._id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedBills);
+                        if (e.target.checked) newSet.add(t._id);
+                        else newSet.delete(t._id);
+                        setSelectedBills(newSet);
+                      }}
+                    />
+                  </td>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
                     <span className={`badge ${getBadgeClass(t.type)} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
                       {getIconForType(t.type)} <span style={{ textTransform: 'capitalize' }}>{t.type}</span>
                     </span>
                   </td>
-                  <td>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
                     <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.customerName || '—'}</div>
                     {t.customerContact && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.customerContact}</div>}
                   </td>
-                  <td style={{ color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
-                  <td style={{ fontWeight: 700, color: t.type === 'restock' ? 'var(--status-warning)' : t.type === 'manual' && t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 700, color: t.type === 'restock' ? 'var(--status-warning)' : t.type === 'manual' && t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
                     {t.type === 'restock' ? '-' : t.type === 'manual' && t.amount < 0 ? '' : '+'}{fmt(Math.abs(t.amount))}
                   </td>
-                  <td>
-                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>{t.user?.name || 'System'}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
-                      {t.user?.position || t.user?.portal || 'Unknown'}
-                    </div>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                    <div style={{ fontWeight: 600 }}>{t.user?.name || 'Admin'}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.user?.position || 'Super Admin'}</div>
                   </td>
-                  <td>
-                    <button className="btn btn-ghost btn-sm btn-icon"><ChevronRight size={16} /></button>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                    <div style={{ fontWeight: 600 }}>{t.receivedUser?.name || '—'}</div>
+                    {t.receivedUser?.portal && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.receivedUser.portal}</div>}
+                  </td>
+                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', textAlign: 'right' }}>
+                    <ChevronRight size={18} color="var(--text-muted)" />
                   </td>
                 </tr>
               ))}
@@ -465,9 +647,16 @@ export default function AccountsPage() {
                 </div>
                 <div>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>Processed By</div>
-                  <div style={{ fontWeight: 500 }}>{selectedTxn.user?.name || 'System'}</div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{selectedTxn.user?.position || selectedTxn.user?.portal}</div>
+                  <div style={{ fontWeight: 500 }}>{selectedTxn.user?.name || 'Admin'}</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{selectedTxn.user?.position || selectedTxn.user?.portal || 'Super Admin'}</div>
                 </div>
+                {selectedTxn.receivedUser?.name && (
+                  <div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>Received By</div>
+                    <div style={{ fontWeight: 500, color: 'var(--status-info)' }}>{selectedTxn.receivedUser.name}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Cash Receiver</div>
+                  </div>
+                )}
                 <div>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>{selectedTxn.type === 'restock' ? 'Supplier' : 'Customer Name'}</div>
                   <div style={{ fontWeight: 500 }}>{selectedTxn.customerName || '—'}</div>
@@ -479,6 +668,24 @@ export default function AccountsPage() {
                   </div>
                 )}
               </div>
+
+              {selectedTxn.type === 'booking' && selectedTxn.details?.bookingId?.products && selectedTxn.details.bookingId.products.length > 0 && (
+                <div style={{ marginTop: 'var(--space-4)' }}>
+                  <h4 style={{ fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>Inventory Purchases</h4>
+                  {selectedTxn.details.bookingId.products.map((item: any, i: number) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--space-2)', background: 'var(--surface-primary)', border: '1px solid var(--surface-glass-border)', borderRadius: 'var(--radius-sm)', marginBottom: '4px' }}>
+                      <div>
+                        <div style={{ fontWeight: 500, fontSize: 'var(--text-sm)' }}>{item.name || item.itemId?.name} x {item.quantity}</div>
+                      </div>
+                      <div style={{ fontWeight: 600 }}>{fmt(item.price * item.quantity)}</div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--space-2)', marginTop: '4px', fontWeight: 700 }}>
+                    <div>Inventory Total</div>
+                    <div>{fmt(selectedTxn.details.bookingId.productAmount || 0)}</div>
+                  </div>
+                </div>
+              )}
 
               {selectedTxn.type === 'manual' && selectedTxn.details && (
                 <div style={{ marginTop: 'var(--space-4)' }}>

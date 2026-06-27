@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 
 interface Toast {
   id: string;
@@ -26,6 +26,26 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister().then((success) => {
+            if (success) {
+              console.log('Unregistered stale service worker');
+              if ('caches' in window) {
+                caches.keys().then((keys) => {
+                  keys.forEach((key) => caches.delete(key));
+                });
+              }
+              window.location.reload();
+            }
+          });
+        }
+      });
+    }
+  }, []);
 
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = Date.now().toString() + Math.random().toString(36).slice(2);
