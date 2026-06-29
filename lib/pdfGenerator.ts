@@ -127,6 +127,8 @@ export const generatePDF = (options: PDFOptions) => {
     });
   }
 
-  const filename = `${options.title.replace(/\s+/g, '_').toLowerCase()}_report.pdf`;
-  doc.save(filename);
+  doc.autoPrint();
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 };

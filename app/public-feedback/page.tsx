@@ -1,29 +1,52 @@
 'use client';
 
-import { useState } from 'react';
-import { Send, CheckCircle2, MessageSquare, AlertTriangle, Lightbulb, Upload } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Star, X } from 'lucide-react';
 
 export default function PublicFeedbackPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [formData, setFormData] = useState({
-    type: 'general',
-    title: '',
-    description: '',
-    guestName: '',
-    guestMobile: '',
-    attachmentUrl: ''
-  });
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [description, setDescription] = useState('');
+  const [source, setSource] = useState('qr');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const s = params.get('source');
+      if (s && ['community', 'shareholder', 'turf', 'qr'].includes(s)) {
+        setSource(s);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Require at least a rating or a description
+    if (rating === 0 && !description.trim()) {
+      alert("Please provide a rating or some feedback before submitting.");
+      return;
+    }
+    
     setLoading(true);
 
     try {
+      const type = rating <= 3 && rating > 0 ? 'complaint' : rating === 5 ? 'suggestion' : 'general';
+      const title = rating > 0 ? `${rating} Star Feedback` : 'Customer Feedback';
+
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          type,
+          title,
+          description: description || `User left a ${rating} star rating without a description.`,
+          guestName: 'Anonymous Guest',
+          source,
+          rating
+        }),
       });
 
       if (!res.ok) throw new Error('Failed to submit feedback');
@@ -36,33 +59,37 @@ export default function PublicFeedbackPage() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Placeholder for actual file upload logic
-    const file = e.target.files?.[0];
-    if (file) {
-      alert('Cloud storage is not currently configured for attachments. This feature will be available once AWS S3 or a similar service is integrated.');
-      e.target.value = ''; // Clear the input
-    }
-  };
-
   if (success) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-app)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-4)' }}>
-        <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: 'var(--space-8)' }}>
-          <div style={{ width: '64px', height: '64px', backgroundColor: 'var(--surface-primary)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--space-6)', color: 'var(--status-success)', border: '1px solid var(--status-success)' }}>
-            <CheckCircle2 size={32} />
-          </div>
-          <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Thank You!</h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-8)', lineHeight: '1.5' }}>
-            Your feedback has been submitted successfully and will be reviewed by our team.
+        <div style={{ 
+          maxWidth: '400px', width: '100%', 
+          backgroundColor: 'var(--bg-secondary)', 
+          borderRadius: '24px', 
+          padding: '40px 30px',
+          textAlign: 'center',
+          boxShadow: 'var(--shadow-xl)',
+          position: 'relative'
+        }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '16px' }}>
+            Thank you!
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '15px', lineHeight: '1.5', marginBottom: '24px' }}>
+            Your feedback has been successfully submitted. We appreciate your time!
           </p>
           <button 
-            onClick={() => { 
-              setSuccess(false); 
-              setFormData({ type: 'general', title: '', description: '', guestName: '', guestMobile: '', attachmentUrl: '' }); 
+            onClick={() => { setSuccess(false); setRating(0); setDescription(''); }}
+            style={{ 
+              width: '100%', 
+              backgroundColor: 'var(--accent-primary)', 
+              color: 'white', 
+              border: 'none', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              fontSize: '15px', 
+              fontWeight: 600, 
+              cursor: 'pointer' 
             }}
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
           >
             Submit Another
           </button>
@@ -73,133 +100,126 @@ export default function PublicFeedbackPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-app)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-4)' }}>
-      <div className="card" style={{ maxWidth: '450px', width: '100%', overflow: 'hidden', padding: 0 }}>
-        <div style={{ backgroundColor: 'var(--text-primary)', padding: 'var(--space-6)', textAlign: 'center' }}>
-          <div style={{ width: '48px', height: '48px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--space-4)', color: 'white' }}>
-            <MessageSquare size={24} />
+      <div style={{ 
+        maxWidth: '400px', width: '100%', 
+        backgroundColor: 'var(--bg-secondary)', 
+        borderRadius: '24px', 
+        padding: '40px 30px',
+        textAlign: 'center',
+        boxShadow: 'var(--shadow-xl)',
+        position: 'relative'
+      }}>
+        
+        {/* Close Button Placeholder */}
+        <button 
+          onClick={() => window.history.back()}
+          style={{ 
+            position: 'absolute', 
+            top: '20px', right: '20px', 
+            background: 'var(--bg-tertiary)', 
+            border: 'none', 
+            width: '28px', height: '28px', 
+            borderRadius: '50%', 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', 
+            cursor: 'pointer',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <X size={14} strokeWidth={3} />
+        </button>
+
+        <h1 style={{ 
+          fontSize: '24px', 
+          fontWeight: 800, 
+          color: 'var(--text-primary)', 
+          lineHeight: '1.2',
+          marginBottom: '16px',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        }}>
+          We appreciate your<br/>feedback.
+        </h1>
+        
+        <p style={{ 
+          color: 'var(--text-secondary)', 
+          fontSize: '15px', 
+          lineHeight: '1.5', 
+          marginBottom: '32px'
+        }}>
+          We are always looking for ways to improve your experience. 
+          Please take a moment to evaluate and tell us what you think.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          {/* Star Rating */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' }}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRating(star)}
+                onMouseEnter={() => setHoverRating(star)}
+                onMouseLeave={() => setHoverRating(0)}
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  cursor: 'pointer', 
+                  padding: 0,
+                  color: (hoverRating || rating) >= star ? 'var(--text-primary)' : 'var(--text-primary)',
+                  transition: 'transform 0.1s'
+                }}
+              >
+                <Star 
+                  size={32} 
+                  strokeWidth={2}
+                  fill={(hoverRating || rating) >= star ? 'var(--text-primary)' : 'none'} 
+                />
+              </button>
+            ))}
           </div>
-          <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'white', marginBottom: '4px' }}>Oval Turf Feedback</h1>
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 'var(--text-sm)' }}>We value your opinion to help us improve</p>
-        </div>
 
-        <div style={{ padding: 'var(--space-6)' }}>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-            
-            <div className="form-group">
-              <label className="form-label required">Full Name</label>
-              <input
-                type="text"
-                required
-                value={formData.guestName}
-                onChange={(e) => setFormData({ ...formData, guestName: e.target.value })}
-                className="form-input"
-                placeholder="Enter your name"
-              />
-            </div>
+          <div style={{ position: 'relative', marginBottom: '24px' }}>
+            <textarea
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What can we do to improve your experience?"
+              style={{
+                width: '100%',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid var(--surface-glass-border)',
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                fontSize: '14px',
+                resize: 'none',
+                outline: 'none',
+                fontFamily: 'inherit'
+              }}
+            />
+            {/* Optional decorative asterisk style like in the image */}
+            <div style={{ position: 'absolute', top: '-6px', right: '-6px', color: 'var(--text-muted)' }}>✱</div>
+          </div>
 
-            <div className="form-group">
-              <label className="form-label">Mobile Number (Optional)</label>
-              <input
-                type="tel"
-                value={formData.guestMobile}
-                onChange={(e) => setFormData({ ...formData, guestMobile: e.target.value })}
-                className="form-input"
-                placeholder="Enter your mobile number"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">What is this regarding?</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'complaint' })}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)', border: '2px solid', transition: 'all 0.2s',
-                    borderColor: formData.type === 'complaint' ? 'var(--status-danger)' : 'var(--surface-glass-border)',
-                    backgroundColor: formData.type === 'complaint' ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
-                    color: formData.type === 'complaint' ? 'var(--status-danger)' : 'var(--text-secondary)'
-                  }}
-                >
-                  <AlertTriangle size={20} style={{ marginBottom: '8px' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 600 }}>Complaint</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'suggestion' })}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)', border: '2px solid', transition: 'all 0.2s',
-                    borderColor: formData.type === 'suggestion' ? 'var(--status-warning)' : 'var(--surface-glass-border)',
-                    backgroundColor: formData.type === 'suggestion' ? 'rgba(245, 158, 11, 0.05)' : 'transparent',
-                    color: formData.type === 'suggestion' ? 'var(--status-warning)' : 'var(--text-secondary)'
-                  }}
-                >
-                  <Lightbulb size={20} style={{ marginBottom: '8px' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 600 }}>Suggestion</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'general' })}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)', border: '2px solid', transition: 'all 0.2s',
-                    borderColor: formData.type === 'general' ? 'var(--status-info)' : 'var(--surface-glass-border)',
-                    backgroundColor: formData.type === 'general' ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                    color: formData.type === 'general' ? 'var(--status-info)' : 'var(--text-secondary)'
-                  }}
-                >
-                  <MessageSquare size={20} style={{ marginBottom: '8px' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 600 }}>General</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Subject</label>
-              <input
-                type="text"
-                required
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="form-input"
-                placeholder="Brief summary..."
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Description</label>
-              <textarea
-                required
-                rows={4}
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="form-input"
-                style={{ resize: 'none' }}
-                placeholder="Please provide details..."
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Attachment (Optional)</label>
-              <div style={{ border: '1px dashed var(--surface-glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', textAlign: 'center', cursor: 'pointer' }}>
-                <Upload size={24} style={{ margin: '0 auto var(--space-2)', color: 'var(--text-muted)' }} />
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Click to upload a file</span>
-                <input type="file" onChange={handleFileChange} style={{ opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={`btn btn-primary btn-lg ${loading ? 'btn-loading' : ''}`}
-              style={{ width: '100%', marginTop: 'var(--space-2)' }}
-            >
-              {!loading && <><Send size={18} /> Submit Feedback</>}
-            </button>
-          </form>
-        </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              backgroundColor: 'var(--accent-primary)',
+              color: 'white',
+              border: 'none',
+              padding: '14px',
+              borderRadius: '8px',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'opacity 0.2s'
+            }}
+          >
+            {loading ? 'Submitting...' : 'Submit My Feedback'}
+          </button>
+        </form>
       </div>
     </div>
   );

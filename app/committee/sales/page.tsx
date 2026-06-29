@@ -1,4 +1,4 @@
-import SalesPage from '../../superadmin/sales/page';
+import SalesPage from '../../superadmin/sales/manage/page';
 import PermissionScopedAdminPage from '../_components/PermissionScopedAdminPage';
 
 export default function CommitteeSalesPage() {

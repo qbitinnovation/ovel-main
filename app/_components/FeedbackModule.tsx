@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { 
   MessageSquare, AlertTriangle, Lightbulb, Clock, CheckCircle2, 
-  XCircle, Filter, Search, User, QrCode, X, Calendar, Download, Send, FileText, Plus 
+  XCircle, Filter, Search, User, QrCode, X, Calendar, Download, Send, FileText, Plus, Star 
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
+import { generatePDF } from '@/lib/pdfGenerator';
 
 interface Feedback {
   _id: string;
@@ -20,10 +21,11 @@ interface Feedback {
   assignedTo?: { _id: string, name: string, email: string };
   assignedBy?: { _id: string, name: string, email: string };
   comments: Array<{ _id: string, user: { _id: string, name: string }, text: string, createdAt: string }>;
-  source?: 'portal' | 'qr';
+  source?: 'community' | 'shareholder' | 'turf' | 'qr';
   guestName?: string;
   guestMobile?: string;
   attachmentUrl?: string;
+  rating?: number;
 }
 
 interface AssignableUser {
@@ -33,6 +35,13 @@ interface AssignableUser {
   portalType: string;
 }
 
+const getSourceLabel = (src?: string) => {
+  if (src === 'community') return 'Community Members Feedback';
+  if (src === 'shareholder') return 'Shareholders Feedback';
+  if (src === 'turf') return 'Turf Manager Feedback';
+  return 'QR Code Feedback';
+};
+
 export default function FeedbackModule() {
   const { data: session } = useSession();
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
@@ -41,6 +50,7 @@ export default function FeedbackModule() {
   const [filter, setFilter] = useState('all'); // all, open, resolved
   const [search, setSearch] = useState('');
   const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedQRTab, setSelectedQRTab] = useState<'community' | 'shareholder' | 'turf' | 'qr'>('qr');
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [assignRoleFilters, setAssignRoleFilters] = useState<Record<string, string>>({});
   const [selectedItem, setSelectedItem] = useState<Feedback | null>(null);
@@ -164,9 +174,9 @@ export default function FeedbackModule() {
   const exportCSV = () => {
     const headers = ['Type,Title,Status,Priority,Source,Submitted By,Mobile,Assigned To,Created At'];
     const rows = feedbacks.map(f => {
-      const submitterName = f.source === 'qr' ? f.guestName : (f.submittedBy?.name || 'Anonymous');
+      const submitterName = f.submittedBy ? f.submittedBy.name : (f.guestName || 'Anonymous Guest');
       const mobile = f.guestMobile || 'N/A';
-      return `"${f.type}","${f.title}","${f.status}","${f.priority}","${f.source || 'portal'}","${submitterName}","${mobile}","${f.assignedTo?.name || 'Unassigned'}","${new Date(f.createdAt).toLocaleString()}"`;
+      return `"${f.type}","${f.title}","${f.status}","${f.priority}","${getSourceLabel(f.source)}","${submitterName}","${mobile}","${f.assignedTo?.name || 'Unassigned'}","${new Date(f.createdAt).toLocaleString()}"`;
     });
     
     const csvContent = headers.concat(rows).join('\n');
@@ -181,7 +191,36 @@ export default function FeedbackModule() {
   };
 
   const exportPDF = () => {
-    window.print();
+    const tableRows = filtered.map(f => {
+      const submitterName = f.submittedBy ? f.submittedBy.name : (f.guestName || 'Anonymous Guest');
+      return [
+        new Date(f.createdAt).toLocaleDateString(),
+        f.type.toUpperCase(),
+        f.title,
+        f.status.replace('_', ' ').toUpperCase(),
+        submitterName || 'N/A'
+      ];
+    });
+
+    generatePDF({
+      title: 'Feedback Management Report',
+      dateRange: 'All Time',
+      metrics: [
+        { label: 'Total Feedback', value: totalFeedback },
+        { label: 'Total Ratings', value: totalRatings },
+        { label: 'Complaints', value: totalComplaints },
+        { label: 'Suggestions', value: totalSuggestions },
+        { label: 'Open', value: openItems },
+        { label: 'Resolved', value: resolvedItems },
+      ],
+      tables: [
+        {
+          title: 'Feedback List',
+          headers: ['Date', 'Type', 'Title', 'Status', 'Submitted By'],
+          rows: tableRows
+        }
+      ]
+    });
   };
 
   const filtered = feedbacks.filter(f => {
@@ -200,6 +239,7 @@ export default function FeedbackModule() {
 
   // Admin Dashboard Metrics
   const totalFeedback = feedbacks.length;
+  const totalRatings = feedbacks.filter(f => f.rating && f.rating > 0).length;
   const totalComplaints = feedbacks.filter(f => f.type === 'complaint').length;
   const totalSuggestions = feedbacks.filter(f => f.type === 'suggestion').length;
   const openItems = feedbacks.filter(f => f.status === 'open').length;
@@ -250,7 +290,7 @@ export default function FeedbackModule() {
       </div>
 
       {isAdmin && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }} className="print-hide">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }} className="print-hide">
           <div className="stat-card">
             <div className="stat-label">Total Feedback</div>
             <div className="stat-value">{totalFeedback}</div>
@@ -262,6 +302,10 @@ export default function FeedbackModule() {
           <div className="stat-card">
             <div className="stat-label">Suggestions</div>
             <div className="stat-value" style={{ color: 'var(--status-warning)' }}>{totalSuggestions}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Total Ratings</div>
+            <div className="stat-value" style={{ color: 'var(--status-warning)' }}>{totalRatings}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Open</div>
@@ -281,21 +325,21 @@ export default function FeedbackModule() {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', justifyContent: 'space-between', alignItems: 'center' }} className="print-hide">
           <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-elevated)', padding: '4px', borderRadius: 'var(--radius-lg)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <button 
-              className={`btn ${filter === 'all' ? 'btn-primary' : 'btn-ghost'}`} 
+              className={`btn btn-sm ${filter === 'all' ? 'btn-primary' : 'btn-ghost'}`} 
               onClick={() => setFilter('all')}
               style={{ borderRadius: 'var(--radius-md)' }}
             >
               All
             </button>
             <button 
-              className={`btn ${filter === 'open' ? 'btn-primary' : 'btn-ghost'}`} 
+              className={`btn btn-sm ${filter === 'open' ? 'btn-primary' : 'btn-ghost'}`} 
               onClick={() => setFilter('open')}
               style={{ borderRadius: 'var(--radius-md)', color: filter === 'open' ? 'white' : 'var(--status-success)' }}
             >
               Open
             </button>
             <button 
-              className={`btn ${filter === 'resolved' ? 'btn-primary' : 'btn-ghost'}`} 
+              className={`btn btn-sm ${filter === 'resolved' ? 'btn-primary' : 'btn-ghost'}`} 
               onClick={() => setFilter('resolved')}
               style={{ borderRadius: 'var(--radius-md)', color: filter === 'resolved' ? 'white' : 'var(--text-secondary)' }}
             >
@@ -351,12 +395,29 @@ export default function FeedbackModule() {
                   <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {item.title}
                   </h3>
+                  {item.rating && item.rating > 0 ? (
+                    <div style={{ display: 'flex', gap: '2px', marginBottom: '8px' }}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star 
+                          key={star} 
+                          size={14} 
+                          fill={item.rating! >= star ? 'var(--status-warning)' : 'none'} 
+                          color={item.rating! >= star ? 'var(--status-warning)' : 'var(--text-muted)'} 
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {item.description}
                   </div>
                   
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                    {item.source === 'qr' ? 'QR Guest' : (item.submittedBy?.name || 'Anonymous')} | {new Date(item.createdAt).toLocaleDateString()}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: 'var(--space-2)' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {getSourceLabel(item.source)}
+                    </div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                      {item.submittedBy ? `${item.submittedBy.name} (${item.submittedBy.email})` : 'Anonymous Guest'} • {new Date(item.createdAt).toLocaleDateString()}
+                    </div>
                   </div>
                 </div>
 
@@ -390,11 +451,10 @@ export default function FeedbackModule() {
                     </span>
                   )}
 
-                  {activeItem.source === 'qr' && (
-                    <span className="badge badge-neutral badge-dot" style={{ textTransform: 'uppercase', fontSize: '10px', background: 'var(--bg-tertiary)' }}>
-                      <QrCode size={10} style={{ marginRight: '4px' }} /> Source: QR Feedback
-                    </span>
-                  )}
+                  <span className="badge badge-neutral badge-dot" style={{ textTransform: 'uppercase', fontSize: '10px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {activeItem.source === 'qr' ? <QrCode size={10} /> : <User size={10} />}
+                    Source: {getSourceLabel(activeItem.source)}
+                  </span>
 
                   <span className={`badge ${activeItem.status === 'resolved' || activeItem.status === 'closed' ? 'badge-success' : activeItem.status === 'in_progress' ? 'badge-warning' : 'badge-neutral'}`} style={{ textTransform: 'uppercase', fontSize: '10px' }}>
                     {activeItem.status.replace('_', ' ')}
@@ -406,20 +466,32 @@ export default function FeedbackModule() {
               <div className="modal-body" style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
 
               <h3 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>{activeItem.title}</h3>
+              {activeItem.rating && activeItem.rating > 0 ? (
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star 
+                      key={star} 
+                      size={18} 
+                      fill={activeItem.rating! >= star ? 'var(--status-warning)' : 'none'} 
+                      color={activeItem.rating! >= star ? 'var(--status-warning)' : 'var(--text-muted)'} 
+                    />
+                  ))}
+                </div>
+              ) : null}
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: '1.6', marginBottom: 'var(--space-4)' }}>{activeItem.description}</p>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: 'var(--space-6)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /> {new Date(activeItem.createdAt).toLocaleString()}</span>
                 {isAdmin && (
-                  activeItem.source === 'qr' ? (
+                  activeItem.submittedBy ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <User size={12} /> By: {activeItem.guestName || 'Anonymous'} (QR Guest)
+                      <User size={12} /> By: {activeItem.submittedBy.name} ({activeItem.submittedBy.email})
+                    </span>
+                  ) : (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <User size={12} /> By: {activeItem.guestName || 'Anonymous Guest'} (QR Code Portal)
                       {activeItem.guestMobile && <span style={{ marginLeft: '8px' }}>📞 {activeItem.guestMobile}</span>}
                     </span>
-                  ) : activeItem.submittedBy ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> By: {activeItem.submittedBy.name}</span>
-                  ) : (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> Anonymous (System)</span>
                   )
                 )}
               </div>
@@ -472,10 +544,12 @@ export default function FeedbackModule() {
                     ))}
                   </div>
                 ) : (
-                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>No replies yet.</p>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
+                    {!activeItem.submittedBy ? 'Replies are disabled for guest/anonymous feedback.' : 'No replies yet.'}
+                  </p>
                 )}
 
-                {isAdmin && activeItem.status !== 'closed' && (
+                {isAdmin && activeItem.status !== 'closed' && activeItem.submittedBy && (
                   <div style={{ display: 'flex', gap: 'var(--space-2)' }} className="print-hide">
                     <input 
                       type="text" 
@@ -547,12 +621,30 @@ export default function FeedbackModule() {
 
       {showQRModal && (
         <div className="modal-backdrop" onClick={() => setShowQRModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Player Feedback QR</h3>
+              <h3 className="modal-title">Feedback QR Portals</h3>
               <button className="modal-close" onClick={() => setShowQRModal(false)}><X size={20} /></button>
             </div>
-            <div className="modal-body" style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-4)' }}>
+            <div className="modal-body" style={{ textAlign: 'center', padding: 'var(--space-6) var(--space-4)' }}>
+              {/* Tab Selector */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: 'var(--space-6)', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+                {(['qr', 'community', 'shareholder', 'turf'] as const).map((tab) => {
+                  const label = tab === 'qr' ? 'Player/QR' : tab === 'community' ? 'Community' : tab === 'shareholder' ? 'Shareholder' : 'Turf Manager';
+                  const active = selectedQRTab === tab;
+                  return (
+                    <button 
+                      key={tab}
+                      onClick={() => setSelectedQRTab(tab)}
+                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ flex: '1 1 auto', fontSize: '11px', padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div style={{ 
                 border: '4px solid var(--text-primary)', 
                 padding: 'var(--space-4)', 
@@ -562,14 +654,17 @@ export default function FeedbackModule() {
                 marginBottom: 'var(--space-4)'
               }}>
                 <QRCodeCanvas 
-                  value={`${window.location.origin}/public-feedback`}
+                  value={`${window.location.origin}/public-feedback?source=${selectedQRTab}`}
                   size={200}
                   level={"H"}
                   includeMargin={false}
                 />
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: '1.5' }}>
-                Print this QR code and place it at the Turf. Players can scan it to submit feedback anonymously.
+                {selectedQRTab === 'qr' && "Print this QR code to collect anonymous Player Feedback. This portal does not support replies."}
+                {selectedQRTab === 'community' && "Print this QR code to collect feedback specifically from Community Members."}
+                {selectedQRTab === 'shareholder' && "Print this QR code to collect feedback specifically from Shareholders."}
+                {selectedQRTab === 'turf' && "Print this QR code to collect feedback specifically from Turf Managers."}
               </p>
             </div>
             <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>

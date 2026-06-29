@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { CustomAutocomplete } from '@/components/ui/CustomAutocomplete';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 import {
   Calendar, Check, CheckCircle, ChevronRight, Clock, FileText, IndianRupee,
@@ -148,6 +149,10 @@ export default function ManageBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [pricing, setPricing] = useState<TurfPricingConfig>(DEFAULT_TURF_PRICING_CONFIG);
   const [pricingLoading, setPricingLoading] = useState(true);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -170,6 +175,20 @@ export default function ManageBookingsPage() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [users, setUsers] = useState<any[]>([]);
+
+  // Bulk Billing & Payment State
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<{ name: string; contact?: string } | null>(null);
+  const [selectedBulkBookings, setSelectedBulkBookings] = useState<Set<string>>(new Set());
+  
+  const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
+  const [bulkPaymentDate, setBulkPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkDiscountType, setBulkDiscountType] = useState<'percentage' | 'flat'>('percentage');
+  const [bulkDiscountInput, setBulkDiscountInput] = useState<number | ''>('');
+  const [bulkPaymentSplits, setBulkPaymentSplits] = useState<PaymentSplit[]>([
+    { amount: '', paymentMode: 'cash', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }
+  ]);
+  const [savingBulkPayment, setSavingBulkPayment] = useState(false);
 
   // Edit Booking Modal State
   const [showEditModal, setShowEditModal] = useState(false);
@@ -287,6 +306,74 @@ export default function ManageBookingsPage() {
     fetchBookings();
   }, [fetchBookings]);
 
+  // Reset pagination on filter or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [customerSearch, selectedCustomer, startDate, endDate, paymentStatus, facilityFilter]);
+
+  const uniqueCustomers = useMemo(() => {
+    const map = new Map<string, { name: string; contact?: string }>();
+    bookings.forEach(t => {
+      if (t.customerName) {
+        const key = `${t.customerName.toLowerCase()}_${(t.contactNumber || '').toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            name: t.customerName,
+            contact: t.contactNumber || undefined
+          });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [bookings]);
+
+  const filteredBookings = useMemo(() => {
+    let filtered = [...bookings];
+    if (selectedCustomer) {
+      filtered = filtered.filter(t => 
+        (t.customerName || '').toLowerCase() === selectedCustomer.name.toLowerCase() &&
+        (t.contactNumber || '').toLowerCase() === (selectedCustomer.contact || '').toLowerCase()
+      );
+    } else if (customerSearch.trim()) {
+      const q = customerSearch.toLowerCase();
+      const exactMatchExists = bookings.some(t => t.customerName?.toLowerCase() === q);
+      if (exactMatchExists) {
+        filtered = filtered.filter(t => t.customerName?.toLowerCase() === q);
+      } else {
+        filtered = filtered.filter(t => t.customerName?.toLowerCase().includes(q) || t.contactNumber?.toLowerCase().includes(q));
+      }
+    }
+    return filtered;
+  }, [bookings, customerSearch, selectedCustomer]);
+
+  const totalPages = Math.ceil(filteredBookings.length / pageSize);
+  const paginatedBookings = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredBookings.slice(start, start + pageSize);
+  }, [filteredBookings, currentPage, pageSize]);
+
+  // We only want to process unpaid bookings for the bulk payment
+  const unpaidSelectedBookings = useMemo(() => {
+    return filteredBookings.filter(b => selectedBulkBookings.has(b._id) && b.paymentStatus !== 'paid');
+  }, [filteredBookings, selectedBulkBookings]);
+
+  // Bulk Payment calculations
+  const bulkTotalExpected = useMemo(() => {
+    return unpaidSelectedBookings
+      .reduce((sum, b) => sum + b.expectedAmount, 0);
+  }, [unpaidSelectedBookings]);
+
+  const bulkTotalPaidSoFar = useMemo(() => {
+    return unpaidSelectedBookings
+      .reduce((sum, b) => sum + (b.totalPaid || 0), 0);
+  }, [unpaidSelectedBookings]);
+
+  const bulkDInput = Number(bulkDiscountInput) || 0;
+  const bulkDiscountAmt = bulkDiscountType === 'percentage' ? Math.round((bulkTotalExpected * bulkDInput) / 100) : bulkDInput;
+  const bulkFinalPayable = Math.max(0, bulkTotalExpected - bulkDiscountAmt);
+  const bulkPendingAmount = Math.max(0, bulkFinalPayable - bulkTotalPaidSoFar);
+  const bulkTotalEntered = bulkPaymentSplits.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+
   const fetchEditBookedSlots = useCallback(async (dateStr: string) => {
     if (!dateStr) return;
     setEditBookedLoading(true);
@@ -349,6 +436,37 @@ export default function ManageBookingsPage() {
       return prev;
     });
   }, [pendingAmount]);
+
+  useEffect(() => {
+    if (bulkPaymentSplits.length === 0) return;
+    setBulkPaymentSplits(prev => {
+      if (prev.length === 0) return prev;
+      if (prev.length === 1) {
+        if (prev[0].amount !== (bulkPendingAmount > 0 ? bulkPendingAmount : '')) {
+          return [{ ...prev[0], amount: bulkPendingAmount > 0 ? bulkPendingAmount : '' }];
+        }
+        return prev;
+      }
+      
+      const sumExceptFirst = prev.reduce((sum, split, i) => {
+        if (i === 0) return sum;
+        return sum + (Number(split.amount) || 0);
+      }, 0);
+      
+      const newFirstAmount = Math.max(0, bulkPendingAmount - sumExceptFirst);
+      const formattedFirstAmount = newFirstAmount > 0 ? newFirstAmount : '';
+      if (prev[0].amount !== formattedFirstAmount) {
+        const newSplits = [...prev];
+        newSplits[0] = {
+          ...prev[0],
+          amount: formattedFirstAmount
+        };
+        return newSplits;
+      }
+      
+      return prev;
+    });
+  }, [bulkPendingAmount]);
 
   const handleRowClick = async (booking: Booking) => {
     setSelectedBooking(booking);
@@ -444,6 +562,59 @@ export default function ManageBookingsPage() {
     });
   };
 
+  const addBulkSplit = () => {
+    setBulkPaymentSplits(prev => {
+      const currentTotal = prev.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+      const remaining = Math.max(0, bulkPendingAmount - currentTotal);
+      return [...prev, { amount: remaining > 0 ? remaining : '', paymentMode: 'cash', referenceNumber: '', cashReceivedBy: '', referenceNote: '' }];
+    });
+  };
+
+  const removeBulkSplit = (index: number) => {
+    if (bulkPaymentSplits.length === 1) return;
+    setBulkPaymentSplits(prev => {
+      if (prev.length <= 1) return prev;
+      const removedAmount = Number(prev[index].amount) || 0;
+      const targetIndex = index === 0 ? 1 : 0;
+      
+      return (prev
+        .map((split, i) => {
+          if (i === targetIndex) {
+            const currentAmount = Number(split.amount) || 0;
+            const updatedAmount = currentAmount + removedAmount;
+            return {
+              ...split,
+              amount: updatedAmount > 0 ? updatedAmount : ''
+            };
+          }
+          return split;
+        })
+        .filter((_, i) => i !== index)) as PaymentSplit[];
+    });
+  };
+
+  const updateBulkSplit = (index: number, field: keyof PaymentSplit, value: any) => {
+    setBulkPaymentSplits(prev => {
+      const newSplits = [...prev];
+      newSplits[index] = { ...newSplits[index], [field]: value };
+
+      if (field === 'amount' && prev.length > 1) {
+        const targetIndex = index !== 0 ? 0 : prev.length - 1;
+        const sumExceptTarget = newSplits.reduce((sum, split, i) => {
+          if (i === targetIndex) return sum;
+          return sum + (Number(split.amount) || 0);
+        }, 0);
+        const remainingForTarget = Math.max(0, bulkPendingAmount - sumExceptTarget);
+        newSplits[targetIndex] = {
+          ...newSplits[targetIndex],
+          amount: remainingForTarget > 0 ? remainingForTarget : ''
+        };
+      }
+
+      return newSplits;
+    });
+  };
+
   const handlePaymentSubmit = async () => {
     if (!selectedBooking) return;
 
@@ -504,6 +675,72 @@ export default function ManageBookingsPage() {
       showToast(error.message, 'error');
     } finally {
       setSavingPayment(false);
+    }
+  };
+
+  const handleBulkPaymentSubmit = async () => {
+    if (selectedBulkBookings.size === 0) return;
+
+    let totalSplitAmount = 0;
+    for (const split of bulkPaymentSplits) {
+      const amt = Number(split.amount) || 0;
+      if (amt < 0) return showToast('Amount cannot be negative', 'error');
+      if (split.paymentMode === 'cash' && !split.cashReceivedBy) {
+        return showToast('Cash Received By is required for cash payments', 'error');
+      }
+      totalSplitAmount += amt;
+    }
+
+    setSavingBulkPayment(true);
+    try {
+      let finalDiscountAmount = 0;
+      let finalDiscountPct = 0;
+      const dInput = Number(bulkDiscountInput) || 0;
+
+      const bulkBaseAmount = unpaidSelectedBookings
+        .reduce((sum, b) => sum + b.expectedAmount, 0);
+      
+      if (dInput > 0) {
+        if (bulkDiscountType === 'percentage') {
+          finalDiscountPct = dInput;
+          finalDiscountAmount = Math.round((bulkBaseAmount * dInput) / 100);
+        } else {
+          finalDiscountAmount = dInput;
+        }
+      }
+
+      const payload = {
+        bookingIds: unpaidSelectedBookings.map(b => b._id),
+        amountPaid: totalSplitAmount,
+        paymentMode: bulkPaymentSplits.length === 1 ? bulkPaymentSplits[0].paymentMode : 'split',
+        paymentDate: bulkPaymentDate,
+        discountAmount: finalDiscountAmount,
+        discountPercentage: finalDiscountPct,
+        splits: bulkPaymentSplits.map(s => ({
+          ...s,
+          amount: Number(s.amount) || 0
+        }))
+      };
+
+      const res = await fetch(`/api/bookings/bulk-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Bulk payment recorded successfully');
+        setShowBulkPaymentModal(false);
+        setSelectedBulkBookings(new Set());
+        fetchBookings();
+      } else {
+        throw new Error(data.message || 'Failed to record bulk payment');
+      }
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setSavingBulkPayment(false);
     }
   };
   const openAddonsModal = async () => {
@@ -581,9 +818,9 @@ export default function ManageBookingsPage() {
     }
   };
   const exportToExcel = () => {
-    if (!bookings.length) return showToast('No bookings to export', 'error');
+    if (!filteredBookings.length) return showToast('No bookings to export', 'error');
     
-    const exportData = bookings.map(b => {
+    const exportData = filteredBookings.map(b => {
       const dateStr = getDateStr(String(b.bookingDate));
       return {
         'Booking ID': b._id.substring(b._id.length - 6).toUpperCase(),
@@ -607,7 +844,7 @@ export default function ManageBookingsPage() {
   };
 
   const exportToPDF = async () => {
-    if (!bookings.length) return showToast('No bookings to export', 'error');
+    if (!filteredBookings.length) return showToast('No bookings to export', 'error');
     
     let logoBase64 = '';
     try {
@@ -633,9 +870,9 @@ export default function ManageBookingsPage() {
 
     const formatCurrency = (n: number) => 'Rs.' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
 
-    const totalBookings = bookings.length;
-    const totalAmount = bookings.reduce((sum, b) => sum + b.expectedAmount, 0);
-    const totalPaid = bookings.reduce((sum, b) => sum + (b.totalPaid || 0), 0);
+    const totalBookings = filteredBookings.length;
+    const totalAmount = filteredBookings.reduce((sum, b) => sum + b.expectedAmount, 0);
+    const totalPaid = filteredBookings.reduce((sum, b) => sum + (b.totalPaid || 0), 0);
 
     let reportPeriodStr = 'All Time';
     if (startDate || endDate) {
@@ -660,7 +897,7 @@ export default function ManageBookingsPage() {
         { header: 'Pending', dataKey: 'pending', align: 'right' },
         { header: 'Status', dataKey: 'status' }
       ],
-      data: bookings.map(b => {
+      data: filteredBookings.map(b => {
         const dateStr = getDateStr(String(b.bookingDate));
         const pending = Math.max(0, b.expectedAmount - (b.totalPaid || 0));
         return {
@@ -926,14 +1163,25 @@ export default function ManageBookingsPage() {
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
         <div className="card-body" style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ flex: '1 1 200px' }}>
+            <label className="form-label">Search Customer</label>
+            <CustomAutocomplete
+              options={uniqueCustomers}
+              value={customerSearch}
+              onChange={setCustomerSearch}
+              onSelect={setSelectedCustomer}
+              placeholder="Search by name or number..."
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label className="form-label">From Date</label>
             <CustomDatePicker value={startDate} onChange={setStartDate} placeholder="Any date" />
           </div>
-          <div className="form-group" style={{ flex: '1 1 200px' }}>
+          <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label className="form-label">To Date</label>
             <CustomDatePicker value={endDate} onChange={setEndDate} placeholder="Any date" />
           </div>
-          <div className="form-group" style={{ flex: '1 1 200px' }}>
+          <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label className="form-label">Payment Status</label>
             <CustomSelect
               options={[
@@ -949,6 +1197,70 @@ export default function ManageBookingsPage() {
         </div>
       </div>
 
+      {selectedBulkBookings.size > 0 && (
+        <div style={{ padding: 'var(--space-3)', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontWeight: 600 }}>{selectedBulkBookings.size}</span> bookings selected
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button 
+              className="btn btn-secondary btn-sm"
+              onClick={async () => {
+                const selectedData = filteredBookings
+                  .filter(b => selectedBulkBookings.has(b._id))
+                  .map(b => ({
+                    _id: b._id,
+                    type: 'booking',
+                    date: b.bookingDate || new Date().toISOString(),
+                    amount: b.expectedAmount,
+                    customerName: b.customerName,
+                    customerContact: b.contactNumber,
+                    summary: `Booking for ${b.bookingType === 'bulk' ? 'Bulk Order' : (b.startTime + ' - ' + b.endTime)}`,
+                  }));
+                if (selectedData.length > 0) {
+                  const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
+                  generateConsolidatedReport(selectedData);
+                }
+              }}
+            >
+              Generate Bill
+            </button>
+            {canManageBookings && (
+              <button 
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  if (unpaidSelectedBookings.length === 0) {
+                    showToast('Selected bookings are already fully paid', 'error');
+                    return;
+                  }
+                  
+                  const totalPending = unpaidSelectedBookings.reduce((sum, b) => Math.max(0, sum + (b.expectedAmount - (b.discountAmount || 0) - (b.totalPaid || 0))), 0);
+                  
+                  if (totalPending <= 0) {
+                    showToast('Selected bookings are already fully paid', 'error');
+                    return;
+                  }
+                  
+                  setBulkPaymentSplits([{ 
+                    amount: totalPending, 
+                    paymentMode: 'cash', 
+                    referenceNumber: '', 
+                    cashReceivedBy: '', 
+                    referenceNote: '' 
+                  }]);
+                  setBulkDiscountInput('');
+                  setBulkDiscountType('percentage');
+                  setBulkPaymentDate(new Date().toISOString().split('T')[0]);
+                  setShowBulkPaymentModal(true);
+                }}
+              >
+                Pay Multiple
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="card">
         {loading ? (
           <div className="loading-screen"><div className="spinner spinner-lg" /></div>
@@ -959,64 +1271,158 @@ export default function ManageBookingsPage() {
             <div className="empty-state-description">Adjust your filters to see more results.</div>
           </div>
         ) : (
-          <div className="data-table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Booking Details</th>
-                  <th>Customer</th>
-                  <th>Total Amount</th>
-                  <th>Paid Amount</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.map((b) => {
-                  const isPaid = b.paymentStatus === 'paid';
-                  return (
-                    <tr key={b._id} onClick={() => handleRowClick(b)} style={{ cursor: 'pointer' }} className="hover-row">
-                      <td>
-                        <div style={{ fontWeight: 600 }}>
-                          {b.bookingType === 'bulk' && b.allDates && b.allDates.length > 1
-                            ? b.allDates.map(d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')
-                            : b.bookingDate ? new Date(b.bookingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Bulk Booking'}
-                        </div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                          {b.bookingType === 'bulk' ? `Bulk Order (${b.allDates?.length || 1} dates)` : `${b.startTime} - ${b.endTime}`}
-                        </div>
-                        <span className="badge badge-neutral" style={{ marginTop: 'var(--space-1)', fontSize: '10px' }}>
-                          {b.facility === 'nets_with_machine' ? 'Nets (Machine)' : b.facility === 'nets_without_machine' ? 'Nets (No Machine)' : 'Turf'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 500 }}>{b.customerName || 'Walk-in'}</div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{b.contactNumber || 'No contact'}</div>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{fmt(b.expectedAmount - (b.discountAmount || 0))}</td>
-                      <td style={{ color: isPaid ? 'var(--status-success)' : 'inherit' }}>{fmt(b.totalPaid)}</td>
-                      <td>
-                        <span className={`badge badge-${isPaid ? 'success' : b.paymentStatus === 'partial' ? 'warning' : 'danger'}`}>
-                          {b.paymentStatus.toUpperCase()}
-                        </span>
-                      </td>
-                      <td>
-                        {canManageBookings && (
-                          <button 
-                            className="btn btn-primary btn-sm" 
-                            onClick={(e) => openPaymentModal(b, e)}
-                            disabled={isPaid}
-                          >
-                            <IndianRupee size={14} /> Pay
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="data-table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedBulkBookings(new Set(filteredBookings.map(t => t._id)));
+                          } else {
+                            setSelectedBulkBookings(new Set());
+                          }
+                        }}
+                        checked={filteredBookings.length > 0 && selectedBulkBookings.size === filteredBookings.length}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
+                    <th>Booking Details</th>
+                    <th>Customer</th>
+                    <th>Total Amount</th>
+                    <th>Paid Amount</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedBookings.map((b) => {
+                    const isPaid = b.paymentStatus === 'paid';
+                    return (
+                      <tr key={b._id} onClick={() => handleRowClick(b)} style={{ cursor: 'pointer' }} className="hover-row">
+                        <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedBulkBookings.has(b._id)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedBulkBookings);
+                              if (e.target.checked) newSet.add(b._id);
+                              else newSet.delete(b._id);
+                              setSelectedBulkBookings(newSet);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>
+                            {b.bookingType === 'bulk' && b.allDates && b.allDates.length > 1
+                              ? b.allDates.map(d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')
+                              : b.bookingDate ? new Date(b.bookingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Bulk Booking'}
+                          </div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                            {b.bookingType === 'bulk' ? `Bulk Order (${b.allDates?.length || 1} dates)` : `${b.startTime} - ${b.endTime}`}
+                          </div>
+                          <span className="badge badge-neutral" style={{ marginTop: 'var(--space-1)', fontSize: '10px' }}>
+                            {b.facility === 'nets_with_machine' ? 'Nets (Machine)' : b.facility === 'nets_without_machine' ? 'Nets (No Machine)' : 'Turf'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{b.customerName || 'Walk-in'}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{b.contactNumber || 'No contact'}</div>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{fmt(b.expectedAmount - (b.discountAmount || 0))}</td>
+                        <td style={{ color: isPaid ? 'var(--status-success)' : 'inherit' }}>{fmt(b.totalPaid)}</td>
+                        <td>
+                          <span className={`badge badge-${isPaid ? 'success' : b.paymentStatus === 'partial' ? 'warning' : 'danger'}`}>
+                            {b.paymentStatus.toUpperCase()}
+                          </span>
+                        </td>
+                        <td>
+                          {canManageBookings && (
+                            <button 
+                              className="btn btn-primary btn-sm" 
+                              onClick={(e) => openPaymentModal(b, e)}
+                              disabled={isPaid}
+                            >
+                              <IndianRupee size={14} /> Pay
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* PAGINATION CONTROLS */}
+            {filteredBookings.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', borderTop: '1px solid var(--surface-glass-border)', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  Showing {Math.min((currentPage - 1) * pageSize + 1, filteredBookings.length)} to {Math.min(currentPage * pageSize, filteredBookings.length)} of {filteredBookings.length} entries
+                </div>
+                
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
+                  <select 
+                    className="form-select" 
+                    value={pageSize} 
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                  >
+                    Previous
+                  </button>
+                  
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+                    const isVisible = p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1);
+                    
+                    if (!isVisible) {
+                      if (p === 2 && currentPage > 3) return <span key={`dots-start`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                      if (p === totalPages - 1 && currentPage < totalPages - 2) return <span key={`dots-end`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                      return null;
+                    }
+
+                    return (
+                      <button
+                        key={p}
+                        className={`btn ${currentPage === p ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+                        onClick={() => setCurrentPage(p)}
+                        style={{ minWidth: '32px', padding: '4px', height: '32px', fontSize: '11px' }}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages || totalPages === 0}
+                    style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1448,6 +1854,165 @@ export default function ManageBookingsPage() {
                   disabled={savingPayment || totalEntered <= 0 || totalEntered > pendingAmount}
                 >
                   <CheckCircle size={18} /> Submit Payment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Payment Modal */}
+      {showBulkPaymentModal && selectedBulkBookings.size > 0 && (
+        <div className="modal-backdrop" onClick={() => setShowBulkPaymentModal(false)}>
+          <div className="modal" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Bulk Payment ({unpaidSelectedBookings.length} Bookings)</h3>
+              <button className="modal-close" onClick={() => setShowBulkPaymentModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              
+              <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
+                  <span style={{ color: 'var(--text-primary)' }}>Total Booking Value:</span>
+                  <strong style={{ fontSize: '1.1em' }}>{fmt(bulkTotalExpected)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-success)' }}>
+                  <span>Discount:</span>
+                  <span>-{fmt(bulkDiscountAmt)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Already Paid:</span>
+                  <span>{fmt(bulkTotalPaidSoFar)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
+                  <span style={{ fontWeight: 600 }}>Pending Balance:</span>
+                  <strong style={{ color: 'var(--status-danger)', fontSize: '1.2em' }}>{fmt(bulkPendingAmount)}</strong>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label">Discount</label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <CustomSelect
+                    options={[
+                      { value: 'percentage', label: 'Percentage (%)' },
+                      { value: 'flat', label: 'Flat Amount (₹)' }
+                    ]}
+                    value={bulkDiscountType}
+                    onChange={(v) => setBulkDiscountType(v as 'percentage' | 'flat')}
+                  />
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    placeholder="Discount value"
+                    value={bulkDiscountInput}
+                    onChange={(e) => setBulkDiscountInput(e.target.value ? Number(e.target.value) : '')}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
+                <label className="form-label">Payment Date</label>
+                <CustomDatePicker value={bulkPaymentDate} onChange={setBulkPaymentDate} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                <label className="form-label" style={{ margin: 0 }}>Payment Splits</label>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={addBulkSplit}>
+                  <Plus size={14} /> Add Mode
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                {bulkPaymentSplits.map((split, index) => (
+                  <div key={index} className="card" style={{ padding: 'var(--space-3)', position: 'relative' }}>
+                    {bulkPaymentSplits.length > 1 && (
+                      <button 
+                        className="btn btn-icon btn-ghost btn-sm" 
+                        style={{ position: 'absolute', top: '8px', right: '8px', color: 'var(--status-danger)' }}
+                        onClick={() => removeBulkSplit(index)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                    
+                    <div className="form-grid-2" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-3)', paddingRight: bulkPaymentSplits.length > 1 ? '30px' : '0' }}>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Amount (₹)</label>
+                        <input
+                          className="form-input form-input-sm"
+                          type="number"
+                          min="0"
+                          value={split.amount}
+                          onChange={(e) => updateBulkSplit(index, 'amount', e.target.value ? Number(e.target.value) : '')}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Mode</label>
+                        <CustomSelect
+                          options={[
+                            { value: 'cash', label: 'Cash' },
+                            { value: 'upi', label: 'UPI' },
+                            { value: 'card', label: 'Card' },
+                            { value: 'bank_transfer', label: 'Bank Transfer' },
+                          ]}
+                          value={split.paymentMode}
+                          onChange={(v) => updateBulkSplit(index, 'paymentMode', v)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-grid-2" style={{ gap: 'var(--space-3)' }}>
+                      <div className="form-group">
+                        <label className={`form-label ${split.paymentMode === 'cash' ? 'required' : ''}`} style={{ fontSize: 'var(--text-xs)' }}>
+                          Received By {split.paymentMode !== 'cash' && '(Optional)'}
+                        </label>
+                        <CustomSelect
+                          options={users.map((u: any) => ({ value: u._id, label: getUserLabel(u) }))}
+                          value={split.cashReceivedBy}
+                          onChange={(v) => updateBulkSplit(index, 'cashReceivedBy', v)}
+                        />
+                      </div>
+                      {split.paymentMode === 'cash' ? (
+                        <div className="form-group">
+                          <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Note (Optional)</label>
+                          <input
+                            className="form-input form-input-sm"
+                            value={split.referenceNote}
+                            onChange={(e) => updateBulkSplit(index, 'referenceNote', e.target.value)}
+                            placeholder="Details..."
+                          />
+                        </div>
+                      ) : (
+                        <div className="form-group">
+                          <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Reference / UTR (Optional)</label>
+                          <input
+                            className="form-input form-input-sm"
+                            value={split.referenceNumber}
+                            onChange={(e) => updateBulkSplit(index, 'referenceNumber', e.target.value)}
+                            placeholder="Transaction ID"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, color: bulkTotalEntered > bulkPendingAmount ? 'var(--status-danger)' : 'var(--text-primary)' }}>
+                Total Entered: {fmt(bulkTotalEntered)}
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                <button className="btn btn-secondary btn-md" onClick={() => setShowBulkPaymentModal(false)}>Cancel</button>
+                <button 
+                  className={`btn btn-primary btn-md ${savingBulkPayment ? 'btn-loading' : ''}`} 
+                  onClick={handleBulkPaymentSubmit}
+                  disabled={savingBulkPayment || bulkTotalEntered <= 0 || bulkTotalEntered > bulkPendingAmount}
+                >
+                  <CheckCircle size={18} /> Submit Bulk Payment
                 </button>
               </div>
             </div>

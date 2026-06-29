@@ -32,6 +32,7 @@ interface Txn {
 }
 
 export default function SalesPage() {
+  const [activeTab, setActiveTab] = useState<'pos' | 'history'>('pos');
   const [items, setItems] = useState<Item[]>([]);
   const [transactions, setTransactions] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,10 +56,19 @@ export default function SalesPage() {
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const showToast = (m: string, t = 'success') => { setToast({ message: m, type: t }); setTimeout(() => setToast(null), 3500); };
 
-  // Filter State
+  // Pagination State for Sales Management Log
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Filter State for Sales Management Log
   const [exportDateRange, setExportDateRange] = useState('all');
   const [exportFromDate, setExportFromDate] = useState('');
   const [exportToDate, setExportToDate] = useState('');
+
+  // Reset pagination on filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [exportDateRange, exportFromDate, exportToDate]);
 
   const { checkPermission } = usePermissions();
   const canAddItem = checkPermission('inventory_sales', 'add_item');
@@ -139,6 +149,7 @@ export default function SalesPage() {
     } catch { showToast('Error', 'error'); } finally { setSaving(false); }
   };
 
+  // Filter & Export logic for Transactions
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
     const now = new Date();
@@ -173,6 +184,12 @@ export default function SalesPage() {
     }
     return filtered;
   }, [transactions, exportDateRange, exportFromDate, exportToDate]);
+
+  const totalPages = Math.ceil(filteredTransactions.length / pageSize);
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, currentPage, pageSize]);
 
   const exportToExcel = () => {
     if (!filteredTransactions.length) return showToast('No transactions to export', 'error');
@@ -302,31 +319,44 @@ export default function SalesPage() {
   return (
     <div className="page-container">
       {toast && <div className="toast-container"><div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}><span className="toast-icon">{toast.type === 'error' ? <X size={16} /> : <Check size={16} />}</span><div className="toast-content"><div className="toast-title">{toast.message}</div></div></div></div>}
-      <div className="page-header">
-        <div><h1>Sales</h1><p className="page-subtitle">List products, sell pieces, and manage product restocking</p></div>
-        <div className="flex gap-3">
-          {canAddItem && <button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(true)}>+ Add Item</button>}
-          {canLogSale && <button className="btn btn-primary btn-md" onClick={() => openTxn('sale')}>Log Sale</button>}
-          {canRestock && <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock')}>Add Restock</button>}
+      <div className="page-header" style={{ marginBottom: 'var(--space-4)' }}>
+        <div><h1>Sales</h1><p className="page-subtitle">List products, sell items, and manage inventory transactions</p></div>
+        {activeTab === 'pos' && (
+          <div className="flex gap-3">
+            {canAddItem && <button className="btn btn-secondary btn-md" onClick={() => setShowAddItem(true)}>+ Add Item</button>}
+            {canLogSale && <button className="btn btn-primary btn-md" onClick={() => openTxn('sale')}>Log Sale</button>}
+            {canRestock && <button className="btn btn-secondary btn-md" onClick={() => openTxn('restock')}>Add Restock</button>}
+          </div>
+        )}
+      </div>
+
+      {/* Tabs Menu */}
+      <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button className={`btn ${activeTab === 'pos' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('pos')}>POS / Products</button>
+          {canViewHistory && (
+            <button className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('history')}>Sales Management</button>
+          )}
         </div>
       </div>
 
       {loading ? <div className="loading-screen"><div className="spinner spinner-lg" /></div> : (
         <>
-          <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
-            {items.map((item) => (
-              <button key={item._id} className="card stat-card sales-item-card" type="button" onClick={() => setSelectedItem(item)} style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}>
-                <div className="stat-icon" style={{ background: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger-soft)' : 'var(--accent-primary-soft)', color: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger)' : 'var(--accent-primary)' }}><Package size={20} /></div>
-                <div className="stat-value text-gradient">{item.currentStock}</div>
-                <div className="stat-label">{item.name} ({item.unit})</div>
-                <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>₹{item.unitPrice || 0} / piece</div>
-                {item.currentStock <= item.lowStockThreshold && <span className="badge badge-danger badge-dot" style={{ fontSize: '10px' }}>Low Stock!</span>}
-              </button>
-            ))}
-            {items.length === 0 && <div className="card sales-item-card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon"><Package size={48} /></div><div className="empty-state-title">No products</div><div className="empty-state-description">Add sales products to start selling.</div></div></div>}
-          </div>
-
-          {canViewHistory && transactions.length > 0 && (
+          {activeTab === 'pos' ? (
+            <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
+              {items.map((item) => (
+                <button key={item._id} className="card stat-card sales-item-card" type="button" onClick={() => setSelectedItem(item)} style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}>
+                  <div className="stat-icon" style={{ background: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger-soft)' : 'var(--accent-primary-soft)', color: item.currentStock <= item.lowStockThreshold ? 'var(--status-danger)' : 'var(--accent-primary)' }}><Package size={20} /></div>
+                  <div className="stat-value text-gradient">{item.currentStock}</div>
+                  <div className="stat-label">{item.name} ({item.unit})</div>
+                  <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>₹{item.unitPrice || 0} / piece</div>
+                  {item.currentStock <= item.lowStockThreshold && <span className="badge badge-danger badge-dot" style={{ fontSize: '10px' }}>Low Stock!</span>}
+                </button>
+              ))}
+              {items.length === 0 && <div className="card sales-item-card" style={{ gridColumn: '1 / -1' }}><div className="empty-state"><div className="empty-state-icon"><Package size={48} /></div><div className="empty-state-title">No products</div><div className="empty-state-description">Add sales products to start selling.</div></div></div>}
+            </div>
+          ) : (
+            // Sales Management Log Tab
             <div className="card">
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3>
@@ -362,170 +392,241 @@ export default function SalesPage() {
                   )}
                 </div>
               </div>
-            <>
-            {/* DESKTOP TABLE VIEW */}
-            <div className="card desktop-only" style={{ padding: 0 }}>
-              <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
-                <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
-                      <th style={{ padding: 'var(--space-4)' }}>Item</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Date</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Customer / Supplier</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Type</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Quantity</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Amount</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Payment Status</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Payment Details</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Entered By</th>
-                      <th style={{ padding: 'var(--space-4)' }}>Received By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTransactions.map(t => {
-                      const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
-                      let paymentStatusText = 'Paid';
-                      let paymentStatusBadge = 'badge-success';
-                      if (t.type === 'restock') {
-                        paymentStatusText = '—';
-                        paymentStatusBadge = '';
-                      } else if (t.bookingId) {
-                        const status = t.bookingId.paymentStatus || 'pending';
-                        if (status === 'paid') {
-                          paymentStatusText = 'Paid (Booking)';
-                          paymentStatusBadge = 'badge-success';
-                        } else if (status === 'partial') {
-                          paymentStatusText = 'Partially Paid';
-                          paymentStatusBadge = 'badge-warning';
+              
+              {filteredTransactions.length === 0 ? (
+                 <div className="empty-state"><div className="empty-state-title">No transactions found</div><div className="empty-state-description">There are no recent sales or restock transactions matching your filters.</div></div>
+              ) : (
+              <>
+              {/* DESKTOP TABLE VIEW */}
+              <div className="card desktop-only" style={{ padding: 0 }}>
+                <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--surface-glass-border)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase' }}>
+                        <th style={{ padding: 'var(--space-4)' }}>Item</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Date</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Customer / Supplier</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Type</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Quantity</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Amount</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Payment Status</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Payment Details</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Entered By</th>
+                        <th style={{ padding: 'var(--space-4)' }}>Received By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedTransactions.map(t => {
+                        const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+                        let paymentStatusText = 'Paid';
+                        let paymentStatusBadge = 'badge-success';
+                        if (t.type === 'restock') {
+                          paymentStatusText = '—';
+                          paymentStatusBadge = '';
+                        } else if (t.bookingId) {
+                          const status = t.bookingId.paymentStatus || 'pending';
+                          if (status === 'paid') {
+                            paymentStatusText = 'Paid (Booking)';
+                            paymentStatusBadge = 'badge-success';
+                          } else if (status === 'partial') {
+                            paymentStatusText = 'Partially Paid';
+                            paymentStatusBadge = 'badge-warning';
+                          } else {
+                            paymentStatusText = 'Pending (Booking)';
+                            paymentStatusBadge = 'badge-danger';
+                          }
                         } else {
-                          paymentStatusText = 'Pending (Booking)';
-                          paymentStatusBadge = 'badge-danger';
+                          paymentStatusText = 'Paid (Direct)';
+                          paymentStatusBadge = 'badge-success';
                         }
-                      } else {
-                        paymentStatusText = 'Paid (Direct)';
-                        paymentStatusBadge = 'badge-success';
-                      }
 
-                      let paymentDetails = 'Direct Sale';
-                      if (t.type === 'restock') {
-                        paymentDetails = t.supplier || 'Restock';
-                      } else if (t.bookingId) {
-                        const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
-                        paymentDetails = `Booking ID: #${bIdShort}`;
+                        let paymentDetails = 'Direct Sale';
+                        if (t.type === 'restock') {
+                          paymentDetails = t.supplier || 'Restock';
+                        } else if (t.bookingId) {
+                          const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
+                          paymentDetails = `Booking ID: #${bIdShort}`;
+                        }
+
+                        return (
+                          <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
+                            <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
+                            <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            <td style={{ padding: 'var(--space-4)', color: 'var(--text-primary)' }}>{customer}</td>
+                            <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
+                            <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
+                            <td style={{ padding: 'var(--space-4)' }}>
+                              <div style={{ fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                            </td>
+                            <td style={{ padding: 'var(--space-4)' }}>
+                              {paymentStatusBadge ? (
+                                <span className={`badge ${paymentStatusBadge}`} style={{ padding: '4px 8px' }}>{paymentStatusText}</span>
+                              ) : '—'}
+                            </td>
+                            <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{paymentDetails}</td>
+                            <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
+                            <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.receivedBy?.name || '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* MOBILE CARDS VIEW */}
+              <div className="cards-grid mobile-only" style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
+                {paginatedTransactions.map((t) => {
+                  const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
+                  let paymentStatusText = 'Paid';
+                  let paymentStatusBadge = 'badge-success';
+                  if (t.type === 'restock') {
+                    paymentStatusText = '—';
+                    paymentStatusBadge = '';
+                  } else if (t.bookingId) {
+                    const status = t.bookingId.paymentStatus || 'pending';
+                    if (status === 'paid') {
+                      paymentStatusText = 'Paid (Booking)';
+                      paymentStatusBadge = 'badge-success';
+                    } else if (status === 'partial') {
+                      paymentStatusText = 'Partially Paid';
+                      paymentStatusBadge = 'badge-warning';
+                    } else {
+                      paymentStatusText = 'Pending (Booking)';
+                      paymentStatusBadge = 'badge-danger';
+                    }
+                  } else {
+                    paymentStatusText = 'Paid (Direct)';
+                    paymentStatusBadge = 'badge-success';
+                  }
+
+                  let paymentDetails = 'Direct Sale';
+                  if (t.type === 'restock') {
+                    paymentDetails = t.supplier || 'Restock';
+                  } else if (t.bookingId) {
+                    const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
+                    paymentDetails = `Booking: #${bIdShort}`;
+                  }
+
+                  return (
+                    <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                      {/* Header: Item Name + Date */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                            <Package size={18} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{t.itemId?.name || '—'}</div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                          </div>
+                        </div>
+                        <span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span>
+                      </div>
+
+                      {/* Info details grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Customer/Supplier</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{customer}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Payment Status</div>
+                          <div style={{ fontWeight: 600 }}>
+                            {paymentStatusBadge ? (
+                              <span className={`badge ${paymentStatusBadge}`} style={{ padding: '2px 6px', fontSize: '10px' }}>{paymentStatusText}</span>
+                            ) : '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Details</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{paymentDetails}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Quantity</div>
+                          <div style={{ fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>
+                          <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{t.enteredBy?.name || '—'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* PAGINATION CONTROLS */}
+              {filteredTransactions.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', borderTop: '1px solid var(--surface-glass-border)', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    Showing {Math.min((currentPage - 1) * pageSize + 1, filteredTransactions.length)} to {Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} entries
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
+                    <select 
+                      className="form-select" 
+                      value={pageSize} 
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <button 
+                      className="btn btn-ghost btn-sm" 
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                    >
+                      Previous
+                    </button>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+                      const isVisible = p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1);
+                      
+                      if (!isVisible) {
+                        if (p === 2 && currentPage > 3) return <span key={`dots-start`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                        if (p === totalPages - 1 && currentPage < totalPages - 2) return <span key={`dots-end`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                        return null;
                       }
 
                       return (
-                        <tr key={`desk-${t._id}`} style={{ borderBottom: '1px solid var(--surface-glass-border)' }}>
-                          <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: 'var(--text-primary)' }}>{t.itemId?.name || '—'}</td>
-                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-primary)' }}>{customer}</td>
-                          <td style={{ padding: 'var(--space-4)' }}><span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span></td>
-                          <td style={{ padding: 'var(--space-4)', fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</td>
-                          <td style={{ padding: 'var(--space-4)' }}>
-                            <div style={{ fontWeight: 600 }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
-                          </td>
-                          <td style={{ padding: 'var(--space-4)' }}>
-                            {paymentStatusBadge ? (
-                              <span className={`badge ${paymentStatusBadge}`} style={{ padding: '4px 8px' }}>{paymentStatusText}</span>
-                            ) : '—'}
-                          </td>
-                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{paymentDetails}</td>
-                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.enteredBy?.name || '—'}</td>
-                          <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)' }}>{t.receivedBy?.name || '—'}</td>
-                        </tr>
+                        <button
+                          key={p}
+                          className={`btn ${currentPage === p ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+                          onClick={() => setCurrentPage(p)}
+                          style={{ minWidth: '32px', padding: '4px', height: '32px', fontSize: '11px' }}
+                        >
+                          {p}
+                        </button>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            {/* MOBILE CARDS VIEW */}
-            <div className="cards-grid mobile-only" style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
-              {filteredTransactions.map((t) => {
-                const customer = t.bookingId ? t.bookingId.customerName : (t.customerName || t.supplier || 'Walk-in');
-                let paymentStatusText = 'Paid';
-                let paymentStatusBadge = 'badge-success';
-                if (t.type === 'restock') {
-                  paymentStatusText = '—';
-                  paymentStatusBadge = '';
-                } else if (t.bookingId) {
-                  const status = t.bookingId.paymentStatus || 'pending';
-                  if (status === 'paid') {
-                    paymentStatusText = 'Paid (Booking)';
-                    paymentStatusBadge = 'badge-success';
-                  } else if (status === 'partial') {
-                    paymentStatusText = 'Partially Paid';
-                    paymentStatusBadge = 'badge-warning';
-                  } else {
-                    paymentStatusText = 'Pending (Booking)';
-                    paymentStatusBadge = 'badge-danger';
-                  }
-                } else {
-                  paymentStatusText = 'Paid (Direct)';
-                  paymentStatusBadge = 'badge-success';
-                }
-
-                let paymentDetails = 'Direct Sale';
-                if (t.type === 'restock') {
-                  paymentDetails = t.supplier || 'Restock';
-                } else if (t.bookingId) {
-                  const bIdShort = t.bookingId._id ? t.bookingId._id.substring(t.bookingId._id.length - 6).toUpperCase() : '';
-                  paymentDetails = `Booking: #${bIdShort}`;
-                }
-
-                return (
-                  <div key={t._id} className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                    {/* Header: Item Name + Date */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '8px', background: 'var(--accent-primary-soft)', color: 'var(--accent-primary)', flexShrink: 0 }}>
-                          <Package size={18} />
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{t.itemId?.name || '—'}</div>
-                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                        </div>
-                      </div>
-                      <span className={`badge ${t.type === 'sale' ? 'badge-warning' : 'badge-success'} badge-dot`} style={{ padding: '4px 8px' }}>{t.type === 'sale' ? 'Sale' : 'Restock'}</span>
-                    </div>
-
-                    {/* Info details grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Customer/Supplier</div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{customer}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Payment Status</div>
-                        <div style={{ fontWeight: 600 }}>
-                          {paymentStatusBadge ? (
-                            <span className={`badge ${paymentStatusBadge}`} style={{ padding: '2px 6px', fontSize: '10px' }}>{paymentStatusText}</span>
-                          ) : '—'}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Details</div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{paymentDetails}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Quantity</div>
-                        <div style={{ fontWeight: 600, color: t.type === 'sale' ? 'var(--status-warning)' : 'var(--status-success)' }}>{t.type === 'sale' ? `-${t.quantity}` : `+${t.quantity}`}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Amount</div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.amount > 0 ? `₹${t.amount}` : '—'}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-muted)' }}>By</div>
-                        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{t.enteredBy?.name || '—'}</div>
-                      </div>
-                    </div>
+                    <button 
+                      className="btn btn-ghost btn-sm" 
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages || totalPages === 0}
+                      style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                    >
+                      Next
+                    </button>
                   </div>
-                );
-              })}
+                </div>
+              )}
+              </>
+              )}
             </div>
-            </></div>
           )}
         </>
       )}

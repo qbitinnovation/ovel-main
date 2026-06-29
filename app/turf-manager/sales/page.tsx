@@ -1,4 +1,4 @@
-import BasePage from '../../superadmin/sales/page';
+import BasePage from '../../superadmin/sales/manage/page';
 import PermissionScopedAdminPage from '@/components/PermissionScopedAdminPage';
 
 export default function WrapperPage() {

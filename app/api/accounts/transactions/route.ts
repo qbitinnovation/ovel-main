@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
         .limit(limit)
         .lean();
 
-      const txnBookingIds = new Set(bookingTxns.map(t => t.bookingId?.toString()));
+      const txnBookingIds = new Set(bookingTxns.map(t => (t.bookingId as any)?._id?.toString() || t.bookingId?.toString()));
 
       for (const t of bookingTxns) {
         const user = t.createdBy as any;

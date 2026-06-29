@@ -10,7 +10,9 @@ export default function SeparateReportView({
   exportToDate,
   statusFilter,
   showToast,
-  fmt
+  fmt,
+  selectedCustomer,
+  customerSearch
 }: { 
   exportDateRange: string; 
   exportFromDate: string; 
@@ -18,11 +20,17 @@ export default function SeparateReportView({
   statusFilter: string;
   showToast: (m: string, t?: string) => void;
   fmt: (n: number) => string;
+  selectedCustomer: { name: string; contact?: string } | null;
+  customerSearch: string;
 }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ bookings: [], sales: [] });
   const [filterType, setFilterType] = useState('bookings'); // bookings, sales
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -41,6 +49,11 @@ export default function SeparateReportView({
     };
     fetchData();
   }, []);
+
+  // Reset pagination on filter or date range changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [exportDateRange, exportFromDate, exportToDate, statusFilter, filterType, selectedCustomer, customerSearch]);
 
   const unifiedData = useMemo(() => {
     let items: any[] = [];
@@ -182,8 +195,26 @@ export default function SeparateReportView({
       filteredItems = filteredItems.filter(i => i.status === statusFilter);
     }
 
+    // Filter by Customer
+    if (selectedCustomer) {
+      filteredItems = filteredItems.filter(i => 
+        (i.customer || '').toLowerCase() === selectedCustomer.name.toLowerCase()
+      );
+    } else if (customerSearch.trim()) {
+      const q = customerSearch.toLowerCase();
+      filteredItems = filteredItems.filter(i => 
+        (i.customer || '').toLowerCase().includes(q)
+      );
+    }
+
     return filteredItems;
-  }, [data, exportDateRange, exportFromDate, exportToDate, filterType, statusFilter]);
+  }, [data, exportDateRange, exportFromDate, exportToDate, filterType, statusFilter, selectedCustomer, customerSearch]);
+
+  const totalPages = Math.ceil(unifiedData.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return unifiedData.slice(start, start + pageSize);
+  }, [unifiedData, currentPage, pageSize]);
 
   const exportExcel = () => {
     if (!unifiedData.length) return showToast('No data to export', 'error');
@@ -304,6 +335,30 @@ export default function SeparateReportView({
               <option value="sales">Sales</option>
             </select>
           </div>
+          {selectedBills.size > 0 && (
+            <button 
+              className="btn btn-primary btn-sm"
+              onClick={async () => {
+                const selectedTxns = unifiedData
+                  .filter((item: any) => selectedBills.has(item.id))
+                  .map((item: any) => ({
+                    customerName: item.customer,
+                    customerContact: '',
+                    date: item.date,
+                    amount: item.paid,
+                    type: item.type,
+                    summary: item.details
+                  }));
+                if (selectedTxns.length > 0) {
+                  const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
+                  generateConsolidatedReport(selectedTxns);
+                }
+              }}
+              style={{ height: '36px' }}
+            >
+              Generate Bill ({selectedBills.size})
+            </button>
+          )}
           <button className="btn btn-secondary btn-sm" onClick={exportPDF} title="Export PDF"><Download size={14} /> PDF</button>
           <button className="btn btn-secondary btn-sm" onClick={exportExcel} title="Export Excel"><Download size={14} /> Excel</button>
         </div>
@@ -335,7 +390,7 @@ export default function SeparateReportView({
           <tbody>
             {unifiedData.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 'var(--space-4)' }}>No records found for the selected filter</td></tr>
-            ) : unifiedData.map((item: any) => (
+            ) : paginatedData.map((item: any) => (
               <tr key={item.id} className="hover-row">
                 <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                   <input 
@@ -371,6 +426,71 @@ export default function SeparateReportView({
           </tbody>
         </table>
       </div>
+
+      {/* PAGINATION CONTROLS */}
+      {unifiedData.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', borderTop: '1px solid var(--surface-glass-border)', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+            Showing {Math.min((currentPage - 1) * pageSize + 1, unifiedData.length)} to {Math.min(currentPage * pageSize, unifiedData.length)} of {unifiedData.length} entries
+          </div>
+          
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
+            <select 
+              className="form-select" 
+              value={pageSize} 
+              onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+              style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <button 
+              className="btn btn-ghost btn-sm" 
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+            >
+              Previous
+            </button>
+            
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+              const isVisible = p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1);
+              
+              if (!isVisible) {
+                if (p === 2 && currentPage > 3) return <span key={`dots-start`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                if (p === totalPages - 1 && currentPage < totalPages - 2) return <span key={`dots-end`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                return null;
+              }
+
+              return (
+                <button
+                  key={p}
+                  className={`btn ${currentPage === p ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+                  onClick={() => setCurrentPage(p)}
+                  style={{ minWidth: '32px', padding: '4px', height: '32px', fontSize: '11px' }}
+                >
+                  {p}
+                </button>
+              );
+            })}
+
+            <button 
+              className="btn btn-ghost btn-sm" 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

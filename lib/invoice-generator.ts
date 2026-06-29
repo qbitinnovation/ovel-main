@@ -279,8 +279,10 @@ export function generateTaxInvoice(booking: any, logoBase64?: string) {
   doc.setFont('helvetica', 'bold');
   doc.text('Authorized Signatory', margin + box1Width + box2Width + (box3Width/2), currentY + 90, { align: 'center' });
 
-  const filename = `${isCompleted ? 'Tax_Invoice' : 'Proforma_Invoice'}_${invoiceNo}.pdf`;
-  doc.save(filename);
+  doc.autoPrint();
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 }
 
 export function generateConsolidatedReport(transactions: any[]) {
@@ -571,6 +573,8 @@ export function generateConsolidatedReport(transactions: any[]) {
   doc.setFont('helvetica', 'bold');
   doc.text('Authorized Signatory', margin + box1Width + box2Width + (box3Width/2), currentY + 90, { align: 'center' });
 
-  const filename = `Consolidated_Invoice_${reportNo}.pdf`;
-  doc.save(filename);
+  doc.autoPrint();
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 }

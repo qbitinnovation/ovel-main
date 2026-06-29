@@ -46,6 +46,10 @@ export default function AccountsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual' | 'separate-report' | 'analytics'>('analytics');
   const [view, setView] = useState<'list' | 'form'>('list');
   
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  
   // Manual Entry Form State
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
   const [entryType, setEntryType] = useState<'income' | 'expenses'>('income');
@@ -79,7 +83,8 @@ export default function AccountsPage() {
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/accounts/transactions?filter=${activeTab}`);
+      const fetchFilter = activeTab === 'separate-report' ? 'all' : activeTab;
+      const res = await fetch(`/api/accounts/transactions?filter=${fetchFilter}`);
       const data = await res.json();
       if (data.success) {
         setTransactions(data.data.transactions);
@@ -96,6 +101,12 @@ export default function AccountsPage() {
       fetchTransactions(); 
     }
   }, [fetchTransactions, view]);
+
+  // Reset pagination on filter or tab change
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedBills(new Set());
+  }, [exportDateRange, exportFromDate, exportToDate, receivedByFilter, statusFilter, customerSearch, selectedCustomer, activeTab]);
 
   const handleSubmit = async () => {
     if (!entryCategory || !entryAmount) {
@@ -216,6 +227,12 @@ export default function AccountsPage() {
     }
     return filtered;
   }, [transactions, exportDateRange, exportFromDate, exportToDate, receivedByFilter, statusFilter, customerSearch, selectedCustomer]);
+
+  const totalPages = Math.ceil(filteredTransactions.length / pageSize);
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, currentPage, pageSize]);
 
   const exportToExcel = () => {
     const dataToExport = filteredTransactions;
@@ -400,7 +417,7 @@ export default function AccountsPage() {
                 placeholder="Search Customer..."
                 style={{ width: 'auto', minWidth: '220px' }}
               />
-              {selectedBills.size > 0 && (
+              {selectedBills.size > 0 && activeTab !== 'separate-report' && (
                 <button 
                   className="btn btn-primary btn-sm"
                   onClick={async () => {
@@ -535,6 +552,8 @@ export default function AccountsPage() {
           statusFilter={statusFilter}
           showToast={showToast} 
           fmt={fmt} 
+          selectedCustomer={selectedCustomer}
+          customerSearch={customerSearch}
         />
       ) : activeTab === 'analytics' ? (
         <AnalyticsDashboard 
@@ -546,78 +565,144 @@ export default function AccountsPage() {
       ) : filteredTransactions.length === 0 ? (
         <div className="card"><div className="empty-state"><div className="empty-state-icon"><Wallet size={48} /></div><div className="empty-state-title">No transactions found</div><div className="empty-state-description">There are no transactions for this filter yet.</div></div></div>
       ) : (
-        <div className="data-table-wrapper">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: '40px', textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedBills(new Set(filteredTransactions.map(t => t._id)));
-                      } else {
-                        setSelectedBills(new Set());
-                      }
-                    }}
-                    checked={filteredTransactions.length > 0 && selectedBills.size === filteredTransactions.length}
-                  />
-                </th>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Customer / Supplier</th>
-                <th>Summary</th>
-                <th>Amount</th>
-                <th>Processed By</th>
-                <th>Received By</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTransactions.map((t) => (
-                <tr key={t._id} className="hover-row">
-                  <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+        <>
+          <div className="data-table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
                     <input 
                       type="checkbox" 
-                      checked={selectedBills.has(t._id)}
                       onChange={(e) => {
-                        const newSet = new Set(selectedBills);
-                        if (e.target.checked) newSet.add(t._id);
-                        else newSet.delete(t._id);
-                        setSelectedBills(newSet);
+                        if (e.target.checked) {
+                          setSelectedBills(new Set(filteredTransactions.map(t => t._id)));
+                        } else {
+                          setSelectedBills(new Set());
+                        }
                       }}
+                      checked={filteredTransactions.length > 0 && selectedBills.size === filteredTransactions.length}
                     />
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
-                    <span className={`badge ${getBadgeClass(t.type)} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
-                      {getIconForType(t.type)} <span style={{ textTransform: 'capitalize' }}>{t.type}</span>
-                    </span>
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.customerName || '—'}</div>
-                    {t.customerContact && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.customerContact}</div>}
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 700, color: t.type === 'restock' ? 'var(--status-warning)' : t.type === 'manual' && t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
-                    {t.type === 'restock' ? '-' : t.type === 'manual' && t.amount < 0 ? '' : '+'}{fmt(Math.abs(t.amount))}
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
-                    <div style={{ fontWeight: 600 }}>{t.user?.name || 'Admin'}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.user?.position || 'Super Admin'}</div>
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
-                    <div style={{ fontWeight: 600 }}>{t.receivedUser?.name || '—'}</div>
-                    {t.receivedUser?.portal && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.receivedUser.portal}</div>}
-                  </td>
-                  <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', textAlign: 'right' }}>
-                    <ChevronRight size={18} color="var(--text-muted)" />
-                  </td>
+                  </th>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Customer / Supplier</th>
+                  <th>Summary</th>
+                  <th>Amount</th>
+                  <th>Processed By</th>
+                  <th>Received By</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paginatedTransactions.map((t) => (
+                  <tr key={t._id} className="hover-row">
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedBills.has(t._id)}
+                        onChange={(e) => {
+                          const newSet = new Set(selectedBills);
+                          if (e.target.checked) newSet.add(t._id);
+                          else newSet.delete(t._id);
+                          setSelectedBills(newSet);
+                        }}
+                      />
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <span className={`badge ${getBadgeClass(t.type)} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                        {getIconForType(t.type)} <span style={{ textTransform: 'capitalize' }}>{t.type}</span>
+                      </span>
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.customerName || '—'}</div>
+                      {t.customerContact && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.customerContact}</div>}
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 700, color: t.type === 'restock' ? 'var(--status-warning)' : t.type === 'manual' && t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                      {t.type === 'restock' ? '-' : t.type === 'manual' && t.amount < 0 ? '' : '+'}{fmt(Math.abs(t.amount))}
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 600 }}>{t.user?.name || 'Admin'}</div>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.user?.position || 'Super Admin'}</div>
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 600 }}>{t.receivedUser?.name || '—'}</div>
+                      {t.receivedUser?.portal && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.receivedUser.portal}</div>}
+                    </td>
+                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', textAlign: 'right' }}>
+                      <ChevronRight size={18} color="var(--text-muted)" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* PAGINATION CONTROLS */}
+          {filteredTransactions.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', borderTop: '1px solid var(--surface-glass-border)', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                Showing {Math.min((currentPage - 1) * pageSize + 1, filteredTransactions.length)} to {Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} entries
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
+                <select 
+                  className="form-select" 
+                  value={pageSize} 
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                  style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <button 
+                  className="btn btn-ghost btn-sm" 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                >
+                  Previous
+                </button>
+                
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+                  const isVisible = p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1);
+                  
+                  if (!isVisible) {
+                    if (p === 2 && currentPage > 3) return <span key={`dots-start`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                    if (p === totalPages - 1 && currentPage < totalPages - 2) return <span key={`dots-end`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
+                    return null;
+                  }
+
+                  return (
+                    <button
+                      key={p}
+                      className={`btn ${currentPage === p ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+                      onClick={() => setCurrentPage(p)}
+                      style={{ minWidth: '32px', padding: '4px', height: '32px', fontSize: '11px' }}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+
+                <button 
+                  className="btn btn-ghost btn-sm" 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {selectedTxn && (

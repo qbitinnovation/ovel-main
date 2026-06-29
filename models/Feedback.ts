@@ -24,7 +24,8 @@ export interface IFeedback extends Document {
   guestName?: string;
   guestMobile?: string;
   attachmentUrl?: string;
-  source: 'portal' | 'qr';
+  source: 'community' | 'shareholder' | 'turf' | 'qr';
+  rating?: number;
 
   createdAt: Date;
   updatedAt: Date;
@@ -63,11 +64,12 @@ const FeedbackSchema = new Schema<IFeedback>(
     resolvedAt: { type: Date, default: null },
     closedAt: { type: Date, default: null },
 
-    // Public QR Feedback Fields
+     // Public QR Feedback Fields
     guestName: { type: String },
     guestMobile: { type: String },
     attachmentUrl: { type: String },
-    source: { type: String, enum: ['portal', 'qr'], default: 'portal' },
+    source: { type: String, enum: ['community', 'shareholder', 'turf', 'qr'], default: 'qr' },
+    rating: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
