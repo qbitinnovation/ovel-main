@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
@@ -118,7 +119,12 @@ export async function GET(request: NextRequest) {
         .populate({
           path: 'createdBy',
           select: 'name userType portalType positionId',
-          populate: { path: 'positionId', select: 'title', model: Position }
+          populate: { path: 'positionId', select: 'name', model: Position }
+        })
+        .populate({
+          path: 'receivedBy',
+          select: 'name userType portalType positionId',
+          populate: { path: 'positionId', select: 'name', model: Position }
         })
         .populate({
           path: 'bookingId',
@@ -132,6 +138,26 @@ export async function GET(request: NextRequest) {
 
       for (const t of bookingTxns) {
         const user = t.createdBy as any;
+        const receivedUserObj = t.receivedBy as any;
+        let receivedUser = null;
+        if (receivedUserObj) {
+          let extra = '';
+          if (receivedUserObj.positionId?.name) {
+            extra = receivedUserObj.positionId.name;
+          } else if (receivedUserObj.portalType === 'turf') {
+            extra = 'Turf Manager';
+          } else if (receivedUserObj.portalType === 'shareholder') {
+            extra = 'Shareholder';
+          } else if (receivedUserObj.userType) {
+            extra = receivedUserObj.userType.charAt(0).toUpperCase() + receivedUserObj.userType.slice(1);
+          }
+          
+          receivedUser = {
+            name: receivedUserObj.name || '—',
+            portal: extra
+          };
+        }
+
         transactions.push({
           _id: t._id,
           type: 'booking',
@@ -143,9 +169,9 @@ export async function GET(request: NextRequest) {
           user: {
             name: user?.name,
             portal: user?.portalType,
-            position: user?.positionId?.title || user?.userType
+            position: user?.positionId?.name || user?.userType
           },
-          receivedUser: t.receivedBy ? { name: typeof t.receivedBy === 'string' ? t.receivedBy : (t.receivedBy as any).name || t.receivedBy } : null,
+          receivedUser,
           details: t
         });
       }
@@ -158,17 +184,61 @@ export async function GET(request: NextRequest) {
         .populate({
           path: 'createdBy',
           select: 'name userType portalType positionId',
-          populate: { path: 'positionId', select: 'title', model: Position }
+          populate: { path: 'positionId', select: 'name', model: Position }
         })
         .sort({ paymentDate: -1 })
         .limit(limit)
         .lean();
+
+      // Gather unique IDs from cashReceivedBy field
+      const receiverIds = new Set<string>();
+      for (const p of payments) {
+        if (p.cashReceivedBy && mongoose.Types.ObjectId.isValid(p.cashReceivedBy)) {
+          receiverIds.add(p.cashReceivedBy.toString());
+        }
+      }
+
+      // Fetch users for cashReceivedBy
+      const receivedUserMap = new Map<string, any>();
+      if (receiverIds.size > 0) {
+        const users = await User.find({ _id: { $in: Array.from(receiverIds).map(id => new mongoose.Types.ObjectId(id)) } })
+          .populate({ path: 'positionId', select: 'name', model: Position })
+          .lean();
+        for (const u of users) {
+          receivedUserMap.set(u._id.toString(), u);
+        }
+      }
 
       for (const p of payments) {
         const booking = p.bookingId as any;
         if (txnBookingIds.has(booking?._id?.toString())) continue;
 
         const user = p.createdBy as any;
+        const receivedUserObj = p.cashReceivedBy ? receivedUserMap.get(p.cashReceivedBy.toString()) : null;
+        let receivedUser = null;
+        if (receivedUserObj) {
+          let extra = '';
+          if (receivedUserObj.positionId?.name) {
+            extra = receivedUserObj.positionId.name;
+          } else if (receivedUserObj.portalType === 'turf') {
+            extra = 'Turf Manager';
+          } else if (receivedUserObj.portalType === 'shareholder') {
+            extra = 'Shareholder';
+          } else if (receivedUserObj.userType) {
+            extra = receivedUserObj.userType.charAt(0).toUpperCase() + receivedUserObj.userType.slice(1);
+          }
+          
+          receivedUser = {
+            name: receivedUserObj.name || '—',
+            portal: extra
+          };
+        } else if (p.cashReceivedBy) {
+          receivedUser = {
+            name: p.cashReceivedBy,
+            portal: ''
+          };
+        }
+
         transactions.push({
           _id: p._id,
           type: 'booking',
@@ -180,9 +250,9 @@ export async function GET(request: NextRequest) {
           user: {
             name: user?.name,
             portal: user?.portalType,
-            position: user?.positionId?.title || user?.userType
+            position: user?.positionId?.name || user?.userType
           },
-          receivedUser: p.cashReceivedBy ? { name: typeof p.cashReceivedBy === 'string' ? p.cashReceivedBy : (p.cashReceivedBy as any).name || p.cashReceivedBy } : null,
+          receivedUser,
           details: p
         });
       }
@@ -192,13 +262,13 @@ export async function GET(request: NextRequest) {
     if (['all', 'sales'].includes(filter)) {
       const sales = await InventoryTransaction.find({ 
         type: 'sale',
-        supplier: { $not: /booking/i }
+        supplier: { $not: { $regex: 'booking', $options: 'i' } }
       })
         .populate({ path: 'itemId', model: InventoryItem })
         .populate({
           path: 'enteredBy',
           select: 'name userType portalType positionId',
-          populate: { path: 'positionId', select: 'title', model: Position }
+          populate: { path: 'positionId', select: 'name', model: Position }
         })
         .sort({ date: -1 })
         .limit(limit)
@@ -218,39 +288,47 @@ export async function GET(request: NextRequest) {
           user: {
             name: user?.name,
             portal: user?.portalType,
-            position: user?.positionId?.title || user?.userType
+            position: user?.positionId?.name || user?.userType
           },
           details: s
         });
       }
     }
 
-    // 3. Fetch Manual Entries from the new AccountTransaction model
+    // 3. Fetch Manual and Maintenance Entries from the new AccountTransaction model
     if (['all', 'manual'].includes(filter)) {
-      const manualTxns = await AccountTransaction.find({ source: 'manual' })
+      const manualTxns = await AccountTransaction.find({ source: { $in: ['manual', 'maintenance'] } })
         .populate({
           path: 'createdBy',
           select: 'name userType portalType positionId',
-          populate: { path: 'positionId', select: 'title', model: Position }
+          populate: { path: 'positionId', select: 'name', model: Position }
         })
         .sort({ date: -1 })
         .limit(limit)
         .lean();
 
       for (const t of manualTxns) {
-        const user = t.createdBy as any;
+        let user = t.createdBy as any;
+        
+        if ((!user || !user.name) && t.createdBy) {
+          const fallback = devUserRef(t.createdBy.toString());
+          if (fallback && fallback.name !== 'User') {
+            user = { name: fallback.name, portalType: 'System', positionId: null, userType: 'Demo' };
+          }
+        }
+
         transactions.push({
           _id: t._id,
-          type: 'manual',
+          type: t.source,
           date: t.date,
           amount: t.type === 'expense' ? -t.amount : t.amount,
-          customerName: 'Manual Entry',
+          customerName: t.source === 'maintenance' ? 'Maintenance' : 'Manual Entry',
           customerContact: '',
           summary: t.summary || 'Manual Entry',
           user: {
-            name: user?.name || 'System',
-            portal: user?.portalType || 'System',
-            position: user?.positionId?.title || user?.userType || 'Unknown'
+            name: user?.name,
+            portal: user?.portalType,
+            position: user?.positionId?.name || user?.userType || 'Unknown'
           },
           details: t
         });

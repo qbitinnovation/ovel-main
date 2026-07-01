@@ -256,7 +256,7 @@ export default function FeedbackModule() {
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           {!isAdmin && (
             <button 
               onClick={() => setShowSubmitModal(true)}
@@ -282,7 +282,7 @@ export default function FeedbackModule() {
                 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
               >
                 <QrCode size={18} />
-                Generate Turf QR
+                Get QR Code
               </button>
             </>
           )}
@@ -347,7 +347,7 @@ export default function FeedbackModule() {
             </button>
           </div>
 
-          <div style={{ position: 'relative', width: '300px' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: '300px' }}>
             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
@@ -380,12 +380,18 @@ export default function FeedbackModule() {
             const accentColor = isComplaint ? 'var(--status-danger)' : isSuggestion ? 'var(--status-warning)' : 'var(--status-info)';
             
             return (
-              <button
+              <div
                 key={item._id}
                 className="card stat-card inventory-item-card"
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedItem(item)}
-                style={{ width: '100%', height: '100%', cursor: 'pointer', textAlign: 'left', padding: 'var(--space-5)', position: 'relative', display: 'flex', flexDirection: 'column' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    setSelectedItem(item);
+                  }
+                }}
+                style={{ width: '100%', height: '100%', minWidth: 0, overflow: 'hidden', cursor: 'pointer', textAlign: 'left', padding: 'var(--space-5)', position: 'relative', display: 'flex', flexDirection: 'column' }}
               >
                 <div className="stat-icon" style={{ background: accentBg, color: accentColor, marginBottom: 'var(--space-3)' }}>
                   <Icon size={20} />
@@ -427,7 +433,7 @@ export default function FeedbackModule() {
                   </span>
 
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -621,30 +627,12 @@ export default function FeedbackModule() {
 
       {showQRModal && (
         <div className="modal-backdrop" onClick={() => setShowQRModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Feedback QR Portals</h3>
+              <h3 className="modal-title">Feedback QR Code</h3>
               <button className="modal-close" onClick={() => setShowQRModal(false)}><X size={20} /></button>
             </div>
             <div className="modal-body" style={{ textAlign: 'center', padding: 'var(--space-6) var(--space-4)' }}>
-              {/* Tab Selector */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: 'var(--space-6)', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
-                {(['qr', 'community', 'shareholder', 'turf'] as const).map((tab) => {
-                  const label = tab === 'qr' ? 'Player/QR' : tab === 'community' ? 'Community' : tab === 'shareholder' ? 'Shareholder' : 'Turf Manager';
-                  const active = selectedQRTab === tab;
-                  return (
-                    <button 
-                      key={tab}
-                      onClick={() => setSelectedQRTab(tab)}
-                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                      style={{ flex: '1 1 auto', fontSize: '11px', padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
               <div style={{ 
                 border: '4px solid var(--text-primary)', 
                 padding: 'var(--space-4)', 
@@ -654,17 +642,14 @@ export default function FeedbackModule() {
                 marginBottom: 'var(--space-4)'
               }}>
                 <QRCodeCanvas 
-                  value={`${window.location.origin}/public-feedback?source=${selectedQRTab}`}
+                  value={`${window.location.origin}/public-feedback`}
                   size={200}
                   level={"H"}
                   includeMargin={false}
                 />
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: '1.5' }}>
-                {selectedQRTab === 'qr' && "Print this QR code to collect anonymous Player Feedback. This portal does not support replies."}
-                {selectedQRTab === 'community' && "Print this QR code to collect feedback specifically from Community Members."}
-                {selectedQRTab === 'shareholder' && "Print this QR code to collect feedback specifically from Shareholders."}
-                {selectedQRTab === 'turf' && "Print this QR code to collect feedback specifically from Turf Managers."}
+                Print and scan this QR code to collect public feedback. This portal allows users to submit complaints, suggestions, and ratings.
               </p>
             </div>
             <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>

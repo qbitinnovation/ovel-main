@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { SessionProvider } from '@/components/providers/SessionProvider';
 import { ToastProvider } from '@/components/providers/ToastProvider';
 import { PermissionsProvider } from '@/components/providers/PermissionsProvider';
+import { DynamicManifest } from '@/components/providers/DynamicManifest';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -10,7 +11,6 @@ export const metadata: Metadata = {
     template: '%s | OMS',
   },
   description: 'Operations Management System for Oval Cricket Turf Club',
-  manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -40,6 +40,7 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="preload" href="/logo.png" as="image" type="image/png" />
+        <DynamicManifest />
       </head>
       <body suppressHydrationWarning>
         <SessionProvider>

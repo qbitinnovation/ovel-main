@@ -128,6 +128,80 @@ export default function CategorySettingsPage() {
         />
       );
     }
+    if (setting.key === 'invoice_signature' || setting.key === 'invoice_qr_code') {
+      const isQR = setting.key === 'invoice_qr_code';
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {typeof val === 'string' && val.startsWith('data:image') ? (
+            <img src={val} alt="Preview" style={{ maxHeight: isQR ? '150px' : '60px', objectFit: 'contain', border: '1px solid var(--border-primary)', padding: '4px', background: '#fff' }} />
+          ) : null}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const img = new window.Image();
+                  img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 600;
+                    const MAX_HEIGHT = 600;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                      if (width > MAX_WIDTH) {
+                        height = Math.round((height * MAX_WIDTH) / width);
+                        width = MAX_WIDTH;
+                      }
+                    } else {
+                      if (height > MAX_HEIGHT) {
+                        width = Math.round((width * MAX_HEIGHT) / height);
+                        height = MAX_HEIGHT;
+                      }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                      ctx.drawImage(img, 0, 0, width, height);
+                      const compressedBase64 = canvas.toDataURL('image/png');
+                      updateChange(setting.key, compressedBase64);
+                    }
+                  };
+                  img.src = reader.result as string;
+                };
+                reader.readAsDataURL(file);
+              }
+            }}
+            className="form-input"
+          />
+        </div>
+      );
+    }
+    
+
+    
+    if (typeof setting.value === 'object' && setting.value !== null) {
+      return (
+        <input 
+          className="form-input" 
+          value={typeof val === 'string' ? val : JSON.stringify(val)} 
+          onChange={(e) => {
+            try {
+              updateChange(setting.key, JSON.parse(e.target.value));
+            } catch {
+              updateChange(setting.key, e.target.value);
+            }
+          }} 
+          style={{ maxWidth: '300px' }} 
+        />
+      );
+    }
+    
     return <input className="form-input" value={val as string} onChange={(e) => updateChange(setting.key, e.target.value)} style={{ maxWidth: '200px' }} />;
   };
 

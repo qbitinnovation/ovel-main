@@ -16,7 +16,20 @@ export function SlotGrid({
   currentBookingSlots?: Set<string>;
 }) {
   return (
-    <div className="booking-slot-grid-3">
+    <div 
+      style={{
+        display: 'grid',
+        gridTemplateRows: 'repeat(3, auto)',
+        gridAutoFlow: 'column',
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        gap: '8px',
+        gridAutoColumns: 'calc(33.333% - 6px)',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        paddingBottom: '4px'
+      }}
+    >
       {TIME_SLOTS.map((slot) => {
         // If a slot is booked by *others*, it is 'booked'
         const booked = isSlotBooked(date, slot.start, slot.end, bookedByDate);

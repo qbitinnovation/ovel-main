@@ -34,6 +34,13 @@ const CATEGORIES = [
     icon: <Globe size={18} style={{ color: 'var(--accent-primary)' }} />,
     href: '/superadmin/settings/attendance',
   },
+  {
+    key: 'general',
+    label: 'General Settings',
+    desc: 'Configure system-wide preferences, dynamic invoice signatures, and defaults.',
+    icon: <Home size={18} style={{ color: 'var(--accent-primary)' }} />,
+    href: '/superadmin/settings/general',
+  },
 ];
 
 export default function SettingsDashboard() {

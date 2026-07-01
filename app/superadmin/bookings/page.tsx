@@ -21,9 +21,11 @@ import {
   User as UserIcon,
   X,
   Plus,
-  Minus
+  Minus,
+  Printer
 } from 'lucide-react';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
+import { HorizontalDatePicker } from '@/components/ui/HorizontalDatePicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import {
   DEFAULT_TURF_PRICING_CONFIG,
@@ -38,6 +40,7 @@ import { SlotGrid } from '@/components/bookings/SlotGrid';
 import {
   TIME_SLOTS,
   isSlotBooked,
+  isSlotInPast,
   hasAnyBookingOnDate,
   mergeSelectedSlots,
   formatDate,
@@ -115,6 +118,11 @@ export default function BookingsPage() {
   ]);
   const [newBulkDate, setNewBulkDate] = useState('');
   const [bookedByDate, setBookedByDate] = useState<Record<string, ExistingBooking[]>>({});
+  const [currentViewMonth, setCurrentViewMonth] = useState<Date>(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
@@ -143,6 +151,12 @@ export default function BookingsPage() {
     setToast({ message, type });
     window.setTimeout(() => setToast(null), 3500);
   }, []);
+
+  const isDateFullyBooked = useCallback((dateStr: string) => {
+    const bookings = bookedByDate[dateStr];
+    if (!bookings || bookings.length === 0) return false;
+    return TIME_SLOTS.every(slot => isSlotBooked(dateStr, slot.start, slot.end, bookedByDate));
+  }, [bookedByDate]);
 
   const fetchPricing = useCallback(async () => {
     setPricingLoading(true);
@@ -197,30 +211,56 @@ export default function BookingsPage() {
   const fetchBookedSlots = useCallback(async () => {
     setBookingsLoading(true);
     try {
-      const results = await Promise.all(visibleDates.map(async (date) => {
-        const params = new URLSearchParams({
-          startDate: date,
-          endDate: date,
-          bookingStatus: 'confirmed',
-          facility,
-          limit: '100',
-        });
-        const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
-        const data = await res.json() as ApiResponse<{ bookings: ExistingBooking[] }>;
-        return [date, data.success ? data.data.bookings || [] : []] as const;
-      }));
+      const start = new Date(currentViewMonth.getFullYear(), currentViewMonth.getMonth(), 1);
+      const end = new Date(currentViewMonth.getFullYear(), currentViewMonth.getMonth() + 1, 0);
+      const startStr = formatDateKey(start);
+      const endStr = formatDateKey(end);
 
-      setBookedByDate((previous) => ({
-        ...previous,
-        ...Object.fromEntries(results),
-      }));
+      const params = new URLSearchParams({
+        startDate: startStr,
+        endDate: endStr,
+        bookingStatus: 'confirmed',
+        facility,
+        limit: '1000',
+      });
+      const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json() as ApiResponse<{ bookings: ExistingBooking[] }>;
+      
+      if (data.success && data.data.bookings) {
+        const grouped: Record<string, ExistingBooking[]> = {};
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          grouped[formatDateKey(d)] = [];
+        }
+
+        for (const b of data.data.bookings) {
+          const bDate = b.bookingDate.split('T')[0];
+          if (bDate >= startStr && bDate <= endStr) {
+            if (!grouped[bDate]) grouped[bDate] = [];
+            grouped[bDate].push(b);
+          }
+          if (b.slots && b.slots.length > 0) {
+            for (const slot of b.slots) {
+              const sDate = new Date(slot.bookingDate).toISOString().split('T')[0];
+              if (sDate >= startStr && sDate <= endStr) {
+                if (!grouped[sDate]) grouped[sDate] = [];
+                grouped[sDate].push(b);
+              }
+            }
+          }
+        }
+
+        setBookedByDate((previous) => ({
+          ...previous,
+          ...grouped,
+        }));
+      }
     } catch (error) {
       console.error(error);
       showToast('Failed to load booked slots', 'error');
     } finally {
       setBookingsLoading(false);
     }
-  }, [showToast, visibleDates]);
+  }, [showToast, currentViewMonth, facility]);
 
   const checkLoungeAvailability = useCallback(async () => {
     if (visibleDates.length === 0) return;
@@ -289,16 +329,21 @@ export default function BookingsPage() {
     } else {
       for (const sel of bulkSelections) {
         if (sel.isFullDay) {
-          const fullDay = quoteCartItem({
-            date: sel.date,
-            startTime: '00:00',
-            endTime: '23:59',
-            kind: 'full_day',
-            label: 'Full 24-hour day',
-            priceType,
-            pricing,
-          });
-          if (fullDay) items.push(fullDay);
+          const hasPastSlots = TIME_SLOTS.some(slot => isSlotInPast(sel.date, slot.start));
+          const unavailable = hasAnyBookingOnDate(sel.date, bookedByDate) || hasPastSlots;
+          
+          if (!unavailable) {
+            const fullDay = quoteCartItem({
+              date: sel.date,
+              startTime: '00:00',
+              endTime: '23:59',
+              kind: 'full_day',
+              label: 'Full 24-hour day',
+              priceType,
+              pricing,
+            });
+            if (fullDay) items.push(fullDay);
+          }
         } else if (sel.slots.length > 0) {
           items.push(...buildSlotCartItems({
             date: sel.date,
@@ -428,6 +473,54 @@ export default function BookingsPage() {
     setCurrentStep(1);
   };
 
+  const handleGenerateEstimate = async () => {
+    if (cartItems.length === 0) return;
+    setSaving(true);
+    try {
+      let signatureBase64 = '';
+      let qrBase64 = '';
+      let logoBase64 = '';
+      let bankName = '';
+      let bankAccount = '';
+      let bankIfsc = '';
+      let bankHolder = '';
+
+      const settingsRes = await fetch('/api/settings').then(r => r.json());
+      if (settingsRes.success && settingsRes.data) {
+        const sigSetting = settingsRes.data.find((s: any) => s.key === 'invoice_signature');
+        if (sigSetting && sigSetting.value) signatureBase64 = sigSetting.value;
+        const qrSetting = settingsRes.data.find((s: any) => s.key === 'invoice_qr_code');
+        if (qrSetting && qrSetting.value) qrBase64 = qrSetting.value;
+        const bnSetting = settingsRes.data.find((s: any) => s.key === 'invoice_bank_name');
+        if (bnSetting && bnSetting.value) bankName = bnSetting.value;
+        const baSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_no');
+        if (baSetting && baSetting.value) bankAccount = baSetting.value;
+        const biSetting = settingsRes.data.find((s: any) => s.key === 'invoice_ifsc_code');
+        if (biSetting && biSetting.value) bankIfsc = biSetting.value;
+        const bhSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_holder');
+        if (bhSetting && bhSetting.value) bankHolder = bhSetting.value;
+      }
+
+      const mockBooking = {
+        _id: 'EST' + Date.now().toString().slice(-6),
+        paymentStatus: 'pending',
+        bookingDate: bookingMode === 'bulk' && bulkSelections.length > 0 ? bulkSelections[0].date : selectedDate,
+        customerName: 'Estimate / Quotation',
+        contactNumber: 'N/A',
+        expectedAmount: summary.finalAmount,
+        totalPaid: 0,
+      };
+
+      const { generateTaxInvoice } = await import('@/lib/invoice-generator');
+      generateTaxInvoice(mockBooking, logoBase64, 'download', signatureBase64, qrBase64, bankName, bankAccount, bankIfsc, bankHolder);
+    } catch (e) {
+      console.warn('Failed to generate estimate', e);
+      showToast('Failed to generate estimate', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const confirmBooking = async () => {
     if (!canConfirm) return;
 
@@ -478,7 +571,7 @@ export default function BookingsPage() {
   };
 
   return (
-    <div className="page-container booking-page-with-fixed-summary">
+    <div className="page-container">
       {toast && (
         <div className="toast-container">
           <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
@@ -488,33 +581,34 @@ export default function BookingsPage() {
         </div>
       )}
 
-      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
+      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)', marginBottom: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
           <div>
             <h1>Bookings</h1>
             <p className="page-subtitle">Create turf bookings and grouped invoices</p>
           </div>
-          <div className="pill-toggle-group" style={{ background: 'var(--surface-secondary)', padding: '4px', borderRadius: '30px' }}>
-            {canCreateBooking && (
-              <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-                New Booking
-              </button>
-            )}
-            {canViewPaymentDashboard && (
-              <button className="pill-toggle" onClick={() => router.push(manageUrl)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-                Manage Bookings
-              </button>
-            )}
-          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
+          {canCreateBooking && (
+            <button className="btn btn-primary" style={{ padding: '8px 16px', fontWeight: 600 }}>
+              New Booking
+            </button>
+          )}
+          {canViewPaymentDashboard && (
+            <button className="btn btn-secondary" onClick={() => router.push(manageUrl)} style={{ padding: '8px 16px', fontWeight: 600 }}>
+              Manage Bookings
+            </button>
+          )}
         </div>
         
         {/* Wizard Progress Indicator */}
-        <div style={{ display: 'flex', gap: 'var(--space-2)', width: '100%', maxWidth: '600px', margin: '0 auto', padding: 'var(--space-4) 0' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', width: '100%', maxWidth: '600px', margin: '0 auto', padding: 'var(--space-2) 0' }}>
           {[1, 2, 3].map(step => (
             <div key={step} style={{ flex: 1, height: '4px', borderRadius: '2px', background: currentStep >= step ? 'var(--primary)' : 'var(--border-primary)', transition: 'background 0.3s ease' }} />
           ))}
         </div>
       </div>
+
 
       <div className="booking-wizard-container" style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: 'var(--space-8)' }}>
         {currentStep === 1 && (
@@ -522,14 +616,15 @@ export default function BookingsPage() {
             <section className="card">
             <div className="card-body" style={{ display: 'grid', gap: 'var(--space-5)' }}>
               <div className="form-grid-2">
-                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                  <label className="form-label required">Facility</label>
-                  <div className="pill-toggle-group">
+                <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 'var(--space-2)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <label className="form-label required" style={{ textAlign: 'center' }}>Facility</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
                     {FACILITY_OPTIONS.map(option => (
                       <button
                         key={option.value}
                         type="button"
-                        className={`pill-toggle ${facility === option.value ? 'active' : ''}`}
+                        className={`btn ${facility === option.value ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ borderRadius: '20px', padding: '8px 16px', fontSize: 'var(--text-sm)', fontWeight: 500 }}
                         onClick={() => {
                           setFacility(option.value);
                           setSelectedNormalSlots([]);
@@ -542,13 +637,28 @@ export default function BookingsPage() {
                     ))}
                   </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label required">Booking Date</label>
-                  <CustomDatePicker value={selectedDate} onChange={setSelectedDate} minDate={new Date().toISOString().split('T')[0]} />
+                <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 'var(--space-2)' }}>
+                  <HorizontalDatePicker 
+                    value={bookingMode === 'bulk' ? bulkSelections.map(s => s.date) : selectedDate} 
+                    onChange={(dateStr) => {
+                      if (bookingMode === 'normal') {
+                        setSelectedDate(dateStr);
+                      } else {
+                        if (bulkSelections.some(s => s.date === dateStr)) {
+                          removeBulkDate(dateStr);
+                        } else {
+                          addBulkDate(dateStr);
+                        }
+                      }
+                    }} 
+                    minDate={new Date().toISOString().split('T')[0]} 
+                    onMonthChange={setCurrentViewMonth}
+                    isDateFullyBooked={isDateFullyBooked}
+                  />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Mode</label>
-                  <div className="pill-toggle-group" role="tablist" aria-label="Booking mode">
+                <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 'var(--space-2)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <label className="form-label" style={{ textAlign: 'center' }}>Mode</label>
+                  <div className="pill-toggle-group" role="tablist" aria-label="Booking mode" style={{ width: 'fit-content', margin: '0 auto' }}>
                     <button
                       type="button"
                       className={`pill-toggle ${bookingMode === 'normal' ? 'active' : ''}`}
@@ -567,9 +677,9 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label required">Pricing Tier</label>
-                <div className="booking-rate-options">
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <label className="form-label required" style={{ textAlign: 'center' }}>Pricing Tier</label>
+                <div className="booking-rate-options" style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '8px' }}>
                   {RATE_OPTIONS.map((option) => (
                     <label key={option.value} className={`booking-rate-option ${priceType === option.value ? 'active' : ''}`}>
                       <input
@@ -619,14 +729,15 @@ export default function BookingsPage() {
               </div>
               <div className="card-body" style={{ display: 'grid', gap: 'var(--space-5)' }}>
                 {bulkSelections.map((sel) => {
-                  const unavailable = hasAnyBookingOnDate(sel.date, bookedByDate);
+                  const hasPastSlots = TIME_SLOTS.some(slot => isSlotInPast(sel.date, slot.start));
+                  const unavailable = hasAnyBookingOnDate(sel.date, bookedByDate) || hasPastSlots;
                   return (
-                    <div key={sel.date} style={{ border: '1px solid var(--border-primary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>
+                    <div key={sel.date} style={{ border: '1px solid var(--border-primary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
                         <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                           <Clock size={16} /> {formatDate(sel.date)}
                         </div>
-                        <button type="button" onClick={() => removeBulkDate(sel.date)} className="btn btn-secondary btn-sm" disabled={bulkSelections.length === 1}>
+                        <button type="button" onClick={() => removeBulkDate(sel.date)} className="btn btn-secondary btn-sm">
                           <Trash2 size={14} /> Remove
                         </button>
                       </div>
@@ -642,7 +753,7 @@ export default function BookingsPage() {
                       
                       {sel.isFullDay ? (
                         unavailable ? (
-                          <div className="booking-warning"><AlertCircle size={16} /> <span>Full day unavailable (has existing bookings)</span></div>
+                          <div className="booking-warning"><AlertCircle size={16} /> <span>Full day unavailable (has existing bookings or past time)</span></div>
                         ) : (
                           <div className="booking-cart-meta">
                             <span className="booking-full-day-main">
@@ -663,21 +774,49 @@ export default function BookingsPage() {
                   );
                 })}
 
-                <div className="form-group" style={{ marginTop: 'var(--space-2)' }}>
-                  <label className="form-label">Add Another Date</label>
-                  <CustomDatePicker value={newBulkDate} onChange={(date) => { if (date) addBulkDate(date); }} placeholder="Select Date" />
-                </div>
+
               </div>
             </section>
           )}
           
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
+          {cartItems.length > 0 && (
+            <div className="card" style={{ marginTop: 'var(--space-4)' }}>
+              <div className="card-body">
+                <div className="booking-cart-total muted">
+                  <span>Slot Fees Subtotal</span>
+                  <strong>{fmtMoney(summary.slotAmount)}</strong>
+                </div>
+                <div className="booking-cart-total" style={{ borderTop: '1px dashed var(--border-primary)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+                  <span>Subtotal</span>
+                  <strong>{fmtMoney(summary.baseAmount)}</strong>
+                </div>
+                <div className="booking-cart-total muted" style={{ marginTop: 'var(--space-3)' }}>
+                  <span>Discount</span>
+                  <strong>-{fmtMoney(summary.discountAmount)}</strong>
+                </div>
+                <div className="booking-cart-total final" style={{ borderTop: '1px dashed var(--border-primary)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+                  <span>Final Total</span>
+                  <strong style={{ color: 'var(--color-primary)' }}>{fmtMoney(summary.finalAmount)}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              <button 
+                className="btn btn-secondary btn-lg" 
+                disabled={cartItems.length === 0 || saving} 
+                onClick={handleGenerateEstimate}
+                style={{ padding: '0 8px', fontSize: 'var(--text-sm)', whiteSpace: 'nowrap' }}
+              >
+                <Printer size={16} /> Print Estimate
+              </button>
               <button 
                 className="btn btn-primary btn-lg" 
                 disabled={cartItems.length === 0} 
                 onClick={() => setCurrentStep(2)}
+                style={{ padding: '0 8px', fontSize: 'var(--text-sm)', whiteSpace: 'nowrap' }}
               >
-                Next: Customer Details <ChevronRight size={18} />
+                Next <ChevronRight size={16} />
               </button>
             </div>
           </div>
@@ -747,18 +886,18 @@ export default function BookingsPage() {
                 </h3>
               </div>
               <div className="card-body" style={{ display: 'grid', gap: 'var(--space-4)' }}>
-                <div className="booking-rate-option" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', width: 'fit-content', padding: 'var(--space-3)', opacity: isLoungeUnavailable ? 0.6 : 1 }}>
+                <div className="booking-rate-option" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', width: 'fit-content', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-md)', opacity: isLoungeUnavailable ? 0.6 : 1 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: isLoungeUnavailable ? 'not-allowed' : 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={Number(loungeHours) > 0}
                       disabled={isLoungeUnavailable}
                       onChange={(e) => setLoungeHours(e.target.checked ? 1 : '')}
-                      style={{ width: '18px', height: '18px', cursor: isLoungeUnavailable ? 'not-allowed' : 'pointer' }}
+                      style={{ width: '16px', height: '16px', cursor: isLoungeUnavailable ? 'not-allowed' : 'pointer' }}
                     />
                     <span>
-                      <strong>Include Lounge Area</strong>
-                      <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: isLoungeUnavailable ? 'var(--status-danger)' : 'var(--text-secondary)' }}>
+                      <strong style={{ fontSize: 'var(--text-sm)' }}>Include Lounge Area</strong>
+                      <span style={{ display: 'block', fontSize: '11px', color: isLoungeUnavailable ? 'var(--status-danger)' : 'var(--text-secondary)', marginTop: '2px' }}>
                         {isLoungeUnavailable 
                           ? 'Lounge is already reserved by another team on this day' 
                           : `Daily Flat Rate (Rate: ${fmtMoney(summary.hourlyRate)}/day)`
@@ -784,17 +923,15 @@ export default function BookingsPage() {
                     </div>
                     
                     {showInventoryOptions && (
-                      <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                         {inventoryItems.map(item => (
-                          <div key={item._id} style={{ padding: 'var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                              <strong style={{ fontSize: 'var(--text-sm)' }}>{item.name}</strong>
-                              <span style={{ fontSize: 'var(--text-sm)' }}>{fmtMoney(item.unitPrice)}</span>
+                          <div key={item._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', gap: 'var(--space-3)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1, minWidth: 0 }}>
+                              <strong style={{ fontSize: 'var(--text-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</strong>
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>(Stock: {item.currentStock} {item.unit})</span>
+                              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginLeft: 'auto', whiteSpace: 'nowrap' }}>{fmtMoney(item.unitPrice)}</span>
                             </div>
-                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
-                              Stock: {item.currentStock} {item.unit}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
                               <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
@@ -804,7 +941,7 @@ export default function BookingsPage() {
                               >
                                 <Minus size={14} />
                               </button>
-                              <span style={{ flex: 1, textAlign: 'center', fontWeight: 600 }}>{selectedProducts[item._id] || 0}</span>
+                              <span style={{ width: '24px', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-sm)' }}>{selectedProducts[item._id] || 0}</span>
                               <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
@@ -873,36 +1010,67 @@ export default function BookingsPage() {
                 <span>No slots selected</span>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {Object.entries(
                   cartItems.reduce((acc, item) => {
                     if (!acc[item.bookingDate]) acc[item.bookingDate] = [];
                     acc[item.bookingDate].push(item);
                     return acc;
                   }, {} as Record<string, CartItem[]>)
-                ).map(([date, items]) => (
-                  <div key={date}>
-                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)', color: 'var(--text-secondary)' }}>
-                      {formatDate(date)}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                      {items.flatMap((item) => item.pricingSnapshot.appliedRules).map((rule, idx) => (
-                        <div key={`${date}-${idx}`} className="booking-cart-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--space-1)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div className="booking-cart-title" style={{ fontSize: 'var(--text-sm)' }}>
-                              {formatTime(rule.startTime)} - {formatTime(rule.endTime)}
-                            </div>
-                            <strong style={{ fontSize: 'var(--text-sm)' }}>Amount: {fmtMoney(rule.amount)}</strong>
-                          </div>
-                          <div className="booking-cart-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>{rule.minutes / 60} hour{rule.minutes / 60 === 1 ? '' : 's'}</span>
-                            <span>{fmtMoney(rule.rate)}/hour</span>
-                          </div>
+                ).map(([date, items]) => {
+                  const dayTotal = items.reduce((sum, item) => sum + item.amount, 0);
+                  const isExpanded = !!expandedDates[date];
+                  return (
+                    <div key={date} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div 
+                        onClick={() => setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }))}
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          padding: '10px 14px', 
+                          background: 'var(--surface-secondary)', 
+                          border: '1px solid var(--border-primary)',
+                          borderRadius: 'var(--radius-md)',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)', transition: 'transform 0.2s ease', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                            ▶
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                            {formatDate(date)}
+                          </span>
                         </div>
-                      ))}
+                        <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--primary)' }}>
+                          {fmtMoney(dayTotal)}
+                        </strong>
+                      </div>
+                      
+                      {isExpanded && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', paddingLeft: 'var(--space-4)', animation: 'fadeIn 0.2s ease-out' }}>
+                          {items.flatMap((item) => item.pricingSnapshot.appliedRules).map((rule, idx) => (
+                            <div key={`${date}-${idx}`} className="booking-cart-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--space-1)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="booking-cart-title" style={{ fontSize: 'var(--text-sm)' }}>
+                                  {formatTime(rule.startTime)} - {formatTime(rule.endTime)}
+                                </div>
+                                <strong style={{ fontSize: 'var(--text-sm)' }}>Amount: {fmtMoney(rule.amount)}</strong>
+                              </div>
+                              <div className="booking-cart-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{rule.minutes / 60} hour{rule.minutes / 60 === 1 ? '' : 's'}</span>
+                                <span>{fmtMoney(rule.rate)}/hour</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

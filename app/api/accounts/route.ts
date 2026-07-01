@@ -68,7 +68,9 @@ export async function POST(request: NextRequest) {
 
     if (!date) return errorResponse('Date is required');
     if (!amount) return errorResponse('Amount is required');
-    if (!type || !['income', 'expense'].includes(type)) return errorResponse('Valid type is required');
+    // normalize 'expenses' -> 'expense' to handle both frontend forms
+    const normalizedType = type === 'expenses' ? 'expense' : type;
+    if (!normalizedType || !['income', 'expense'].includes(normalizedType)) return errorResponse('Valid type is required');
 
     try {
       await dbConnect();
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest) {
       const store = getDevStore();
       const entry = {
         _id: 'dev_mock_' + Date.now(),
-        type: type as 'income' | 'expense',
+        type: normalizedType as 'income' | 'expense',
         source: source || 'manual',
         amount: Number(amount),
         paymentMode: paymentMode || 'cash',
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
     }
 
     const entry = await AccountTransaction.create({
-      type,
+      type: normalizedType,
       source: source || 'manual',
       amount: Number(amount),
       paymentMode: paymentMode || 'cash',

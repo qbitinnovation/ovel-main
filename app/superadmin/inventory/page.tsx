@@ -221,7 +221,10 @@ export default function InventoryPage() {
       y += 8;
     });
 
-    doc.save(`Turf_Inventory_${new Date().getTime()}.pdf`);
+    doc.autoPrint();
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
   };
 
   return (
@@ -235,24 +238,26 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div className="page-header">
+      <div className="page-header" style={{ flexWrap: 'wrap', gap: 'var(--space-3)' }}>
         <div>
           <h1>Inventory</h1>
           <p className="page-subtitle">Store and track turf items, equipment, and ground assets</p>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           {canExport && (
             <>
-              <button className="btn btn-secondary btn-md" onClick={exportToPDF}>
-                <FileText size={18} /> Export PDF
+              <button className="btn btn-secondary btn-md" onClick={exportToPDF} title="Export PDF">
+                <FileText size={18} /> <span className="hide-on-mobile">Export PDF</span><span className="show-on-mobile">PDF</span>
               </button>
-              <button className="btn btn-secondary btn-md" onClick={exportToExcel}>
-                <Receipt size={18} /> Export Excel
+              <button className="btn btn-secondary btn-md" onClick={exportToExcel} title="Export Excel">
+                <Receipt size={18} /> <span className="hide-on-mobile">Export Excel</span><span className="show-on-mobile">Excel</span>
               </button>
             </>
           )}
           {canAdd && (
-            <button className="btn btn-primary btn-md" onClick={openAddForm}>+ Add Turf Item</button>
+            <button className="btn btn-primary btn-md" onClick={openAddForm} title="Add Turf Item">
+              <span className="hide-on-mobile">+ Add Turf Item</span><span className="show-on-mobile">+ Add</span>
+            </button>
           )}
         </div>
       </div>
@@ -260,26 +265,34 @@ export default function InventoryPage() {
       {loading ? (
         <div className="loading-screen"><div className="spinner spinner-lg" /></div>
       ) : (
-        <div className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px', marginBottom: 'var(--space-6)' }}>
           {items.map((item) => {
             const accent = getItemAccent(item);
             return (
               <button
                 key={item._id}
-                className="card stat-card inventory-item-card"
+                className="card inventory-item-card"
                 type="button"
                 onClick={() => setSelectedItem(item)}
-                style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}
+                style={{ width: '100%', cursor: 'pointer', textAlign: 'left', padding: '12px 16px' }}
               >
-                <div className="stat-icon" style={{ background: accent.background, color: accent.color }}><Package size={20} /></div>
-                <div className="stat-value text-gradient">{item.quantity}</div>
-                <div className="stat-label">{item.name}</div>
-                <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                  {item.category} | {item.location}
+                <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                  <div style={{ background: accent.background, color: accent.color, width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Package size={20} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 'var(--text-md)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
+                      {item.category} | {item.location}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)' }}>{item.quantity}</div>
+                    <span className={`badge ${getConditionBadge(item.condition)} badge-dot`} style={{ fontSize: '10px', padding: '2px 6px' }}>
+                      {conditionLabels[item.condition]}
+                    </span>
+                  </div>
                 </div>
-                <span className={`badge ${getConditionBadge(item.condition)} badge-dot`} style={{ marginTop: 'var(--space-2)', fontSize: 10 }}>
-                  {conditionLabels[item.condition]}
-                </span>
               </button>
             );
           })}

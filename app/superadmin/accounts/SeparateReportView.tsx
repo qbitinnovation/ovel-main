@@ -24,7 +24,7 @@ export default function SeparateReportView({
   customerSearch: string;
 }) {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ bookings: [], sales: [] });
+  const [data, setData] = useState({ bookings: [], sales: [], expenses: [], manualEntries: [] });
   const [filterType, setFilterType] = useState('bookings'); // bookings, sales
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
 
@@ -85,7 +85,7 @@ export default function SeparateReportView({
       const user = b.createdBy as any;
       const processedBy = {
         name: user?.name || 'Admin',
-        position: user?.positionId?.title || user?.userType || 'Super Admin'
+        position: user?.positionId?.name || user?.userType || 'Super Admin'
       };
       
       // Add Booking Core
@@ -142,7 +142,52 @@ export default function SeparateReportView({
         status: 'paid',
         processedBy: {
           name: user?.name || 'Admin',
-          position: user?.positionId?.title || user?.userType || 'Super Admin'
+          position: user?.positionId?.name || user?.userType || 'Super Admin'
+        },
+        receivedBy: { name: '—', portal: '' }
+      });
+    });
+
+    // Process Expenses
+    (data.expenses || []).forEach((e: any) => {
+      const date = new Date(e.date || e.createdAt);
+      const user = e.createdBy as any;
+      items.push({
+        id: e._id,
+        date,
+        type: 'Expense',
+        customer: e.customerName || 'N/A',
+        details: e.summary || 'Expense Entry',
+        expected: -e.amount,
+        paid: -e.amount,
+        pending: 0,
+        status: 'paid',
+        processedBy: {
+          name: user?.name || 'Admin',
+          position: user?.positionId?.name || user?.userType || 'Super Admin'
+        },
+        receivedBy: { name: '—', portal: '' }
+      });
+    });
+
+    // Process Manual Entries
+    (data.manualEntries || []).forEach((m: any) => {
+      const date = new Date(m.date || m.createdAt);
+      const user = m.createdBy as any;
+      const amt = m.type === 'expense' ? -m.amount : m.amount;
+      items.push({
+        id: m._id,
+        date,
+        type: 'Manual Entry',
+        customer: m.customerName || 'Manual Entry',
+        details: m.summary || 'Manual Transaction',
+        expected: amt,
+        paid: amt,
+        pending: 0,
+        status: 'paid',
+        processedBy: {
+          name: user?.name || 'Admin',
+          position: user?.positionId?.name || user?.userType || 'Super Admin'
         },
         receivedBy: { name: '—', portal: '' }
       });
@@ -188,6 +233,10 @@ export default function SeparateReportView({
       filteredItems = filteredItems.filter(i => i.type === 'Booking');
     } else if (filterType === 'sales') {
       filteredItems = filteredItems.filter(i => i.type === 'Direct Sale' || i.type === 'Booking Inventory');
+    } else if (filterType === 'expenses') {
+      filteredItems = filteredItems.filter(i => i.type === 'Expense');
+    } else if (filterType === 'manual') {
+      filteredItems = filteredItems.filter(i => i.type === 'Manual Entry');
     }
 
     // Filter by Status
@@ -317,23 +366,26 @@ export default function SeparateReportView({
 
   return (
     <div className="card" style={{ padding: 'var(--space-4)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
         <div>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>Separate Report</h3>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Itemized transactions segregating bookings and direct sales</p>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>Separate Report</h3>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Itemized transactions segregating bookings and direct sales</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Filter size={16} color="var(--text-muted)" />
-            <select 
-              className="form-select" 
+            <CustomSelect 
+              options={[
+                { value: 'bookings', label: 'Bookings' },
+                { value: 'sales', label: 'Sales' },
+                { value: 'expenses', label: 'Expenses' },
+                { value: 'manual', label: 'Manual Entries' }
+              ]}
               value={filterType} 
-              onChange={(e) => setFilterType(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', width: '160px' }}
-            >
-              <option value="bookings">Bookings</option>
-              <option value="sales">Sales</option>
-            </select>
+              onChange={(val) => setFilterType(val)}
+              style={{ width: '130px', height: '36px' }}
+              searchable={false}
+            />
           </div>
           {selectedBills.size > 0 && (
             <button 
@@ -350,17 +402,42 @@ export default function SeparateReportView({
                     summary: item.details
                   }));
                 if (selectedTxns.length > 0) {
+                  let signatureBase64 = '';
+                  let qrBase64 = '';
+                  let bankName = '';
+                  let bankAccount = '';
+                  let bankIfsc = '';
+                  let bankHolder = '';
+                  try {
+                    const settingsRes = await fetch('/api/settings').then(r => r.json());
+                    if (settingsRes.success && settingsRes.data) {
+                      const sigSetting = settingsRes.data.find((s: any) => s.key === 'invoice_signature');
+                      if (sigSetting && sigSetting.value) signatureBase64 = sigSetting.value;
+                      const qrSetting = settingsRes.data.find((s: any) => s.key === 'invoice_qr_code');
+                      if (qrSetting && qrSetting.value) qrBase64 = qrSetting.value;
+                      const bnSetting = settingsRes.data.find((s: any) => s.key === 'invoice_bank_name');
+                      if (bnSetting && bnSetting.value) bankName = bnSetting.value;
+                      const baSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_no');
+                      if (baSetting && baSetting.value) bankAccount = baSetting.value;
+                      const biSetting = settingsRes.data.find((s: any) => s.key === 'invoice_ifsc_code');
+                      if (biSetting && biSetting.value) bankIfsc = biSetting.value;
+                      const bhSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_holder');
+                      if (bhSetting && bhSetting.value) bankHolder = bhSetting.value;
+                    }
+                  } catch (e) {
+                    console.warn('Failed to fetch settings for PDF', e);
+                  }
                   const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
-                  generateConsolidatedReport(selectedTxns);
+                  generateConsolidatedReport(selectedTxns, signatureBase64, qrBase64, bankName, bankAccount, bankIfsc, bankHolder);
                 }
               }}
               style={{ height: '36px' }}
             >
-              Generate Bill ({selectedBills.size})
+              Bill ({selectedBills.size})
             </button>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={exportPDF} title="Export PDF"><Download size={14} /> PDF</button>
-          <button className="btn btn-secondary btn-sm" onClick={exportExcel} title="Export Excel"><Download size={14} /> Excel</button>
+          <button className="btn btn-secondary btn-sm" onClick={exportPDF} title="Export PDF" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Download size={14} /> <span className="hide-on-mobile">PDF</span></button>
+          <button className="btn btn-secondary btn-sm" onClick={exportExcel} title="Export Excel" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Download size={14} /> <span className="hide-on-mobile">Excel</span></button>
         </div>
       </div>
 
@@ -406,13 +483,15 @@ export default function SeparateReportView({
                 </td>
                 <td style={{ fontWeight: 500 }}>{item.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                 <td>
-                  <span className={`badge ${item.type === 'Direct Sale' ? 'badge-success' : item.type === 'Booking' ? 'badge-info' : 'badge-warning'} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                  <span className={`badge ${item.type === 'Direct Sale' ? 'badge-success' : item.type === 'Booking' ? 'badge-info' : item.type === 'Expense' ? 'badge-danger' : 'badge-warning'} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
                     {item.type}
                   </span>
                 </td>
                 <td style={{ fontWeight: 600 }}>{item.customer}</td>
                 <td style={{ color: 'var(--text-secondary)' }}>{item.details}</td>
-                <td style={{ fontWeight: 600, color: 'var(--status-success)' }}>+{fmt(item.paid)}</td>
+                <td style={{ fontWeight: 600, color: item.paid < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                  {item.paid < 0 ? '-' : '+'}{fmt(Math.abs(item.paid))}
+                </td>
                 <td>
                   <div style={{ fontWeight: 600 }}>{item.processedBy?.name}</div>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{item.processedBy?.position}</div>
@@ -436,17 +515,18 @@ export default function SeparateReportView({
           
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
-            <select 
-              className="form-select" 
-              value={pageSize} 
-              onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-              style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
+            <CustomSelect 
+              options={[
+                { value: '10', label: '10' },
+                { value: '25', label: '25' },
+                { value: '50', label: '50' },
+                { value: '100', label: '100' }
+              ]}
+              value={pageSize.toString()}
+              onChange={(val) => { setPageSize(Number(val)); setCurrentPage(1); }}
+              style={{ minWidth: '70px', height: '32px' }}
+              searchable={false}
+            />
           </div>
 
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>

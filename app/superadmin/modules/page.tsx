@@ -344,7 +344,14 @@ export default function ModuleMappingPage() {
                     key={pos._id}
                     className={`sidebar-link ${selectedUser === pos._id ? 'active' : ''}`}
                     onClick={() => setSelectedUser(pos._id)}
-                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedUser === pos._id ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                    style={{ 
+                      width: '100%', 
+                      border: 'none', 
+                      cursor: 'pointer', 
+                      background: selectedUser === pos._id ? 'var(--accent-primary-soft)' : 'transparent', 
+                      color: selectedUser === pos._id ? 'var(--accent-primary)' : 'var(--text-primary)',
+                      textAlign: 'left' 
+                    }}
                   >
                     <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><Tag size={16} /></span>
                     <span>{pos.name}</span>
@@ -360,7 +367,14 @@ export default function ModuleMappingPage() {
                   <button
                     className={`sidebar-link ${selectedPortal === 'turf' ? 'active' : ''}`}
                     onClick={() => setSelectedPortal('turf')}
-                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'turf' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                    style={{ 
+                      width: '100%', 
+                      border: 'none', 
+                      cursor: 'pointer', 
+                      background: selectedPortal === 'turf' ? 'var(--accent-primary-soft)' : 'transparent', 
+                      color: selectedPortal === 'turf' ? 'var(--accent-primary)' : 'var(--text-primary)',
+                      textAlign: 'left' 
+                    }}
                   >
                     <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><TreePine size={16} /></span>
                     <span>Turf Manager Portal</span>
@@ -373,7 +387,14 @@ export default function ModuleMappingPage() {
                   <button
                     className={`sidebar-link ${selectedPortal === 'shareholder' ? 'active' : ''}`}
                     onClick={() => setSelectedPortal('shareholder')}
-                    style={{ width: '100%', border: 'none', cursor: 'pointer', background: selectedPortal === 'shareholder' ? 'var(--accent-primary-soft)' : 'transparent', textAlign: 'left' }}
+                    style={{ 
+                      width: '100%', 
+                      border: 'none', 
+                      cursor: 'pointer', 
+                      background: selectedPortal === 'shareholder' ? 'var(--accent-primary-soft)' : 'transparent', 
+                      color: selectedPortal === 'shareholder' ? 'var(--accent-primary)' : 'var(--text-primary)',
+                      textAlign: 'left' 
+                    }}
                   >
                     <span className="sidebar-link-icon" style={{ display: 'flex', alignItems: 'center' }}><TrendingUp size={16} /></span>
                     <span>Shareholder Portal</span>

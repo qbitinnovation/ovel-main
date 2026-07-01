@@ -179,6 +179,30 @@ export default function PermissionScopedAdminPage({ moduleKey, children }: Props
         ? 'View Only'
         : 'No Access';
 
+  if (!loaded) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid #f3f3f3', borderTop: '3px solid var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (loaded && !access) {
+    return (
+      <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center', gap: '16px' }}>
+        <div style={{ width: '64px', height: '64px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+          <span style={{ fontSize: '30px', fontWeight: 'bold' }}>!</span>
+        </div>
+        <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: '0' }}>Access Denied</h2>
+        <p style={{ color: '#6b7280', maxWidth: '28rem', margin: '0 auto', lineHeight: '1.5' }}>
+          You do not have permission to view the {moduleDef?.moduleName || 'requested'} module. 
+          This unauthorized access attempt has been logged.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} onClickCapture={handleClickCapture}>
       <style>{`.permission-hidden { display: none !important; }`}</style>

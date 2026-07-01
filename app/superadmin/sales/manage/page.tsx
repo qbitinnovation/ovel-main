@@ -362,19 +362,20 @@ export default function SalesPage() {
                 <h3 style={{ fontSize: 'var(--text-sm)' }}>Recent Transactions</h3>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <select 
-                      className="form-select" 
+                    <CustomSelect 
+                      options={[
+                        { value: 'all', label: 'All Time' },
+                        { value: 'today', label: 'Today' },
+                        { value: 'yesterday', label: 'Yesterday' },
+                        { value: 'last7', label: 'Last 7 Days' },
+                        { value: 'last30', label: 'Last 30 Days' },
+                        { value: 'custom', label: 'Custom Range' }
+                      ]}
                       value={exportDateRange} 
-                      onChange={(e) => setExportDateRange(e.target.value)}
-                      style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px' }}
-                    >
-                      <option value="all">All Time</option>
-                      <option value="today">Today</option>
-                      <option value="yesterday">Yesterday</option>
-                      <option value="last7">Last 7 Days</option>
-                      <option value="last30">Last 30 Days</option>
-                      <option value="custom">Custom Range</option>
-                    </select>
+                      onChange={(val) => setExportDateRange(val)}
+                      style={{ minWidth: '140px', height: '36px' }}
+                      searchable={false}
+                    />
                     
                     {exportDateRange === 'custom' && (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -569,17 +570,18 @@ export default function SalesPage() {
                   
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
-                    <select 
-                      className="form-select" 
-                      value={pageSize} 
-                      onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                      style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
+                    <CustomSelect 
+                      options={[
+                        { value: '10', label: '10' },
+                        { value: '25', label: '25' },
+                        { value: '50', label: '50' },
+                        { value: '100', label: '100' }
+                      ]}
+                      value={pageSize.toString()}
+                      onChange={(val) => { setPageSize(Number(val)); setCurrentPage(1); }}
+                      style={{ minWidth: '70px', height: '32px' }}
+                      searchable={false}
+                    />
                   </div>
 
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -701,7 +703,7 @@ export default function SalesPage() {
                 <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
                   <label className="form-label">Received By (Optional)</label>
                   <CustomSelect
-                    options={users.map((u: any) => ({ value: u._id, label: u.name + (u.positionId?.title ? ` (${u.positionId.title})` : '') }))}
+                    options={users.map((u: any) => ({ value: u._id, label: u.name + (u.positionId?.name ? ` (${u.positionId.name})` : '') }))}
                     value={txnReceivedBy}
                     onChange={(v) => setTxnReceivedBy(v)}
                   />

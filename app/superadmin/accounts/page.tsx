@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { CustomDatePicker } from '@/components/ui/CustomDatePicker';
 import { CustomAutocomplete } from '@/components/ui/CustomAutocomplete';
-import { Wallet, Package, ShoppingCart, Calendar, FileText, Plus, X, ChevronRight, Receipt } from 'lucide-react';
+import { Wallet, Package, ShoppingCart, Calendar, FileText, Plus, X, ChevronRight, Receipt, Wrench } from 'lucide-react';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -43,7 +43,7 @@ export default function AccountsPage() {
   const { isBlurred } = useScreenshotBlocker();
   const [transactions, setTransactions] = useState<UnifiedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual' | 'separate-report' | 'analytics'>('analytics');
+  const [activeTab, setActiveTab] = useState<'all' | 'bookings' | 'sales' | 'inventory' | 'manual' | 'expenses' | 'separate-report' | 'analytics'>('analytics');
   const [view, setView] = useState<'list' | 'form'>('list');
   
   // Pagination State
@@ -83,7 +83,7 @@ export default function AccountsPage() {
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const fetchFilter = activeTab === 'separate-report' ? 'all' : activeTab;
+      const fetchFilter = ['separate-report', 'expenses'].includes(activeTab) ? 'all' : activeTab;
       const res = await fetch(`/api/accounts/transactions?filter=${fetchFilter}`);
       const data = await res.json();
       if (data.success) {
@@ -166,7 +166,11 @@ export default function AccountsPage() {
 
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
-    
+
+    if (activeTab === 'expenses') {
+      filtered = filtered.filter(t => t.amount < 0 || t.type === 'restock');
+    }
+
     if (receivedByFilter !== 'all') {
       filtered = filtered.filter(t => t.receivedUser?.name === receivedByFilter);
     }
@@ -327,7 +331,8 @@ export default function AccountsPage() {
         receivedBy: t.receivedUser?.name || '—'
       })),
       filename: `Finance_Report_${new Date().getTime()}.pdf`,
-      logoBase64
+      logoBase64,
+      action: 'print'
     });
   };
 
@@ -339,6 +344,7 @@ export default function AccountsPage() {
       case 'sale': return <ShoppingCart size={18} />;
       case 'restock': return <Package size={18} />;
       case 'manual': return <FileText size={18} />;
+      case 'maintenance': return <Wrench size={18} />;
       default: return <Wallet size={18} />;
     }
   };
@@ -349,6 +355,7 @@ export default function AccountsPage() {
       case 'sale': return 'badge-success';
       case 'restock': return 'badge-warning';
       case 'manual': return 'badge-primary';
+      case 'maintenance': return 'badge-danger';
       default: return 'badge-secondary';
     }
   };
@@ -370,21 +377,21 @@ export default function AccountsPage() {
           <h1>Accounts</h1>
           <p className="page-subtitle">Centralized tracking system for Bookings, Sales, Inventory, and Manual Entries</p>
         </div>
-        {view === 'list' && !['separate-report', 'analytics'].includes(activeTab) && (
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {canExportReports && (
+        {view === 'list' && activeTab !== 'analytics' && (
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {canExportReports && !['separate-report'].includes(activeTab) && (
               <>
-                <button className="btn btn-secondary btn-md" onClick={exportToPDF}>
-                  <FileText size={18} /> Export PDF
+                <button className="btn btn-secondary btn-md" onClick={exportToPDF} title="Export PDF">
+                  <FileText size={18} /> <span className="hide-on-mobile">Export PDF</span>
                 </button>
-                <button className="btn btn-secondary btn-md" onClick={exportToExcel}>
-                  <Receipt size={18} /> Export Excel
+                <button className="btn btn-secondary btn-md" onClick={exportToExcel} title="Export Excel">
+                  <Receipt size={18} /> <span className="hide-on-mobile">Export Excel</span>
                 </button>
               </>
             )}
             {canSubmitEntry && (
               <button className="btn btn-primary btn-md" onClick={() => setView('form')}>
-                <Plus size={18} /> New Manual Entry
+                <Plus size={18} /> <span className="hide-on-mobile">New Manual Entry</span><span className="show-on-mobile">New Entry</span>
               </button>
             )}
           </div>
@@ -397,85 +404,121 @@ export default function AccountsPage() {
       </div>
 
       {view === 'list' && (
-        <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-2)', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <button className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('analytics')}>Analytics Dashboard</button>
-            <button className={`btn ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('all')}>All Transactions</button>
-            <button className={`btn ${activeTab === 'bookings' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('bookings')}>Bookings</button>
-            <button className={`btn ${activeTab === 'sales' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('sales')}>Sales</button>
-            <button className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('manual')}>Manual</button>
-            <button className={`btn ${activeTab === 'separate-report' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('separate-report')}>Separate Report</button>
-          </div>
-          
-          {activeTab !== 'analytics' && (
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-glass-border)', paddingBottom: 'var(--space-4)', alignItems: 'center' }}>
+          <button className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('analytics')}>Analytics Dashboard</button>
+          <button className={`btn ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('all')}>All Transactions</button>
+        </div>
+      )}
+
+      {view === 'list' && activeTab !== 'analytics' && (
+        <div className="card filter-card" style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="card-body" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="form-group filter-order-1" style={{ flex: '1 1 150px' }}>
+              <label className="form-label">View Type</label>
+              <CustomSelect
+                options={[
+                  { value: 'all', label: 'All Transactions' },
+                  { value: 'bookings', label: 'Bookings' },
+                  { value: 'sales', label: 'Sales' },
+                  { value: 'manual', label: 'Manual' },
+                  { value: 'expenses', label: 'Expenses' },
+                  { value: 'separate-report', label: 'Separate Report' }
+                ]}
+                value={activeTab}
+                onChange={(val) => setActiveTab(val as any)}
+              />
+            </div>
+            <div className="form-group filter-order-2" style={{ flex: '1 1 200px' }}>
+              <label className="form-label">Search Customer</label>
               <CustomAutocomplete
                 options={uniqueCustomers}
                 value={customerSearch}
                 onChange={setCustomerSearch}
                 onSelect={setSelectedCustomer}
-                placeholder="Search Customer..."
-                style={{ width: 'auto', minWidth: '220px' }}
+                placeholder="Search by name or number..."
               />
-              {selectedBills.size > 0 && activeTab !== 'separate-report' && (
-                <button 
-                  className="btn btn-primary btn-sm"
-                  onClick={async () => {
-                    const selectedData = filteredTransactions.filter(t => selectedBills.has(t._id));
-                    if (selectedData.length > 0) {
-                      const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
-                      generateConsolidatedReport(selectedData);
-                    }
-                  }}
-                  style={{ height: '36px' }}
-                >
-                  Generate Bill ({selectedBills.size})
-                </button>
-              )}
-              <select 
-              className="form-select" 
-              value={statusFilter} 
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '120px', width: 'auto' }}
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
-            </select>
-            <select 
-              className="form-select" 
-              value={receivedByFilter} 
-              onChange={(e) => setReceivedByFilter(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px', width: 'auto' }}
-            >
-              <option value="all">All Receivers</option>
-              {Array.from(new Set(transactions.map(t => t.receivedUser?.name).filter(Boolean))).map(name => (
-                <option key={name as string} value={name as string}>{name}</option>
-              ))}
-            </select>
-            <select 
-              className="form-select" 
-              value={exportDateRange} 
-              onChange={(e) => setExportDateRange(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '13px', height: '36px', minWidth: '140px', width: 'auto' }}
-            >
-              <option value="all">All Time</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="last7">Last 7 Days</option>
-              <option value="last30">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
-            </select>
-            
+            </div>
+            <div className="form-group filter-order-3" style={{ flex: '1 1 150px' }}>
+              <label className="form-label">Payment Status</label>
+              <CustomSelect
+                options={[
+                  { value: 'all', label: 'All Statuses' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'partial', label: 'Partial' },
+                  { value: 'paid', label: 'Paid' }
+                ]}
+                value={statusFilter}
+                onChange={setStatusFilter}
+              />
+            </div>
+            <div className="form-group filter-order-4" style={{ flex: '1 1 150px' }}>
+              <label className="form-label">Date Range</label>
+              <CustomSelect
+                options={[
+                  { value: 'all', label: 'All Time' },
+                  { value: 'today', label: 'Today' },
+                  { value: 'yesterday', label: 'Yesterday' },
+                  { value: 'last7', label: 'Last 7 Days' },
+                  { value: 'last30', label: 'Last 30 Days' },
+                  { value: 'custom', label: 'Custom Range' }
+                ]}
+                value={exportDateRange}
+                onChange={setExportDateRange}
+              />
+            </div>
             {exportDateRange === 'custom' && (
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px', width: '140px' }} value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} />
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>to</span>
-                <input type="date" className="form-input" style={{ padding: '6px 12px', fontSize: '13px', height: '36px', width: '140px' }} value={exportToDate} onChange={e => setExportToDate(e.target.value)} />
-              </div>
+              <>
+                <div className="form-group filter-order-5" style={{ flex: '1 1 140px' }}>
+                  <label className="form-label">From Date</label>
+                  <CustomDatePicker value={exportFromDate} onChange={setExportFromDate} placeholder="Any date" />
+                </div>
+                <div className="form-group filter-order-6" style={{ flex: '1 1 140px' }}>
+                  <label className="form-label">To Date</label>
+                  <CustomDatePicker value={exportToDate} onChange={setExportToDate} placeholder="Any date" />
+                </div>
+              </>
             )}
           </div>
+          {selectedBills.size > 0 && activeTab !== 'separate-report' && (
+            <div className="card-footer" style={{ justifyContent: 'flex-start', background: 'var(--surface-secondary)' }}>
+              <button 
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  const selectedData = filteredTransactions.filter(t => selectedBills.has(t._id));
+                  if (selectedData.length > 0) {
+                    let signatureBase64 = '';
+                    let qrBase64 = '';
+                    let bankName = '';
+                    let bankAccount = '';
+                    let bankIfsc = '';
+                    let bankHolder = '';
+                    try {
+                      const settingsRes = await fetch('/api/settings').then(r => r.json());
+                      if (settingsRes.success && settingsRes.data) {
+                        const sigSetting = settingsRes.data.find((s: any) => s.key === 'invoice_signature');
+                        if (sigSetting && sigSetting.value) signatureBase64 = sigSetting.value;
+                        const qrSetting = settingsRes.data.find((s: any) => s.key === 'invoice_qr_code');
+                        if (qrSetting && qrSetting.value) qrBase64 = qrSetting.value;
+                        const bnSetting = settingsRes.data.find((s: any) => s.key === 'invoice_bank_name');
+                        if (bnSetting && bnSetting.value) bankName = bnSetting.value;
+                        const baSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_no');
+                        if (baSetting && baSetting.value) bankAccount = baSetting.value;
+                        const biSetting = settingsRes.data.find((s: any) => s.key === 'invoice_ifsc_code');
+                        if (biSetting && biSetting.value) bankIfsc = biSetting.value;
+                        const bhSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_holder');
+                        if (bhSetting && bhSetting.value) bankHolder = bhSetting.value;
+                      }
+                    } catch (e) {
+                      console.warn('Failed to fetch settings for PDF', e);
+                    }
+                    const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
+                    generateConsolidatedReport(selectedData, signatureBase64, qrBase64, bankName, bankAccount, bankIfsc, bankHolder);
+                  }
+                }}
+              >
+                <FileText size={16} style={{ marginRight: '4px' }}/> Generate Bill ({selectedBills.size})
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -566,11 +609,11 @@ export default function AccountsPage() {
         <div className="card"><div className="empty-state"><div className="empty-state-icon"><Wallet size={48} /></div><div className="empty-state-title">No transactions found</div><div className="empty-state-description">There are no transactions for this filter yet.</div></div></div>
       ) : (
         <>
-          <div className="data-table-wrapper">
-            <table className="data-table">
+          <div className="data-table-wrapper accounts-manage-table-wrapper">
+            <table className="data-table accounts-manage-table">
               <thead>
                 <tr>
-                  <th style={{ width: '40px', textAlign: 'center' }}>
+                  <th className="col-checkbox" style={{ width: '24px', textAlign: 'center' }}>
                     <input 
                       type="checkbox" 
                       onChange={(e) => {
@@ -583,20 +626,22 @@ export default function AccountsPage() {
                       checked={filteredTransactions.length > 0 && selectedBills.size === filteredTransactions.length}
                     />
                   </th>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Customer / Supplier</th>
-                  <th>Summary</th>
-                  <th>Amount</th>
-                  <th>Processed By</th>
-                  <th>Received By</th>
-                  <th></th>
+                  <th className="hide-on-mobile">Date</th>
+                  <th className="hide-on-mobile">Type</th>
+                  <th className="show-on-mobile-cell col-details">Details</th>
+                  <th className="col-customer">Customer / Supplier</th>
+                  <th className="hide-on-mobile">Summary</th>
+                  <th className="col-amount">Amount</th>
+                  <th className="show-on-mobile-cell col-user">User</th>
+                  <th className="hide-on-mobile">Processed By</th>
+                  <th className="hide-on-mobile">Received By</th>
+                  <th className="col-action" style={{ width: '32px' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedTransactions.map((t) => (
                   <tr key={t._id} className="hover-row">
-                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <td className="col-checkbox" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox" 
                         checked={selectedBills.has(t._id)}
@@ -608,30 +653,49 @@ export default function AccountsPage() {
                         }}
                       />
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                    <td className="hide-on-mobile" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 500 }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td className="hide-on-mobile" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
                       <span className={`badge ${getBadgeClass(t.type)} badge-dot`} style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
                         {getIconForType(t.type)} <span style={{ textTransform: 'capitalize' }}>{t.type}</span>
                       </span>
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.customerName || '—'}</div>
-                      {t.customerContact && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.customerContact}</div>}
+                    <td className="show-on-mobile-cell col-details" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 600, fontSize: '11px' }}>{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
+                      <div style={{ marginTop: '2px', display: 'flex', gap: '2px', flexDirection: 'column' }}>
+                        <div>
+                          <span className={`badge ${getBadgeClass(t.type)}`} style={{ fontSize: '8px', padding: '1px 4px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                            <span style={{ textTransform: 'capitalize' }}>{t.type}</span>
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '9px', color: 'var(--text-secondary)', maxWidth: '100px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {t.summary}
+                        </div>
+                      </div>
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 700, color: t.type === 'restock' ? 'var(--status-warning)' : t.type === 'manual' && t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
-                      {t.type === 'restock' ? '-' : t.type === 'manual' && t.amount < 0 ? '' : '+'}{fmt(Math.abs(t.amount))}
+                    <td className="col-customer" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-primary)' }}>{t.customerName || '—'}</div>
+                      {t.customerContact && <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>{t.customerContact}</div>}
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                    <td className="hide-on-mobile" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.summary}</td>
+                    <td className="col-amount" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', fontWeight: 700, fontSize: '11px', color: t.type === 'restock' ? 'var(--status-warning)' : t.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                      {t.type === 'restock' ? '-' : t.amount < 0 ? '-' : '+'}{fmt(Math.abs(t.amount))}
+                    </td>
+                    <td className="show-on-mobile-cell col-user" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                      <div style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column' }}>
+                        {t.user?.name && <span>By: {t.user.name}</span>}
+                        {t.receivedUser?.name && <span>Rx: {t.receivedUser.name}</span>}
+                      </div>
+                    </td>
+                    <td className="hide-on-mobile" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
                       <div style={{ fontWeight: 600 }}>{t.user?.name || 'Admin'}</div>
                       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.user?.position || 'Super Admin'}</div>
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
+                    <td className="hide-on-mobile" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer' }}>
                       <div style={{ fontWeight: 600 }}>{t.receivedUser?.name || '—'}</div>
                       {t.receivedUser?.portal && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t.receivedUser.portal}</div>}
                     </td>
-                    <td onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', textAlign: 'right' }}>
-                      <ChevronRight size={18} color="var(--text-muted)" />
+                    <td className="col-action" onClick={() => setSelectedTxn(t)} style={{ cursor: 'pointer', textAlign: 'right' }}>
+                      <ChevronRight size={16} color="var(--text-muted)" />
                     </td>
                   </tr>
                 ))}
@@ -647,17 +711,18 @@ export default function AccountsPage() {
               
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
-                <select 
-                  className="form-select" 
-                  value={pageSize} 
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                  style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
+                <CustomSelect 
+                  options={[
+                    { value: '10', label: '10' },
+                    { value: '25', label: '25' },
+                    { value: '50', label: '50' },
+                    { value: '100', label: '100' }
+                  ]}
+                  value={pageSize.toString()}
+                  onChange={(val) => { setPageSize(Number(val)); setCurrentPage(1); }}
+                  style={{ minWidth: '70px', height: '32px' }}
+                  searchable={false}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -718,8 +783,8 @@ export default function AccountsPage() {
               <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-4)', background: 'var(--surface-secondary)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
                   <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Transaction Amount</div>
-                  <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: selectedTxn.type === 'restock' ? 'var(--status-warning)' : 'var(--status-success)' }}>
-                    {selectedTxn.type === 'restock' ? '-' : '+'}{fmt(Math.abs(selectedTxn.amount))}
+                  <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: selectedTxn.type === 'restock' ? 'var(--status-warning)' : selectedTxn.amount < 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                    {selectedTxn.amount < 0 ? '-' : selectedTxn.type === 'restock' ? '-' : '+'}{fmt(Math.abs(selectedTxn.amount))}
                   </div>
                 </div>
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedTxn.summary}</div>

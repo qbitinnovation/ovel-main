@@ -9,7 +9,7 @@ export default function AnalyticsDashboard({
   fmt: (n: number) => string;
 }) {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ bookings: [], sales: [] });
+  const [data, setData] = useState({ bookings: [], sales: [], expenses: [] });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,6 +36,10 @@ export default function AnalyticsDashboard({
     
     let todayCollected = 0;
     let monthCollected = 0;
+
+    let totalExpenses = 0;
+    let todayExpenses = 0;
+    let monthExpenses = 0;
 
     let coreBookingRev = 0;
     let inventoryRev = 0; // both direct sales and booking products
@@ -78,6 +82,15 @@ export default function AnalyticsDashboard({
       if (date >= startOfMonth) monthCollected += paid;
     });
 
+    (data.expenses || []).forEach((e: any) => {
+      const date = new Date(e.date || e.createdAt).getTime();
+      const amt = e.amount || 0;
+
+      totalExpenses += amt;
+      if (date >= startOfToday) todayExpenses += amt;
+      if (date >= startOfMonth) monthExpenses += amt;
+    });
+
     const collectedPercent = totalExpected > 0 ? (totalCollected / totalExpected) * 100 : 0;
     const pendingPercent = totalExpected > 0 ? (totalPending / totalExpected) * 100 : 0;
 
@@ -88,6 +101,7 @@ export default function AnalyticsDashboard({
       totalCollected, totalPending, totalExpected, 
       collectedPercent, pendingPercent,
       todayCollected, monthCollected,
+      totalExpenses, todayExpenses, monthExpenses,
       coreBookingRev, inventoryRev, corePercent, invPercent,
       totalBookingsCount, totalSalesCount
     };
@@ -98,119 +112,126 @@ export default function AnalyticsDashboard({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
       
-      {/* Top Highlight Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-6)' }}>
-        <div className="card" style={{ padding: 'var(--space-5)', background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.02) 100%)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
+      {/* 2 Top Cards Grid (Matches main dashboard) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+        
+        {/* Card 1: Collection Metrics */}
+        <div className="card" style={{ borderRadius: '24px', padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', border: 'none' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>Collection Metrics</div>
+            <DollarSign size={18} color="var(--text-secondary)" />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Today's Collection</div>
-              <div style={{ fontSize: 'var(--text-3xl)', fontWeight: 800, color: 'var(--status-success)', marginTop: '4px' }}>{fmt(analytics.todayCollected)}</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--status-success)', lineHeight: '1' }}>{fmt(analytics.todayCollected)}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Today</div>
             </div>
-            <div style={{ background: 'rgba(34, 197, 94, 0.2)', padding: '8px', borderRadius: 'var(--radius-full)' }}>
-              <Activity size={20} color="var(--status-success)" />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', lineHeight: '1' }}>{fmt(analytics.monthCollected)}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>This Month</div>
             </div>
           </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--status-success)', opacity: 0.8 }}>Live tracking of today's payments</div>
+          
+          <div style={{ marginTop: 'auto', position: 'relative', height: '40px', width: '100%' }}>
+            <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: '100%', height: '100%', stroke: 'var(--status-success)', strokeWidth: 2, fill: 'none', opacity: 0.5 }}>
+              <path d="M0 35 Q 10 30, 20 35 T 40 25 T 60 10 T 80 15 T 100 20" />
+            </svg>
+          </div>
         </div>
 
-        <div className="card" style={{ padding: 'var(--space-5)', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.02) 100%)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
+        {/* Card 2: Expenses */}
+        <div className="card" style={{ borderRadius: '24px', padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', border: 'none' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>Expenses</div>
+            <Clock size={18} color="var(--text-secondary)" />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>This Month</div>
-              <div style={{ fontSize: 'var(--text-3xl)', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>{fmt(analytics.monthCollected)}</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--status-danger)', lineHeight: '1' }}>{fmt(analytics.totalExpenses)}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Expenses</div>
             </div>
-            <div style={{ background: 'rgba(59, 130, 246, 0.2)', padding: '8px', borderRadius: 'var(--radius-full)' }}>
-              <Calendar size={20} color="var(--status-info)" />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--status-warning)', lineHeight: '1' }}>{fmt(analytics.totalPending)}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Pending</div>
             </div>
           </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--status-info)', opacity: 0.8 }}>Total collected this month</div>
-        </div>
-
-        <div className="card" style={{ padding: 'var(--space-5)', background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(234, 179, 8, 0.02) 100%)', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
-            <div>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Pending</div>
-              <div style={{ fontSize: 'var(--text-3xl)', fontWeight: 800, color: 'var(--status-warning)', marginTop: '4px' }}>{fmt(analytics.totalPending)}</div>
-            </div>
-            <div style={{ background: 'rgba(234, 179, 8, 0.2)', padding: '8px', borderRadius: 'var(--radius-full)' }}>
-              <Clock size={20} color="var(--status-warning)" />
+          
+          <div style={{ marginTop: 'auto' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', height: '40px' }}>
+              <div style={{ width: '20px', height: '60%', background: '#f0f0f0', borderRadius: '4px' }}></div>
+              <div style={{ width: '20px', height: '40%', background: '#f0f0f0', borderRadius: '4px' }}></div>
+              <div style={{ width: '20px', height: '100%', background: '#f0f0f0', borderRadius: '4px' }}></div>
+              <div style={{ width: '20px', height: '80%', background: '#f0f0f0', borderRadius: '4px' }}></div>
             </div>
           </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--status-warning)', opacity: 0.8 }}>Payments yet to be collected</div>
         </div>
       </div>
 
-      <div className="analytics-grid">
-        {/* Main Collection Progress */}
-        <div className="card" style={{ padding: 'var(--space-6)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-6)' }}>
-            <PieChart size={20} /> Collection Health
-          </h3>
+      {/* Card 3: Full Width (Matches "Pending Tasks" main dashboard) */}
+      <div className="card" style={{ borderRadius: '24px', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', border: 'none', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ zIndex: 1, maxWidth: '60%', width: '100%' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Collection Health</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>Total Expected: {fmt(analytics.totalExpected)}</div>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-            <div>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Expected Revenue</div>
-              <div style={{ fontSize: 'var(--text-4xl)', fontWeight: 800, marginTop: '4px' }}>{fmt(analytics.totalExpected)}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Overall Collected</div>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--status-success)', marginTop: '4px' }}>{fmt(analytics.totalCollected)}</div>
-            </div>
-          </div>
-
-          <div>
+          <div style={{ marginBottom: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
               <span style={{ color: 'var(--status-success)' }}>Collected ({analytics.collectedPercent.toFixed(1)}%)</span>
               <span style={{ color: 'var(--status-warning)' }}>Pending ({analytics.pendingPercent.toFixed(1)}%)</span>
             </div>
-            <div style={{ width: '100%', height: '24px', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-full)', overflow: 'hidden', display: 'flex' }}>
-              <div style={{ width: `${analytics.collectedPercent}%`, background: 'var(--status-success)', transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-              <div style={{ width: `${analytics.pendingPercent}%`, background: 'var(--status-warning)', transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+            <div style={{ width: '100%', height: '16px', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-full)', overflow: 'hidden', display: 'flex' }}>
+              <div style={{ width: `${analytics.collectedPercent}%`, background: 'var(--status-success)', transition: 'width 1.5s' }} />
+              <div style={{ width: `${analytics.pendingPercent}%`, background: 'var(--status-warning)', transition: 'width 1.5s' }} />
             </div>
           </div>
         </div>
-
-        {/* Revenue Sources Breakdown */}
-        <div className="card" style={{ padding: 'var(--space-6)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-6)' }}>
-            <CreditCard size={20} /> Revenue Sources
-          </h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ background: 'var(--status-info)', padding: '6px', borderRadius: '8px', color: 'white' }}><CalendarCheck size={16} /></div>
-                <div>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>Core Bookings</div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{analytics.corePercent.toFixed(1)}% of total</div>
-                </div>
-              </div>
-              <div style={{ fontWeight: 700 }}>{fmt(analytics.coreBookingRev)}</div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ background: 'var(--status-success)', padding: '6px', borderRadius: '8px', color: 'white' }}><Package size={16} /></div>
-                <div>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>Inventory / Retail</div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{analytics.invPercent.toFixed(1)}% of total</div>
-                </div>
-              </div>
-              <div style={{ fontWeight: 700 }}>{fmt(analytics.inventoryRev)}</div>
-            </div>
+        
+        {/* Decorative circle graphic for the right side */}
+        <div style={{ 
+          position: 'absolute', right: '-10px', top: '50%', transform: 'translateY(-50%)',
+          width: '120px', height: '120px', borderRadius: '50%', 
+          border: '1px solid #eaeaea', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{ 
+            width: '80px', height: '80px', borderRadius: '50%', 
+            background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <PieChart size={20} color="var(--text-secondary)" style={{ marginBottom: '4px' }}/>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', lineHeight: '1' }}>Health</span>
           </div>
+        </div>
+      </div>
 
-          <div style={{ marginTop: 'var(--space-6)', borderTop: '1px solid var(--surface-glass-border)', paddingTop: 'var(--space-4)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 800 }}>{analytics.totalBookingsCount}</div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', marginTop: '2px' }}>Total Bookings</div>
+      {/* Other Modules List (Matches "System Modules" main dashboard) */}
+      <div>
+        <h3 style={{ fontSize: '16px', fontWeight: '500', color: 'var(--text-primary)', marginBottom: '4px' }}>Revenue Sources</h3>
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }}>Breakdown by operational stream</div>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="card" style={{ padding: '16px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ padding: '8px', background: 'var(--bg-primary)', borderRadius: '8px' }}><CalendarCheck size={16} color="var(--status-info)" /></div>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>Core Bookings ({analytics.totalBookingsCount})</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{analytics.corePercent.toFixed(1)}% of total</div>
+              </div>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 800 }}>{analytics.totalSalesCount}</div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', marginTop: '2px' }}>Direct Sales</div>
+            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(analytics.coreBookingRev)}</div>
+          </div>
+          
+          <div className="card" style={{ padding: '16px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ padding: '8px', background: 'var(--bg-primary)', borderRadius: '8px' }}><Package size={16} color="var(--status-success)" /></div>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>Inventory & Sales ({analytics.totalSalesCount})</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{analytics.invPercent.toFixed(1)}% of total</div>
+              </div>
             </div>
+            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(analytics.inventoryRev)}</div>
           </div>
         </div>
       </div>

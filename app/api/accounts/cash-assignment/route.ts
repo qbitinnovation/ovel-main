@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     // Get all users who could receive cash
     const users = await User.find({ userType: { $ne: 'superadmin' } })
-      .populate('positionId', 'title', Position)
+      .populate('positionId', 'name', Position)
       .lean();
 
     const userCashData = [];
@@ -58,7 +58,12 @@ export async function GET(request: NextRequest) {
           userId: user._id,
           name: user.name,
           portalType: user.portalType,
-          position: (user.positionId as any)?.title || 'User',
+          position: (user.positionId as any)?.name || (
+            user.portalType === 'turf' ? 'Turf Manager' :
+            user.portalType === 'shareholder' ? 'Shareholder' :
+            user.portalType === 'committee' ? 'Committee Member' :
+            'User'
+          ),
           totalCashAssigned,
           totalCashSettled,
           balance,

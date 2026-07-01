@@ -16,6 +16,7 @@ export interface ReportConfig {
   data: any[];
   filename: string;
   logoBase64?: string;
+  action?: 'download' | 'print';
 }
 
 // jsPDF's built-in helvetica font cannot render ₹ or other non-latin characters.
@@ -185,5 +186,8 @@ export function generateStandardReport(config: ReportConfig) {
     },
   });
 
-  doc.save(config.filename);
+  doc.autoPrint();
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 }

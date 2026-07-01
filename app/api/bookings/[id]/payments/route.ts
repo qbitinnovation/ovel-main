@@ -50,7 +50,12 @@ export async function GET(
     const booking = await Booking.findById(id);
     if (!booking) return errorResponse('Booking not found', 404);
 
-    const payments = await PaymentEntry.find({ bookingId: id })
+    const payments = await PaymentEntry.find({
+      $or: [
+        { bookingId: id },
+        { bookingIds: id }
+      ]
+    })
       .populate('createdBy', 'name')
       .sort({ paymentDate: -1 });
 

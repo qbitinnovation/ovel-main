@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       .sort({ settledAt: -1 })
       .lean();
 
-    const formattedTxns = [
+    const collections = [
       ...accountTxns.map(t => ({
         _id: t._id,
         date: t.date,
@@ -48,8 +48,7 @@ export async function GET(request: NextRequest) {
         source: 'Booking',
         customerName: t.customerName || 'Unknown',
         customerContact: t.customerContact || '',
-        summary: t.summary || 'Booking Payment',
-        status: 'Assigned'
+        summary: t.summary || 'Booking Payment'
       })),
       ...inventoryTxns.map(t => ({
         _id: t._id,
@@ -58,26 +57,35 @@ export async function GET(request: NextRequest) {
         source: 'Direct Sale',
         customerName: t.customerName || 'Unknown',
         customerContact: t.customerContact || '',
-        summary: `Sold ${t.quantity} items`,
-        status: 'Assigned'
-      })),
-      ...settlements.map(s => ({
-        _id: s._id,
-        date: s.settledAt,
-        amount: -s.amount,
-        source: 'Settlement',
-        customerName: 'Admin',
-        customerContact: '',
-        summary: s.referenceNote || 'Handed over cash to Admin',
-        status: 'Settled'
+        summary: `Sold ${t.quantity} items`
       }))
     ];
 
-    // Sort by date descending
+    // Sort oldest to newest for FIFO assignment of settlements
+    collections.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const totalCashSettled = settlements.reduce((sum, s) => sum + s.amount, 0);
+
+    let remainingSettled = totalCashSettled;
+    const formattedTxns = collections.map(c => {
+      let status: 'Settled' | 'Not Settled' = 'Not Settled';
+      if (remainingSettled >= c.amount) {
+        status = 'Settled';
+        remainingSettled -= c.amount;
+      } else {
+        status = 'Not Settled';
+        remainingSettled = 0;
+      }
+      return {
+        ...c,
+        status
+      };
+    });
+
+    // Sort by date descending for display
     formattedTxns.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const totalCashAssigned = formattedTxns.filter(t => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
-    const totalCashSettled = settlements.reduce((sum, s) => sum + s.amount, 0);
+    const totalCashAssigned = formattedTxns.reduce((sum, t) => sum + t.amount, 0);
     const balance = totalCashAssigned - totalCashSettled;
 
     return successResponse({ 

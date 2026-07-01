@@ -47,7 +47,12 @@ export async function GET(
       ? (await Booking.find({ bulkId: booking.bulkId })).map((b) => b._id)
       : [booking._id];
 
-    const payments = await PaymentEntry.find({ bookingId: { $in: bookingIds } })
+    const payments = await PaymentEntry.find({
+      $or: [
+        { bookingId: { $in: bookingIds } },
+        { bookingIds: booking._id }
+      ]
+    })
       .populate('createdBy', 'name')
       .sort({ paymentDate: -1 });
 
@@ -436,14 +441,16 @@ export async function DELETE(
         b.cancelledAt = now;
         b.cancelledBy = session.user.id as unknown as Types.ObjectId;
         
-        // Save other bookings if it's not the main booking (main booking is saved below)
-        if (b._id.toString() !== booking._id.toString()) {
-          await b.save();
+        await b.save();
+
+        // If this is the main booking, sync properties back to the 'booking' variable
+        // for the audit log later.
+        if (b._id.toString() === booking._id.toString()) {
+          booking.bookingStatus = b.bookingStatus;
+          booking.cancelReason = b.cancelReason;
         }
       }
     }
-
-    await booking.save();
 
     const meta = getRequestMeta(request.headers);
     await auditAction({

@@ -127,6 +127,9 @@ export interface DevMaintenanceTask {
   creatorId: string;
   status: 'open' | 'in_progress' | 'completed' | 'closed' | 'overdue';
   resolutionNote: string;
+  estimatedCost?: number;
+  actualCost?: number;
+  linkedMomId?: string;
   statusHistory: { status: string; changedBy: string; changedAt: string; note: string }[];
   closedAt: string | null;
   closedBy: string | null;

@@ -26,6 +26,7 @@ export async function GET() {
     }
     const records = await MeetingMinutes.find()
       .populate('createdBy', 'name')
+      .populate({ path: 'linkedTaskIds', select: 'title priority dueDate status assigneeId estimatedCost actualCost', populate: { path: 'assigneeId', select: 'name' } })
       .sort({ date: -1 })
       .limit(50);
     return successResponse(records);
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (!session?.user) return errorResponse('Unauthorized', 401);
 
     const body = await request.json();
-    const { action, id, date, attendees, pointsEnglish, pointsMalayalam, decisions } = body;
+    const { action, id, date, attendees, pointsEnglish, pointsMalayalam, decisions, tasks } = body;
     
     const { checkPermission } = await import('@/lib/permissions');
     
@@ -130,8 +131,29 @@ export async function POST(request: NextRequest) {
         pointsEnglish: pointsEnglish.trim(),
         pointsMalayalam: pointsMalayalam || '',
         decisions: decisions || [],
+        linkedTaskIds: [],
         createdBy: session.user.id,
       });
+
+      let linkedTaskIds = [];
+      if (tasks && Array.isArray(tasks) && tasks.length > 0) {
+        for (const t of tasks) {
+          const newTask = await MaintenanceTask.create({
+            title: t.title,
+            priority: t.priority.toLowerCase(),
+            dueDate: new Date(t.dueDate),
+            assigneeId: t.assigneeId,
+            creatorId: session.user.id,
+            status: 'open',
+            estimatedCost: t.estimatedCost ? Number(t.estimatedCost) : 0,
+            actualCost: 0,
+            linkedMomId: record._id
+          });
+          linkedTaskIds.push(newTask._id);
+        }
+        record.linkedTaskIds = linkedTaskIds;
+        await record.save();
+      }
 
       await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'create_mom_entry', module: 'malayalam_mom', recordId: record._id, description: `Created MOM for ${new Date(date).toLocaleDateString()}`, ...meta }, request.headers);
 

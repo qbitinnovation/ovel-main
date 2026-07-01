@@ -8,7 +8,7 @@ import { CustomAutocomplete } from '@/components/ui/CustomAutocomplete';
 import { usePermissions } from '@/components/providers/PermissionsProvider';
 import {
   Calendar, Check, CheckCircle, ChevronRight, Clock, FileText, IndianRupee,
-  Plus, Receipt, Search, Trash2, X, AlertCircle, Edit, Minus
+  Plus, Receipt, Search, Trash2, X, AlertCircle, Edit, Minus, Printer
 } from 'lucide-react';
 import {
   DEFAULT_TURF_PRICING_CONFIG,
@@ -103,7 +103,7 @@ import {
 
 const getInitialSlotsForBooking = (booking: Booking, date: string): string[] => {
   const selected: string[] = [];
-  
+
   // If standard booking
   if (booking.bookingType !== 'bulk') {
     const mainDateStr = getDateStr(booking.bookingDate);
@@ -112,7 +112,7 @@ const getInitialSlotsForBooking = (booking: Booking, date: string): string[] => 
     }
     return [];
   }
-  
+
   // If bulk booking, gather slots for the selected date
   if (booking.slots && Array.isArray(booking.slots)) {
     for (const slot of booking.slots) {
@@ -122,7 +122,7 @@ const getInitialSlotsForBooking = (booking: Booking, date: string): string[] => 
       }
     }
   }
-  
+
   return selected;
 };
 
@@ -153,17 +153,17 @@ export default function ManageBookingsPage() {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  
+
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('all'); // all, pending, partial, paid
   const [facilityFilter, setFacilityFilter] = useState('all'); // all, turf, nets_with_machine, nets_without_machine
-  
+
   // Modals
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [bookingPayments, setBookingPayments] = useState<PaymentEntry[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
-  
+
   // Payment Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -180,7 +180,7 @@ export default function ManageBookingsPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<{ name: string; contact?: string } | null>(null);
   const [selectedBulkBookings, setSelectedBulkBookings] = useState<Set<string>>(new Set());
-  
+
   const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
   const [bulkPaymentDate, setBulkPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [bulkDiscountType, setBulkDiscountType] = useState<'percentage' | 'flat'>('percentage');
@@ -274,8 +274,7 @@ export default function ManageBookingsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        bookingStatus: 'confirmed',
-        limit: '100',
+        limit: '500',
       });
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
@@ -290,7 +289,7 @@ export default function ManageBookingsPage() {
           ...b,
           bookingType: b.bulkId ? 'bulk' : (b.bookingType || 'standard')
         }));
-        
+
         flattened.sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime());
         setBookings(flattened);
       }
@@ -330,7 +329,7 @@ export default function ManageBookingsPage() {
   const filteredBookings = useMemo(() => {
     let filtered = [...bookings];
     if (selectedCustomer) {
-      filtered = filtered.filter(t => 
+      filtered = filtered.filter(t =>
         (t.customerName || '').toLowerCase() === selectedCustomer.name.toLowerCase() &&
         (t.contactNumber || '').toLowerCase() === (selectedCustomer.contact || '').toLowerCase()
       );
@@ -415,13 +414,13 @@ export default function ManageBookingsPage() {
         }
         return prev;
       }
-      
+
       // When pendingAmount changes, adjust the main split (Split 0) to balance the total
       const sumExceptFirst = prev.reduce((sum, split, i) => {
         if (i === 0) return sum;
         return sum + (Number(split.amount) || 0);
       }, 0);
-      
+
       const newFirstAmount = Math.max(0, pendingAmount - sumExceptFirst);
       const formattedFirstAmount = newFirstAmount > 0 ? newFirstAmount : '';
       if (prev[0].amount !== formattedFirstAmount) {
@@ -432,7 +431,7 @@ export default function ManageBookingsPage() {
         };
         return newSplits;
       }
-      
+
       return prev;
     });
   }, [pendingAmount]);
@@ -447,12 +446,12 @@ export default function ManageBookingsPage() {
         }
         return prev;
       }
-      
+
       const sumExceptFirst = prev.reduce((sum, split, i) => {
         if (i === 0) return sum;
         return sum + (Number(split.amount) || 0);
       }, 0);
-      
+
       const newFirstAmount = Math.max(0, bulkPendingAmount - sumExceptFirst);
       const formattedFirstAmount = newFirstAmount > 0 ? newFirstAmount : '';
       if (prev[0].amount !== formattedFirstAmount) {
@@ -463,7 +462,7 @@ export default function ManageBookingsPage() {
         };
         return newSplits;
       }
-      
+
       return prev;
     });
   }, [bulkPendingAmount]);
@@ -490,12 +489,12 @@ export default function ManageBookingsPage() {
   const openPaymentModal = (booking: Booking, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedBooking(booking);
-    setPaymentSplits([{ 
-      amount: Math.max(0, booking.expectedAmount - (booking.discountAmount || 0) - booking.totalPaid), 
-      paymentMode: 'cash', 
-      referenceNumber: '', 
-      cashReceivedBy: '', 
-      referenceNote: '' 
+    setPaymentSplits([{
+      amount: Math.max(0, booking.expectedAmount - (booking.discountAmount || 0) - booking.totalPaid),
+      paymentMode: 'cash',
+      referenceNumber: '',
+      cashReceivedBy: '',
+      referenceNote: ''
     }]);
     setDiscountInput(booking.discountPercentage > 0 ? booking.discountPercentage : booking.discountAmount > 0 ? booking.discountAmount : '');
     setDiscountType(booking.discountPercentage > 0 ? 'percentage' : 'flat');
@@ -516,11 +515,11 @@ export default function ManageBookingsPage() {
     setPaymentSplits(prev => {
       if (prev.length <= 1) return prev;
       const removedAmount = Number(prev[index].amount) || 0;
-      
+
       // If we delete the first split, the new first split (was index 1) absorbs the amount.
       // Otherwise, the main first split (index 0) absorbs the amount.
       const targetIndex = index === 0 ? 1 : 0;
-      
+
       return (prev
         .map((split, i) => {
           if (i === targetIndex) {
@@ -546,7 +545,7 @@ export default function ManageBookingsPage() {
         // If editing any split other than the first one (index 0), the first split absorbs the change.
         // If editing the first split, the last split absorbs the change.
         const targetIndex = index !== 0 ? 0 : prev.length - 1;
-        
+
         const sumExceptTarget = newSplits.reduce((sum, split, i) => {
           if (i === targetIndex) return sum;
           return sum + (Number(split.amount) || 0);
@@ -576,7 +575,7 @@ export default function ManageBookingsPage() {
       if (prev.length <= 1) return prev;
       const removedAmount = Number(prev[index].amount) || 0;
       const targetIndex = index === 0 ? 1 : 0;
-      
+
       return (prev
         .map((split, i) => {
           if (i === targetIndex) {
@@ -634,7 +633,7 @@ export default function ManageBookingsPage() {
       let finalDiscountAmount = 0;
       let finalDiscountPct = 0;
       const dInput = Number(discountInput) || 0;
-      
+
       if (dInput > 0) {
         if (discountType === 'percentage') {
           finalDiscountPct = dInput;
@@ -699,7 +698,7 @@ export default function ManageBookingsPage() {
 
       const bulkBaseAmount = unpaidSelectedBookings
         .reduce((sum, b) => sum + b.expectedAmount, 0);
-      
+
       if (dInput > 0) {
         if (bulkDiscountType === 'percentage') {
           finalDiscountPct = dInput;
@@ -774,7 +773,7 @@ export default function ManageBookingsPage() {
         const res = await fetch(`/api/bookings?${params.toString()}`, { cache: 'no-store' });
         const data = await res.json();
         if (data.success && data.data.bookings) {
-          const hasOtherLounge = data.data.bookings.some((b: any) => 
+          const hasOtherLounge = data.data.bookings.some((b: any) =>
             b._id !== selectedBooking._id && b.loungeHours > 0
           );
           setLoungeAddonUnavailable(hasOtherLounge);
@@ -819,7 +818,7 @@ export default function ManageBookingsPage() {
   };
   const exportToExcel = () => {
     if (!filteredBookings.length) return showToast('No bookings to export', 'error');
-    
+
     const exportData = filteredBookings.map(b => {
       const dateStr = getDateStr(String(b.bookingDate));
       return {
@@ -845,7 +844,7 @@ export default function ManageBookingsPage() {
 
   const exportToPDF = async () => {
     if (!filteredBookings.length) return showToast('No bookings to export', 'error');
-    
+
     let logoBase64 = '';
     try {
       const img = new window.Image();
@@ -876,7 +875,7 @@ export default function ManageBookingsPage() {
 
     let reportPeriodStr = 'All Time';
     if (startDate || endDate) {
-       reportPeriodStr = `${startDate || 'Start'} to ${endDate || 'End'}`;
+      reportPeriodStr = `${startDate || 'Start'} to ${endDate || 'End'}`;
     }
 
     generateStandardReport({
@@ -916,29 +915,56 @@ export default function ManageBookingsPage() {
     });
   };
 
-  const handleDownloadReceipt = async () => {
+  const handleDownloadReceipt = async (action: 'download' | 'print' = 'download') => {
     if (!selectedBooking) return;
     try {
       let logoBase64 = '';
+      let signatureBase64 = '';
+      let qrBase64 = '';
+      let bankName = '';
+      let bankAccount = '';
+      let bankIfsc = '';
+      let bankHolder = '';
       try {
-        const img = new window.Image();
-        img.src = '/logo.png';
-        await new Promise((resolve) => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
+        const [logoImg, settingsRes] = await Promise.all([
+          new Promise<HTMLImageElement>((resolve) => {
+            const img = new window.Image();
+            img.src = '/logo.png';
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(img);
+          }),
+          fetch('/api/settings').then(res => res.json())
+        ]);
+
         const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
+        canvas.width = logoImg.width;
+        canvas.height = logoImg.height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.drawImage(img, 0, 0);
+          ctx.drawImage(logoImg, 0, 0);
           logoBase64 = canvas.toDataURL('image/png');
         }
+
+        if (settingsRes.success && settingsRes.data) {
+          const sigSetting = settingsRes.data.find((s: any) => s.key === 'invoice_signature');
+          if (sigSetting && sigSetting.value) signatureBase64 = sigSetting.value;
+
+          const qrSetting = settingsRes.data.find((s: any) => s.key === 'invoice_qr_code');
+          if (qrSetting && qrSetting.value) qrBase64 = qrSetting.value;
+
+          const bnSetting = settingsRes.data.find((s: any) => s.key === 'invoice_bank_name');
+          if (bnSetting && bnSetting.value) bankName = bnSetting.value;
+          const baSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_no');
+          if (baSetting && baSetting.value) bankAccount = baSetting.value;
+          const biSetting = settingsRes.data.find((s: any) => s.key === 'invoice_ifsc_code');
+          if (biSetting && biSetting.value) bankIfsc = biSetting.value;
+          const bhSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_holder');
+          if (bhSetting && bhSetting.value) bankHolder = bhSetting.value;
+        }
       } catch (e) {
-        console.warn('Could not load logo for PDF', e);
+        console.warn('Could not load logo or signature for PDF', e);
       }
-      generateTaxInvoice(selectedBooking, logoBase64);
+      generateTaxInvoice(selectedBooking, logoBase64, action, signatureBase64, qrBase64, bankName, bankAccount, bankIfsc, bankHolder);
     } catch (error) {
       console.error('Failed to generate PDF', error);
       showToast('Failed to download receipt', 'error');
@@ -958,7 +984,7 @@ export default function ManageBookingsPage() {
     setEditNotes(booking.notes || '');
     const dateStr = getDateStr(booking.bookingDate);
     setEditBookingDate(dateStr);
-    
+
     // Parse slots
     const initialSlots = getInitialSlotsForBooking(booking, dateStr);
     setEditSelectedSlots(initialSlots);
@@ -973,9 +999,9 @@ export default function ManageBookingsPage() {
     const currentRanges = mergeSelectedSlots(editSelectedSlots);
     const isSameDate = editBookingDate === getDateStr(selectedBooking.bookingDate);
     const slotsChanged = !isSameDate || initialRanges.length !== currentRanges.length || initialRanges.some((r: any, i: number) => r.startTime !== currentRanges[i].startTime || r.endTime !== currentRanges[i].endTime);
-    
+
     if (!slotsChanged) return selectedBooking.expectedAmount;
-    
+
     if (currentRanges.length === 1) {
       const pricingRes = calculateTurfSlotPrice({
         bookingDate: editBookingDate,
@@ -1060,7 +1086,7 @@ export default function ManageBookingsPage() {
     if (!isCurrent && isSlotBooked(editBookingDate, slotObj.start, slotObj.end, editBookedByDate)) {
       return;
     }
-    
+
     setEditSelectedSlots((prev) =>
       prev.includes(slotStart) ? prev.filter((s) => s !== slotStart) : [...prev, slotStart].sort()
     );
@@ -1070,15 +1096,15 @@ export default function ManageBookingsPage() {
     return bookings.some((b: any) => {
       const isSameBooking = String(b._id) === String(selectedBooking?._id);
       const isSameBulkGroup = selectedBooking?.bulkId && b.bulkId && String(b.bulkId) === String(selectedBooking.bulkId);
-      
+
       if (isSameBooking || isSameBulkGroup) {
         return false;
       }
-      
+
       if (b.bookingStatus !== 'confirmed') return false;
 
       if (b.bookingType === 'bulk' && b.slots) {
-         return b.slots.some((s: any) => getDateStr(s.bookingDate) === editBookingDate && rangesOverlap(slotStart, slotEnd, s.startTime, s.endTime));
+        return b.slots.some((s: any) => getDateStr(s.bookingDate) === editBookingDate && rangesOverlap(slotStart, slotEnd, s.startTime, s.endTime));
       }
 
       return (
@@ -1128,28 +1154,29 @@ export default function ManageBookingsPage() {
         </div>
       )}
 
-      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-          <div>
-            <h1>Manage Bookings</h1>
-            <p className="page-subtitle">View existing bookings and record payments</p>
-          </div>
-          <div className="pill-toggle-group" style={{ background: 'var(--surface-secondary)', padding: '4px', borderRadius: '30px' }}>
-            {canCreateBooking && (
-              <button className="pill-toggle" onClick={() => router.push(`/${portalBase}/bookings`)} style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-                New Booking
-              </button>
-            )}
-            {canViewPaymentDashboard && (
-              <button className="pill-toggle active" style={{ padding: '8px 24px', borderRadius: '24px', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
-                Manage Bookings
-              </button>
-            )}
-          </div>
+      <div className="page-header">
+        <div style={{ flex: 1 }}>
+          <h1>Manage Bookings</h1>
+          <p className="page-subtitle">View existing bookings and record payments</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+          {canCreateBooking && (
+            <button className="btn btn-secondary" onClick={() => router.push(`/${portalBase}/bookings`)} style={{ padding: '8px 16px', fontWeight: 600 }}>
+              New Booking
+            </button>
+          )}
+          {canViewPaymentDashboard && (
+            <button className="btn btn-primary" style={{ padding: '8px 16px', fontWeight: 600 }}>
+              Manage Bookings
+            </button>
+          )}
         </div>
 
         {canExportHistory && (
-          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <button className="btn btn-secondary btn-sm" onClick={exportToPDF} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <FileText size={14} /> Export to PDF
             </button>
@@ -1160,8 +1187,8 @@ export default function ManageBookingsPage() {
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="card-body" style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div className="card filter-card" style={{ marginBottom: 'var(--space-4)' }}>
+        <div className="card-body" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ flex: '1 1 200px' }}>
             <label className="form-label">Search Customer</label>
             <CustomAutocomplete
@@ -1172,14 +1199,6 @@ export default function ManageBookingsPage() {
               placeholder="Search by name or number..."
               style={{ width: '100%' }}
             />
-          </div>
-          <div className="form-group" style={{ flex: '1 1 150px' }}>
-            <label className="form-label">From Date</label>
-            <CustomDatePicker value={startDate} onChange={setStartDate} placeholder="Any date" />
-          </div>
-          <div className="form-group" style={{ flex: '1 1 150px' }}>
-            <label className="form-label">To Date</label>
-            <CustomDatePicker value={endDate} onChange={setEndDate} placeholder="Any date" />
           </div>
           <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label className="form-label">Payment Status</label>
@@ -1194,6 +1213,14 @@ export default function ManageBookingsPage() {
               onChange={setPaymentStatus}
             />
           </div>
+          <div className="form-group" style={{ flex: '1 1 150px' }}>
+            <label className="form-label">From Date</label>
+            <CustomDatePicker value={startDate} onChange={setStartDate} placeholder="Any date" />
+          </div>
+          <div className="form-group" style={{ flex: '1 1 150px' }}>
+            <label className="form-label">To Date</label>
+            <CustomDatePicker value={endDate} onChange={setEndDate} placeholder="Any date" />
+          </div>
         </div>
       </div>
 
@@ -1203,7 +1230,7 @@ export default function ManageBookingsPage() {
             <span style={{ fontWeight: 600 }}>{selectedBulkBookings.size}</span> bookings selected
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <button 
+            <button
               className="btn btn-secondary btn-sm"
               onClick={async () => {
                 const selectedData = filteredBookings
@@ -1218,35 +1245,60 @@ export default function ManageBookingsPage() {
                     summary: `Booking for ${b.bookingType === 'bulk' ? 'Bulk Order' : (b.startTime + ' - ' + b.endTime)}`,
                   }));
                 if (selectedData.length > 0) {
+                  let signatureBase64 = '';
+                  let qrBase64 = '';
+                  let bankName = '';
+                  let bankAccount = '';
+                  let bankIfsc = '';
+                  let bankHolder = '';
+                  try {
+                    const settingsRes = await fetch('/api/settings').then(r => r.json());
+                    if (settingsRes.success && settingsRes.data) {
+                      const sigSetting = settingsRes.data.find((s: any) => s.key === 'invoice_signature');
+                      if (sigSetting && sigSetting.value) signatureBase64 = sigSetting.value;
+                      const qrSetting = settingsRes.data.find((s: any) => s.key === 'invoice_qr_code');
+                      if (qrSetting && qrSetting.value) qrBase64 = qrSetting.value;
+                      const bnSetting = settingsRes.data.find((s: any) => s.key === 'invoice_bank_name');
+                      if (bnSetting && bnSetting.value) bankName = bnSetting.value;
+                      const baSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_no');
+                      if (baSetting && baSetting.value) bankAccount = baSetting.value;
+                      const biSetting = settingsRes.data.find((s: any) => s.key === 'invoice_ifsc_code');
+                      if (biSetting && biSetting.value) bankIfsc = biSetting.value;
+                      const bhSetting = settingsRes.data.find((s: any) => s.key === 'invoice_account_holder');
+                      if (bhSetting && bhSetting.value) bankHolder = bhSetting.value;
+                    }
+                  } catch (e) {
+                    console.warn('Failed to fetch settings for PDF', e);
+                  }
                   const { generateConsolidatedReport } = await import('@/lib/invoice-generator');
-                  generateConsolidatedReport(selectedData);
+                  generateConsolidatedReport(selectedData, signatureBase64, qrBase64, bankName, bankAccount, bankIfsc, bankHolder);
                 }
               }}
             >
               Generate Bill
             </button>
             {canManageBookings && (
-              <button 
+              <button
                 className="btn btn-primary btn-sm"
                 onClick={() => {
                   if (unpaidSelectedBookings.length === 0) {
                     showToast('Selected bookings are already fully paid', 'error');
                     return;
                   }
-                  
+
                   const totalPending = unpaidSelectedBookings.reduce((sum, b) => Math.max(0, sum + (b.expectedAmount - (b.discountAmount || 0) - (b.totalPaid || 0))), 0);
-                  
+
                   if (totalPending <= 0) {
                     showToast('Selected bookings are already fully paid', 'error');
                     return;
                   }
-                  
-                  setBulkPaymentSplits([{ 
-                    amount: totalPending, 
-                    paymentMode: 'cash', 
-                    referenceNumber: '', 
-                    cashReceivedBy: '', 
-                    referenceNote: '' 
+
+                  setBulkPaymentSplits([{
+                    amount: totalPending,
+                    paymentMode: 'cash',
+                    referenceNumber: '',
+                    cashReceivedBy: '',
+                    referenceNote: ''
                   }]);
                   setBulkDiscountInput('');
                   setBulkDiscountType('percentage');
@@ -1272,13 +1324,13 @@ export default function ManageBookingsPage() {
           </div>
         ) : (
           <>
-            <div className="data-table-wrapper">
-              <table className="data-table">
+            <div className="data-table-wrapper bookings-manage-table-wrapper">
+              <table className="data-table bookings-manage-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '40px', textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
+                    <th className="col-checkbox" style={{ width: '24px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
                         onChange={(e) => {
                           if (e.target.checked) {
                             setSelectedBulkBookings(new Set(filteredBookings.map(t => t._id)));
@@ -1290,12 +1342,14 @@ export default function ManageBookingsPage() {
                         style={{ cursor: 'pointer' }}
                       />
                     </th>
-                    <th>Booking Details</th>
-                    <th>Customer</th>
-                    <th>Total Amount</th>
-                    <th>Paid Amount</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th className="col-details">Booking Details</th>
+                    <th className="col-customer">Customer</th>
+                    <th className="hide-on-mobile">Total Amount</th>
+                    <th className="hide-on-mobile">Paid Amount</th>
+                    <th className="hide-on-mobile">Status</th>
+                    <th className="hide-on-mobile">Actions</th>
+                    <th className="show-on-mobile-cell col-mobile-amount" style={{ textAlign: 'center' }}>Paid Amount</th>
+                    <th className="show-on-mobile-cell col-mobile-action" style={{ textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1303,49 +1357,80 @@ export default function ManageBookingsPage() {
                     const isPaid = b.paymentStatus === 'paid';
                     return (
                       <tr key={b._id} onClick={() => handleRowClick(b)} style={{ cursor: 'pointer' }} className="hover-row">
-                        <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                          <input 
-                            type="checkbox" 
+                        <td className="col-checkbox" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
                             checked={selectedBulkBookings.has(b._id)}
+                            disabled={b.bookingStatus === 'cancelled'}
                             onChange={(e) => {
                               const newSet = new Set(selectedBulkBookings);
                               if (e.target.checked) newSet.add(b._id);
                               else newSet.delete(b._id);
                               setSelectedBulkBookings(newSet);
                             }}
-                            style={{ cursor: 'pointer' }}
+                            style={{ cursor: b.bookingStatus === 'cancelled' ? 'not-allowed' : 'pointer' }}
                           />
                         </td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>
+                        <td className="col-details">
+                          <div style={{ fontWeight: 600, fontSize: '11px' }}>
                             {b.bookingType === 'bulk' && b.allDates && b.allDates.length > 1
                               ? b.allDates.map(d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')
                               : b.bookingDate ? new Date(b.bookingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Bulk Booking'}
                           </div>
-                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                             {b.bookingType === 'bulk' ? `Bulk Order (${b.allDates?.length || 1} dates)` : `${b.startTime} - ${b.endTime}`}
                           </div>
-                          <span className="badge badge-neutral" style={{ marginTop: 'var(--space-1)', fontSize: '10px' }}>
+                          <span className="badge badge-neutral" style={{ marginTop: '2px', fontSize: '8px', padding: '1px 4px' }}>
                             {b.facility === 'nets_with_machine' ? 'Nets (Machine)' : b.facility === 'nets_without_machine' ? 'Nets (No Machine)' : 'Turf'}
                           </span>
                         </td>
-                        <td>
-                          <div style={{ fontWeight: 500 }}>{b.customerName || 'Walk-in'}</div>
-                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{b.contactNumber || 'No contact'}</div>
+                        <td className="col-customer">
+                          <div style={{ fontWeight: 500, fontSize: '11px' }}>{b.customerName || 'Walk-in'}</div>
+                          <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>{b.contactNumber || 'No contact'}</div>
                         </td>
-                        <td style={{ fontWeight: 600 }}>{fmt(b.expectedAmount - (b.discountAmount || 0))}</td>
-                        <td style={{ color: isPaid ? 'var(--status-success)' : 'inherit' }}>{fmt(b.totalPaid)}</td>
-                        <td>
-                          <span className={`badge badge-${isPaid ? 'success' : b.paymentStatus === 'partial' ? 'warning' : 'danger'}`}>
-                            {b.paymentStatus.toUpperCase()}
-                          </span>
+                        <td className="show-on-mobile-cell col-mobile-amount" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                            <span style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-primary)' }}>
+                              {fmt(b.expectedAmount - (b.discountAmount || 0))}
+                            </span>
+                            {b.bookingStatus === 'cancelled' ? (
+                              <span className="badge badge-danger" style={{ fontSize: '8px', padding: '1px 4px' }}>CANCELLED</span>
+                            ) : (
+                              <span className={`badge badge-${isPaid ? 'success' : b.paymentStatus === 'partial' ? 'warning' : 'danger'}`} style={{ fontSize: '8px', padding: '1px 4px' }}>
+                                {b.paymentStatus.toUpperCase()}
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td>
+                        <td className="show-on-mobile-cell col-mobile-action" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                           {canManageBookings && (
-                            <button 
-                              className="btn btn-primary btn-sm" 
+                            <button
+                              className="btn btn-primary"
+                              onClick={(e) => { e.stopPropagation(); openPaymentModal(b, e); }}
+                              disabled={isPaid || b.bookingStatus === 'cancelled'}
+                              style={{ padding: '2px 4px', fontSize: '9px', minHeight: 'auto', display: 'inline-flex', alignItems: 'center', gap: '1px' }}
+                            >
+                              <IndianRupee size={8} /> Pay
+                            </button>
+                          )}
+                        </td>
+                        <td className="hide-on-mobile" style={{ fontWeight: 600 }}>{fmt(b.expectedAmount - (b.discountAmount || 0))}</td>
+                        <td className="hide-on-mobile" style={{ color: isPaid ? 'var(--status-success)' : 'inherit' }}>{fmt(b.totalPaid)}</td>
+                        <td className="hide-on-mobile">
+                          {b.bookingStatus === 'cancelled' ? (
+                            <span className="badge badge-danger">CANCELLED</span>
+                          ) : (
+                            <span className={`badge badge-${isPaid ? 'success' : b.paymentStatus === 'partial' ? 'warning' : 'danger'}`}>
+                              {b.paymentStatus.toUpperCase()}
+                            </span>
+                          )}
+                        </td>
+                        <td className="hide-on-mobile">
+                          {canManageBookings && (
+                            <button
+                              className="btn btn-primary btn-sm"
                               onClick={(e) => openPaymentModal(b, e)}
-                              disabled={isPaid}
+                              disabled={isPaid || b.bookingStatus === 'cancelled'}
                             >
                               <IndianRupee size={14} /> Pay
                             </button>
@@ -1364,35 +1449,36 @@ export default function ManageBookingsPage() {
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                   Showing {Math.min((currentPage - 1) * pageSize + 1, filteredBookings.length)} to {Math.min(currentPage * pageSize, filteredBookings.length)} of {filteredBookings.length} entries
                 </div>
-                
+
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Show:</span>
-                  <select 
-                    className="form-select" 
-                    value={pageSize} 
-                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                    style={{ padding: '4px 8px', fontSize: '12px', height: '32px', width: 'auto', minWidth: '60px' }}
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
+                  <CustomSelect
+                    options={[
+                      { value: '10', label: '10' },
+                      { value: '25', label: '25' },
+                      { value: '50', label: '50' },
+                      { value: '100', label: '100' }
+                    ]}
+                    value={pageSize.toString()}
+                    onChange={(val) => { setPageSize(Number(val)); setCurrentPage(1); }}
+                    style={{ minWidth: '70px', height: '32px' }}
+                    searchable={false}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  <button 
-                    className="btn btn-ghost btn-sm" 
+                  <button
+                    className="btn btn-ghost btn-sm"
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
                     style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
                   >
                     Previous
                   </button>
-                  
+
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
                     const isVisible = p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1);
-                    
+
                     if (!isVisible) {
                       if (p === 2 && currentPage > 3) return <span key={`dots-start`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
                       if (p === totalPages - 1 && currentPage < totalPages - 2) return <span key={`dots-end`} style={{ padding: '0 4px', color: 'var(--text-secondary)' }}>...</span>;
@@ -1411,8 +1497,8 @@ export default function ManageBookingsPage() {
                     );
                   })}
 
-                  <button 
-                    className="btn btn-ghost btn-sm" 
+                  <button
+                    className="btn btn-ghost btn-sm"
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages || totalPages === 0}
                     style={{ padding: '4px 8px', fontSize: '11px', height: '32px' }}
@@ -1435,20 +1521,20 @@ export default function ManageBookingsPage() {
               <button className="modal-close" onClick={() => setSelectedBooking(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
-              <div className="form-grid-2" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
-                <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)' }}>
+              <div className="card" style={{ padding: 'var(--space-3)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+                <div>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Customer</div>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--text-lg)' }}>{selectedBooking.customerName || 'Walk-in'}</div>
-                  <div style={{ color: 'var(--text-secondary)' }}>{selectedBooking.contactNumber || 'No contact provided'}</div>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--text-md)' }}>{selectedBooking.customerName || 'Walk-in'}</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{selectedBooking.contactNumber || 'No contact provided'}</div>
                 </div>
-                <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)' }}>
+                <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Date & Time</div>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--text-lg)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--text-md)' }}>
                     {selectedBooking.bookingType === 'bulk' && selectedBooking.allDates && selectedBooking.allDates.length > 1
                       ? selectedBooking.allDates.map(d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')
                       : selectedBooking.bookingDate ? new Date(selectedBooking.bookingDate).toLocaleDateString('en-IN') : 'Bulk Booking'}
                   </div>
-                  <div style={{ color: 'var(--text-secondary)' }}>{selectedBooking.bookingType === 'bulk' ? `Bulk Order (${selectedBooking.allDates?.length || 1} dates)` : `${selectedBooking.startTime} - ${selectedBooking.endTime}`}</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{selectedBooking.bookingType === 'bulk' ? `Bulk Order (${selectedBooking.allDates?.length || 1} dates)` : `${selectedBooking.startTime} - ${selectedBooking.endTime}`}</div>
                 </div>
               </div>
 
@@ -1484,9 +1570,8 @@ export default function ManageBookingsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)', paddingBottom: 'var(--space-2)' }}>
-                <h4 style={{ margin: 0 }}>Payment Summary</h4>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)', paddingBottom: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'center' }}>
                   {selectedBooking.paymentStatus !== 'paid' && canManageBookings && (
                     <button className="btn btn-secondary btn-sm" onClick={openAddonsModal}>
                       <Plus size={14} /> Add Add-Ons
@@ -1498,9 +1583,10 @@ export default function ManageBookingsPage() {
                     </button>
                   )}
                 </div>
+                <h4 style={{ margin: 0 }}>Payment Summary</h4>
               </div>
 
-              <div className="form-grid-3" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+              <div className="form-grid-3" style={{ gap: 'var(--space-4)', marginBottom: 0 }}>
                 <div>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Total Amount</div>
                   <div style={{ fontWeight: 600 }}>{fmt(selectedBooking.expectedAmount - (selectedBooking.discountAmount || 0))}</div>
@@ -1522,41 +1608,9 @@ export default function ManageBookingsPage() {
                 </div>
               </div>
 
-              <h4 style={{ margin: '0 0 var(--space-4) 0' }}>Payment History</h4>
-              {paymentsLoading ? (
-                <div className="loading-screen" style={{ minHeight: '100px' }}><div className="spinner spinner-md" /></div>
-              ) : bookingPayments.length === 0 ? (
-                <div className="empty-state" style={{ padding: 'var(--space-6)' }}>
-                  <Receipt size={32} style={{ opacity: 0.5, marginBottom: 'var(--space-2)' }} />
-                  <div style={{ color: 'var(--text-secondary)' }}>No payments recorded yet</div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                  {bookingPayments.map(p => (
-                    <div key={p._id} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{fmt(p.amountPaid)}</div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
-                          {new Date(p.paymentDate).toLocaleDateString('en-IN')} • {p.paymentMode.replace('_', ' ')}
-                        </div>
-                        {p.paymentMode === 'split' && p.splits && (
-                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
-                            Splits: {p.splits.map(s => `${fmt(s.amount)} (${s.paymentMode})`).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ textAlign: 'right', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                        <div>By {p.createdBy?.name || 'System'}</div>
-                        {p.referenceNumber && <div>Ref: {p.referenceNumber}</div>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               {selectedBooking.editHistory && selectedBooking.editHistory.length > 0 && (
                 <>
-                  <h4 style={{ margin: 'var(--space-6) 0 var(--space-4) 0' }}>Edit History</h4>
+                  <h4 style={{ margin: 'var(--space-6) 0 var(--space-4) 0', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--border-primary)' }}>Edit History</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
                     {selectedBooking.editHistory.map((edit, idx) => {
                       const diff = edit.newExpectedAmount - edit.oldExpectedAmount;
@@ -1656,23 +1710,23 @@ export default function ManageBookingsPage() {
                 </>
               )}
             </div>
-            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-start', gap: 'var(--space-3)', width: '100%', marginTop: 'auto', flexWrap: 'wrap' }}>
+            <div className="modal-footer" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', width: '100%', marginTop: '8px' }}>
               {selectedBooking.bookingStatus !== 'cancelled' && canEditBooking && !isSlotInPast(getDateStr(String(selectedBooking.bookingDate)), selectedBooking.endTime) && (
-                  <button className="btn btn-primary btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => openEditModal(selectedBooking)}>
-                    <Edit size={16} /> Edit Booking
-                  </button>
-                )}
-                {selectedBooking.bookingStatus !== 'cancelled' && canCancelBooking && !isSlotInPast(getDateStr(String(selectedBooking.bookingDate)), selectedBooking.endTime) && (
-                  <button className="btn btn-danger btn-md" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => { setCancelReason(''); setShowCancelModal(true); }}>
-                    <Trash2 size={16} /> Cancel Booking
-                  </button>
-                )}
-                {canExportBill && (
-                  <button className="btn btn-secondary btn-md" onClick={handleDownloadReceipt} style={{ marginLeft: 'auto' }}>
-                    <FileText size={18} /> Download Bill
-                  </button>
-                )}
-                <button className="btn btn-secondary btn-md" onClick={() => setSelectedBooking(null)}>Close</button>
+                <button className="btn btn-primary btn-md" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%' }} onClick={() => openEditModal(selectedBooking)}>
+                  <Edit size={16} /> Edit
+                </button>
+              )}
+              {selectedBooking.bookingStatus !== 'cancelled' && canCancelBooking && !isSlotInPast(getDateStr(String(selectedBooking.bookingDate)), selectedBooking.endTime) && (
+                <button className="btn btn-danger btn-md" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%' }} onClick={() => { setCancelReason(''); setShowCancelModal(true); }}>
+                  <Trash2 size={16} /> Cancel
+                </button>
+              )}
+              {canExportBill && (
+                <button className="btn btn-primary btn-md" onClick={() => handleDownloadReceipt('download')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%' }}>
+                  <FileText size={16} /> Bill
+                </button>
+              )}
+              <button className="btn btn-secondary btn-md" style={{ width: '100%' }} onClick={() => setSelectedBooking(null)}>Close</button>
             </div>
           </div>
         </div>
@@ -1687,7 +1741,7 @@ export default function ManageBookingsPage() {
               <button className="modal-close" onClick={() => setShowPaymentModal(false)}><X size={20} /></button>
             </div>
             <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-              
+
               <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>Slot Base Fee:</span>
@@ -1769,15 +1823,15 @@ export default function ManageBookingsPage() {
                 {paymentSplits.map((split, index) => (
                   <div key={index} className="card" style={{ padding: 'var(--space-3)', position: 'relative' }}>
                     {paymentSplits.length > 1 && (
-                      <button 
-                        className="btn btn-icon btn-ghost btn-sm" 
+                      <button
+                        className="btn btn-icon btn-ghost btn-sm"
                         style={{ position: 'absolute', top: '8px', right: '8px', color: 'var(--status-danger)' }}
                         onClick={() => removeSplit(index)}
                       >
                         <Trash2 size={16} />
                       </button>
                     )}
-                    
+
                     <div className="form-grid-2" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-3)', paddingRight: paymentSplits.length > 1 ? '30px' : '0' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Amount (₹)</label>
@@ -1848,8 +1902,8 @@ export default function ManageBookingsPage() {
               </div>
               <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                 <button className="btn btn-secondary btn-md" onClick={() => setShowPaymentModal(false)}>Cancel</button>
-                <button 
-                  className={`btn btn-primary btn-md ${savingPayment ? 'btn-loading' : ''}`} 
+                <button
+                  className={`btn btn-primary btn-md ${savingPayment ? 'btn-loading' : ''}`}
                   onClick={handlePaymentSubmit}
                   disabled={savingPayment || totalEntered <= 0 || totalEntered > pendingAmount}
                 >
@@ -1870,7 +1924,7 @@ export default function ManageBookingsPage() {
               <button className="modal-close" onClick={() => setShowBulkPaymentModal(false)}><X size={20} /></button>
             </div>
             <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-              
+
               <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-secondary)', marginBottom: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-primary)' }}>
                   <span style={{ color: 'var(--text-primary)' }}>Total Booking Value:</span>
@@ -1928,15 +1982,15 @@ export default function ManageBookingsPage() {
                 {bulkPaymentSplits.map((split, index) => (
                   <div key={index} className="card" style={{ padding: 'var(--space-3)', position: 'relative' }}>
                     {bulkPaymentSplits.length > 1 && (
-                      <button 
-                        className="btn btn-icon btn-ghost btn-sm" 
+                      <button
+                        className="btn btn-icon btn-ghost btn-sm"
                         style={{ position: 'absolute', top: '8px', right: '8px', color: 'var(--status-danger)' }}
                         onClick={() => removeBulkSplit(index)}
                       >
                         <Trash2 size={16} />
                       </button>
                     )}
-                    
+
                     <div className="form-grid-2" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-3)', paddingRight: bulkPaymentSplits.length > 1 ? '30px' : '0' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Amount (₹)</label>
@@ -2007,8 +2061,8 @@ export default function ManageBookingsPage() {
               </div>
               <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                 <button className="btn btn-secondary btn-md" onClick={() => setShowBulkPaymentModal(false)}>Cancel</button>
-                <button 
-                  className={`btn btn-primary btn-md ${savingBulkPayment ? 'btn-loading' : ''}`} 
+                <button
+                  className={`btn btn-primary btn-md ${savingBulkPayment ? 'btn-loading' : ''}`}
                   onClick={handleBulkPaymentSubmit}
                   disabled={savingBulkPayment || bulkTotalEntered <= 0 || bulkTotalEntered > bulkPendingAmount}
                 >
@@ -2029,7 +2083,7 @@ export default function ManageBookingsPage() {
               <button className="modal-close" onClick={() => setShowEditModal(false)}><X size={20} /></button>
             </div>
             <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-              
+
               {bookingPayments.length > 0 && (
                 <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--surface-secondary)', borderLeft: '4px solid var(--status-info)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)' }}>
                   <AlertCircle size={20} style={{ color: 'var(--status-info)', flexShrink: 0 }} />
@@ -2074,7 +2128,7 @@ export default function ManageBookingsPage() {
                   <span>Select Time Slots</span>
                   <span className="badge badge-neutral">{editSelectedSlots.length} selected</span>
                 </label>
-                
+
                 {editBookedLoading ? (
                   <div className="loading-screen" style={{ minHeight: '120px' }}><div className="spinner spinner-sm" /></div>
                 ) : (
@@ -2089,7 +2143,7 @@ export default function ManageBookingsPage() {
                     />
                   </div>
                 )}
-                
+
                 {editNewExpectedAmount !== selectedBooking.expectedAmount || editBookingDate !== getDateStr(selectedBooking.bookingDate) ? (
                   <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -2106,7 +2160,7 @@ export default function ManageBookingsPage() {
                         <div style={{ fontSize: 'var(--text-sm)' }}><strong>Amount:</strong> {fmt(editNewExpectedAmount)}</div>
                       </div>
                     </div>
-                    
+
                     {bookingPayments.length > 0 && (
                       <div style={{ paddingTop: '12px', borderTop: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
@@ -2166,8 +2220,8 @@ export default function ManageBookingsPage() {
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
               <button className="btn btn-secondary btn-md" onClick={() => setShowEditModal(false)}>Cancel</button>
-              <button 
-                className={`btn btn-primary btn-md ${savingEdit ? 'btn-loading' : ''}`} 
+              <button
+                className={`btn btn-primary btn-md ${savingEdit ? 'btn-loading' : ''}`}
                 onClick={handleEditSubmit}
                 disabled={savingEdit}
               >
@@ -2215,8 +2269,8 @@ export default function ManageBookingsPage() {
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
               <button className="btn btn-secondary btn-md" onClick={() => setShowCancelModal(false)}>Go Back</button>
-              <button 
-                className={`btn btn-danger btn-md ${cancellingBooking ? 'btn-loading' : ''}`} 
+              <button
+                className={`btn btn-danger btn-md ${cancellingBooking ? 'btn-loading' : ''}`}
                 onClick={handleCancelSubmit}
                 disabled={cancellingBooking}
               >
@@ -2248,7 +2302,7 @@ export default function ManageBookingsPage() {
                   <span>
                     <strong>Include Lounge Area</strong>
                     <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: loungeAddonUnavailable ? 'var(--status-danger)' : 'var(--text-secondary)', fontWeight: 'normal' }}>
-                      {checkingLoungeAddon 
+                      {checkingLoungeAddon
                         ? 'Checking lounge availability...'
                         : loungeAddonUnavailable
                           ? 'Lounge is already reserved by another team on this day'
@@ -2264,36 +2318,36 @@ export default function ManageBookingsPage() {
                   <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Plus size={16} /> Add Inventory Items (Sales)
                   </label>
-                  <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {inventoryItems.map(item => (
-                      <div key={item._id} style={{ padding: 'var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                          <strong style={{ fontSize: 'var(--text-sm)' }}>{item.name}</strong>
-                          <span style={{ fontSize: 'var(--text-sm)' }}>₹{item.unitPrice}</span>
+                      <div key={item._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', gap: '8px' }}>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                          <strong style={{ fontSize: 'var(--text-sm)', lineHeight: 1.2 }}>{item.name}</strong>
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Stock: {item.currentStock} {item.unit}</span>
                         </div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
-                          Stock: {item.currentStock} {item.unit}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
                             disabled={!addonProducts[item._id]}
                             onClick={() => setAddonProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) - 1 }))}
-                            style={{ padding: '4px' }}
+                            style={{ padding: '2px 6px', height: '24px', minWidth: '24px' }}
                           >
-                            <Minus size={14} />
+                            <Minus size={12} />
                           </button>
-                          <span style={{ flex: 1, textAlign: 'center', fontWeight: 600 }}>{addonProducts[item._id] || 0}</span>
+                          <span style={{ width: '20px', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-sm)' }}>{addonProducts[item._id] || 0}</span>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
                             disabled={(addonProducts[item._id] || 0) >= item.currentStock}
                             onClick={() => setAddonProducts(prev => ({ ...prev, [item._id]: (prev[item._id] || 0) + 1 }))}
-                            style={{ padding: '4px' }}
+                            style={{ padding: '2px 6px', height: '24px', minWidth: '24px' }}
                           >
-                            <Plus size={14} />
+                            <Plus size={12} />
                           </button>
+                        </div>
+                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, minWidth: '40px', textAlign: 'right' }}>
+                          ₹{item.unitPrice}
                         </div>
                       </div>
                     ))}
@@ -2303,8 +2357,8 @@ export default function ManageBookingsPage() {
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
               <button className="btn btn-secondary btn-md" onClick={() => setShowAddonsModal(false)}>Cancel</button>
-              <button 
-                className={`btn btn-primary btn-md ${savingAddons ? 'btn-loading' : ''}`} 
+              <button
+                className={`btn btn-primary btn-md ${savingAddons ? 'btn-loading' : ''}`}
                 onClick={handleSaveAddons}
                 disabled={savingAddons || (addonLoungeHours === (selectedBooking.loungeHours || '') && !Object.values(addonProducts).some(qty => qty > 0))}
               >

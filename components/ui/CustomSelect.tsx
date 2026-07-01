@@ -23,6 +23,7 @@ interface CustomSelectProps {
 export function CustomSelect({ options, value, onChange, placeholder = 'Select...', className = '', style, disabled = false, searchable = true }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,6 +38,29 @@ export function CustomSelect({ options, value, onChange, placeholder = 'Select..
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const screenWidth = window.innerWidth;
+      const popupWidth = 280; // Min width is 280px in globals.css
+      
+      let style: React.CSSProperties = {};
+      
+      if (rect.left + popupWidth > screenWidth - 10) {
+        if (rect.right - popupWidth >= 10) {
+          style = { right: 0, left: 'auto' };
+        } else {
+          const targetLeft = Math.max(10, (screenWidth - popupWidth) / 2);
+          style = { left: `${targetLeft - rect.left}px`, right: 'auto' };
+        }
+      } else {
+        style = { left: 0, right: 'auto' };
+      }
+      
+      setDropdownStyle(style);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && searchable && inputRef.current) {
@@ -68,7 +92,7 @@ export function CustomSelect({ options, value, onChange, placeholder = 'Select..
       </button>
 
       {isOpen && (
-        <div className="custom-select-dropdown">
+        <div className="custom-select-dropdown" style={dropdownStyle}>
           {searchable && (
             <div style={{ padding: '8px', borderBottom: '1px solid var(--surface-glass-border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Search size={14} color="var(--text-muted)" />

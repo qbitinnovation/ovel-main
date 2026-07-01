@@ -15,6 +15,7 @@ interface CustomDatePickerProps {
 
 export function CustomDatePicker({ value, onChange, className = '', style, disabled = false, placeholder = 'Select Date', minDate }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [viewDate, setViewDate] = useState(() => {
@@ -36,6 +37,29 @@ export function CustomDatePicker({ value, onChange, className = '', style, disab
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const screenWidth = window.innerWidth;
+      const popupWidth = 320;
+      
+      let style: React.CSSProperties = {};
+      
+      if (rect.left + popupWidth > screenWidth - 10) {
+        if (rect.right - popupWidth >= 10) {
+          style = { right: 0, left: 'auto' };
+        } else {
+          const targetLeft = Math.max(10, (screenWidth - popupWidth) / 2);
+          style = { left: `${targetLeft - rect.left}px`, right: 'auto' };
+        }
+      } else {
+        style = { left: 0, right: 'auto' };
+      }
+      
+      setDropdownStyle(style);
+    }
+  }, [isOpen]);
 
   const handlePrevMonth = () => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
@@ -117,7 +141,7 @@ export function CustomDatePicker({ value, onChange, className = '', style, disab
       </button>
 
       {isOpen && (
-        <div className="custom-datepicker-popup">
+        <div className="custom-datepicker-popup" style={dropdownStyle}>
           <div className="custom-datepicker-header">
             <button type="button" onClick={handlePrevMonth} className="custom-datepicker-nav"><ChevronLeft size={18} /></button>
             <div className="custom-datepicker-title">{monthNames[viewDate.getMonth()]} {viewDate.getFullYear()}</div>

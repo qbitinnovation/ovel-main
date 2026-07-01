@@ -17,6 +17,9 @@ export interface IMaintenanceTask extends Document {
     changedAt: Date;
     note: string;
   }[];
+  estimatedCost?: number;
+  actualCost?: number;
+  linkedMomId?: Types.ObjectId;
   closedAt: Date | null;
   closedBy: Types.ObjectId | null;
   completedAt: Date | null;
@@ -44,6 +47,8 @@ const MaintenanceTaskSchema = new Schema<IMaintenanceTask>(
       enum: ['open', 'in_progress', 'completed', 'closed', 'overdue'],
       default: 'open',
     },
+    estimatedCost: { type: Number, default: 0 },
+    actualCost: { type: Number, default: 0 },
     resolutionNote: { type: String, default: '' },
     statusHistory: [{
       status: { type: String, required: true },
@@ -51,6 +56,7 @@ const MaintenanceTaskSchema = new Schema<IMaintenanceTask>(
       changedAt: { type: Date, default: () => new Date() },
       note: { type: String, default: '' },
     }],
+    linkedMomId: { type: Schema.Types.ObjectId, ref: 'MeetingMinutes', default: null },
     closedAt: { type: Date, default: null },
     closedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     completedAt: { type: Date, default: null },

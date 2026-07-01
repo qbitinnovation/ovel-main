@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
     const firstSplit = finalSplits[0] || {};
     const payment = await PaymentEntry.create({
       bookingId: bookings[0]._id,
+      bookingIds: validBookingIds,
       amountPaid: totalPaidAmount,
       paymentMode: finalSplits.length === 1 ? firstSplit.paymentMode : 'split',
       paymentDate: new Date(paymentDate),

@@ -8,6 +8,8 @@ import Position from '@/models/Position';
 import { errorResponse, successResponse } from '@/lib/utils';
 import { checkPermission } from '@/lib/permissions';
 
+import AccountTransaction from '@/models/AccountTransaction';
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
       .populate({
         path: 'createdBy',
         select: 'name userType portalType positionId',
-        populate: { path: 'positionId', select: 'title', model: Position }
+        populate: { path: 'positionId', select: 'name', model: Position }
       })
       .populate({ path: 'products.itemId', model: InventoryItem })
       .sort({ createdAt: -1 })
@@ -38,19 +40,41 @@ export async function GET(request: NextRequest) {
     // Fetch Direct Sales (excluding sales tied to bookings)
     const sales = await InventoryTransaction.find({ 
       type: 'sale',
-      supplier: { $not: /booking/i }
+      supplier: { $not: { $regex: 'booking', $options: 'i' } }
     })
       .populate({ path: 'itemId', model: InventoryItem })
       .populate({
         path: 'enteredBy',
         select: 'name userType portalType positionId',
-        populate: { path: 'positionId', select: 'title', model: Position }
+        populate: { path: 'positionId', select: 'name', model: Position }
       })
       .sort({ date: -1 })
       .limit(limit)
       .lean();
 
-    return successResponse({ bookings, sales });
+    // Fetch Expenses from AccountTransaction
+    const expenses = await AccountTransaction.find({ type: 'expense' })
+      .populate({
+        path: 'createdBy',
+        select: 'name userType portalType positionId',
+        populate: { path: 'positionId', select: 'name', model: Position }
+      })
+      .sort({ date: -1 })
+      .limit(limit)
+      .lean();
+
+    // Fetch Manual Entries from AccountTransaction
+    const manualEntries = await AccountTransaction.find({ source: 'manual' })
+      .populate({
+        path: 'createdBy',
+        select: 'name userType portalType positionId',
+        populate: { path: 'positionId', select: 'name', model: Position }
+      })
+      .sort({ date: -1 })
+      .limit(limit)
+      .lean();
+
+    return successResponse({ bookings, sales, expenses, manualEntries });
   } catch (error: any) {
     console.error('GET /api/accounts/billing error:', error);
     return errorResponse(error?.message || 'Failed to fetch billing data', 500);

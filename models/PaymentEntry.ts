@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 export interface IPaymentEntry extends Document {
   _id: Types.ObjectId;
   bookingId: Types.ObjectId;
+  bookingIds?: Types.ObjectId[];
   amountPaid: number;
   paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash' | 'split';
   paymentDate: Date;
@@ -26,6 +27,7 @@ export interface IPaymentEntry extends Document {
 const PaymentEntrySchema = new Schema<IPaymentEntry>(
   {
     bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
+    bookingIds: [{ type: Schema.Types.ObjectId, ref: 'Booking' }],
     amountPaid: { type: Number, required: true, min: 0 },
     paymentMode: {
       type: String,

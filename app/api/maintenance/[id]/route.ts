@@ -2,6 +2,9 @@ import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import MaintenanceTask from '@/models/MaintenanceTask';
+import AccountTransaction from '@/models/AccountTransaction';
+import '@/models/User';
+import '@/models/MeetingMinutes';
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, sanitizeInput, getRequestMeta } from '@/lib/utils';
 import { devUserRef, getDevStore, isDevFallbackEnabled } from '@/lib/dev-store';
@@ -60,26 +63,28 @@ export async function PUT(
       const task = getDevStore().maintenanceTasks.find((item) => item._id === id);
       if (!task) return errorResponse('Task not found', 404);
       if (task.status === 'closed') return errorResponse('Cannot edit a closed task');
-      const { title, description, location, priority, dueDate, assigneeId } = body;
+      const { title, description, location, priority, dueDate, assigneeId, estimatedCost } = body;
       if (title) task.title = sanitizeInput(title);
       if (description !== undefined) task.description = sanitizeInput(description);
       if (location !== undefined) task.location = sanitizeInput(location);
       if (priority) task.priority = priority;
       if (dueDate) task.dueDate = new Date(dueDate).toISOString();
       if (assigneeId) task.assigneeId = assigneeId;
+      if (estimatedCost !== undefined) task.estimatedCost = Number(estimatedCost);
       task.updatedAt = new Date().toISOString();
       return successResponse(task, 'Task updated');
     }
     const task = await MaintenanceTask.findById(id);
     if (!task) return errorResponse('Task not found', 404);
     if (task.status === 'closed') return errorResponse('Cannot edit a closed task');
-    const { title, description, location, priority, dueDate, assigneeId } = body;
+    const { title, description, location, priority, dueDate, assigneeId, estimatedCost } = body;
     if (title) task.title = sanitizeInput(title);
     if (description !== undefined) task.description = sanitizeInput(description);
     if (location !== undefined) task.location = sanitizeInput(location);
     if (priority) task.priority = priority;
     if (dueDate) task.dueDate = new Date(dueDate);
     if (assigneeId) task.assigneeId = assigneeId;
+    if (estimatedCost !== undefined) task.estimatedCost = Number(estimatedCost);
     await task.save();
     const meta = getRequestMeta(request.headers);
     await auditAction({ userId: session.user.id, userName: session.user.name || '', userType: session.user.userType, action: 'edit_task', module: 'maintenance_tasks', recordId: task._id, description: `Edited task "${task.title}"`, ...meta }, request.headers);
@@ -99,7 +104,7 @@ export async function PATCH(
     if (!session?.user) return errorResponse('Unauthorized', 401);
     const { id } = await params;
     const body = await request.json();
-    const { action, note } = body;
+    const { action, note, actualCost } = body;
 
     let permissionAction = '';
     if (action === 'start' || action === 'complete') permissionAction = 'update_task_status';
@@ -125,10 +130,32 @@ export async function PATCH(
           break;
         case 'complete':
           if (task.status === 'closed') return errorResponse('Task is already closed');
+          const parsedDevActualCost = actualCost ? Number(actualCost) : 0;
           task.status = 'completed';
           task.completedAt = now;
+          task.actualCost = parsedDevActualCost;
           task.resolutionNote = note || '';
           task.statusHistory.push({ status: 'completed', changedBy: session.user.id, changedAt: now, note: note || 'Marked as completed' });
+          
+          const devEstCost = task.estimatedCost || 0;
+          const devDiff = parsedDevActualCost - devEstCost;
+          const devDiffText = devDiff > 0 ? `Over Budget by ₹${devDiff}` : devDiff < 0 ? `Under Budget by ₹${Math.abs(devDiff)}` : 'On Budget';
+          
+          getDevStore().accountTransactions.unshift({
+            _id: 'dev_mock_exp_' + Date.now(),
+            type: 'expense',
+            source: 'maintenance',
+            amount: parsedDevActualCost,
+            paymentMode: 'other',
+            customerName: 'Maintenance Module',
+            customerContact: '',
+            summary: `Maintenance: ${task.title} | Est: ₹${devEstCost} | Act: ₹${parsedDevActualCost} | Diff: ${devDiffText} | Completed By: ${session.user.name || 'System'}`,
+            referenceNumber: task._id,
+            date: now,
+            createdBy: session.user.id,
+            createdAt: now,
+            updatedAt: now,
+          });
           break;
         case 'close':
           if (task.status !== 'completed') return errorResponse('Task must be completed before closing');
@@ -162,10 +189,30 @@ export async function PATCH(
         break;
       case 'complete':
         if (task.status === 'closed') return errorResponse('Task is already closed');
+        const parsedActualCost = actualCost ? Number(actualCost) : 0;
         task.status = 'completed';
         task.completedAt = new Date();
+        task.actualCost = parsedActualCost;
         task.resolutionNote = note || '';
         task.statusHistory.push({ status: 'completed', changedBy: session.user.id as any, changedAt: new Date(), note: note || 'Marked as completed' });
+        
+        const estCost = task.estimatedCost || 0;
+        const diff = parsedActualCost - estCost;
+        const diffText = diff > 0 ? `Over Budget by ₹${diff}` : diff < 0 ? `Under Budget by ₹${Math.abs(diff)}` : 'On Budget';
+
+        await AccountTransaction.create({
+          type: 'expense',
+          source: 'maintenance',
+          amount: parsedActualCost,
+          paymentMode: 'other',
+          customerName: 'Maintenance Module',
+          customerContact: '',
+          summary: `Maintenance: ${task.title} | Est: ₹${estCost} | Act: ₹${parsedActualCost} | Diff: ${diffText} | Completed By: ${session.user.name || 'System'}`,
+          referenceNumber: task._id.toString(),
+          date: new Date(),
+          createdBy: session.user.id,
+          maintenanceTaskId: task._id
+        });
         break;
       case 'close':
         if (task.status !== 'completed') return errorResponse('Task must be completed before closing');

@@ -2,6 +2,8 @@ import { type NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import MaintenanceTask from '@/models/MaintenanceTask';
+import '@/models/MeetingMinutes'; // Required for populating linkedMomId
+import '@/models/User'; // Required for populating assigneeId and creatorId
 import { auditAction } from '@/lib/audit';
 import { successResponse, errorResponse, sanitizeInput, getRequestMeta, parsePagination, paginate } from '@/lib/utils';
 import { createDevId, devUserRef, getDevStore, isDevFallbackEnabled, type DevMaintenanceTask } from '@/lib/dev-store';
@@ -53,14 +55,16 @@ export async function GET(request: NextRequest) {
     const tasks = await MaintenanceTask.find(filter)
       .populate('assigneeId', 'name')
       .populate('creatorId', 'name')
+      .populate('linkedMomId', 'date')
       .sort({ createdAt: -1 })
       .skip(pagination.skip)
       .limit(limit);
 
     return successResponse({ tasks, pagination });
-  } catch (error) {
+  } catch (error: any) {
     console.error('GET /api/maintenance error:', error);
-    return errorResponse('Failed to fetch tasks', 500);
+    require('fs').writeFileSync('maintenance-debug-error.log', error?.stack || error?.message || String(error));
+    return errorResponse(`Failed to fetch tasks: ${error?.message || String(error)}`, 500);
   }
 }
 
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (!permission.allowed) return errorResponse('Forbidden', 403);
 
     const body = await request.json();
-    const { title, description, location, priority, dueDate, assigneeId } = body;
+    const { title, description, location, priority, dueDate, assigneeId, estimatedCost } = body;
 
     if (!title?.trim()) return errorResponse('Task title is required');
     if (!dueDate) return errorResponse('Due date is mandatory');
@@ -102,6 +106,8 @@ export async function POST(request: NextRequest) {
         assigneeId,
         creatorId: session.user.id,
         status: 'open',
+        estimatedCost: estimatedCost ? Number(estimatedCost) : 0,
+        actualCost: 0,
         resolutionNote: '',
         statusHistory: [{ status: 'open', changedBy: session.user.id, changedAt: now, note: 'Task created' }],
         closedAt: null,
@@ -123,6 +129,8 @@ export async function POST(request: NextRequest) {
       assigneeId,
       creatorId: session.user.id,
       status: 'open',
+      estimatedCost: estimatedCost ? Number(estimatedCost) : 0,
+      actualCost: 0,
       statusHistory: [{
         status: 'open',
         changedBy: session.user.id,

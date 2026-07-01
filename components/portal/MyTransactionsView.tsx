@@ -73,12 +73,13 @@ export default function MyTransactionsView() {
                 <th style={{ padding: 'var(--space-4)' }}>Customer</th>
                 <th style={{ padding: 'var(--space-4)' }}>Summary</th>
                 <th style={{ padding: 'var(--space-4)', textAlign: 'right' }}>Amount</th>
+                <th style={{ padding: 'var(--space-4)', textAlign: 'center' }}>Status</th>
               </tr>
             </thead>
             <tbody>
               {transactions.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={6} style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No cash transactions found.
                   </td>
                 </tr>
@@ -89,7 +90,7 @@ export default function MyTransactionsView() {
                     {new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </td>
                   <td style={{ padding: 'var(--space-4)' }}>
-                    <span className={`badge ${t.source === 'Booking' ? 'badge-primary' : t.source === 'Settlement' ? 'badge-success' : 'badge-warning'} badge-dot`}>
+                    <span className={`badge ${t.source === 'Booking' ? 'badge-primary' : 'badge-warning'} badge-dot`}>
                       {t.source}
                     </span>
                   </td>
@@ -100,8 +101,13 @@ export default function MyTransactionsView() {
                   <td style={{ padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
                     {t.summary}
                   </td>
-                  <td style={{ padding: 'var(--space-4)', textAlign: 'right', fontWeight: 600, color: t.amount > 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
-                    {t.amount > 0 ? `+₹${t.amount}` : `-₹${Math.abs(t.amount)}`}
+                  <td style={{ padding: 'var(--space-4)', textAlign: 'right', fontWeight: 600, color: t.status === 'Settled' ? 'var(--status-success)' : 'var(--status-danger)' }}>
+                    ₹{t.amount}
+                  </td>
+                  <td style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+                    <span className={`badge ${t.status === 'Settled' ? 'badge-success' : 'badge-danger'}`} style={{ padding: '4px 12px', borderRadius: 'var(--radius-full)' }}>
+                      {t.status}
+                    </span>
                   </td>
                 </tr>
               ))}

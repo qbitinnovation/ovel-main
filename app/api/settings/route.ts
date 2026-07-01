@@ -1,4 +1,6 @@
+// Force rebuild
 import { type NextRequest } from 'next/server';
+console.log("Forcing Turbopack Cache Clear...");
 import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import SystemSettings, { DEFAULT_SETTINGS } from '@/models/SystemSettings';
@@ -47,24 +49,26 @@ export async function GET() {
       return successResponse(sortSettings(ensureDevSettings()));
     }
 
-    // Ensure defaults exist
-    try {
-      for (const def of DEFAULT_SETTINGS) {
-        await SystemSettings.findOneAndUpdate(
-          { key: def.key },
-          { $setOnInsert: def },
-          { upsert: true }
-        );
+    const settings = await SystemSettings.find().sort({ category: 1, key: 1 });
+    
+    // Efficiently insert only missing defaults
+    const missingDefaults = DEFAULT_SETTINGS.filter(def => !settings.some(s => s.key === def.key));
+    if (missingDefaults.length > 0) {
+      try {
+        const inserted = await SystemSettings.insertMany(missingDefaults);
+        settings.push(...inserted);
+        // Re-sort after insertion
+        settings.sort((a, b) => a.category.localeCompare(b.category) || a.key.localeCompare(b.key));
+      } catch (upsertErr) {
+        console.error('Error inserting missing default settings:', upsertErr);
       }
-    } catch (upsertErr) {
-      console.error('Error upserting default settings:', upsertErr);
     }
 
-    const settings = await SystemSettings.find().sort({ category: 1, key: 1 });
     return successResponse(settings);
   } catch (error) {
     console.error('GET /api/settings error:', error);
-    return errorResponse('Failed to fetch settings', 500);
+    const msg = error instanceof Error ? error.message : String(error);
+    return errorResponse('Failed to fetch settings: ' + msg, 500);
   }
 }
 

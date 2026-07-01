@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 export interface IAccountTransaction extends Document {
   _id: Types.ObjectId;
   type: 'income' | 'expense';
-  source: 'booking' | 'sale' | 'restock' | 'manual';
+  source: 'booking' | 'sale' | 'restock' | 'manual' | 'maintenance';
   amount: number;
   paymentMode: 'bank_transfer' | 'upi' | 'card' | 'cash' | 'split' | 'other';
   customerName: string;
@@ -15,6 +15,7 @@ export interface IAccountTransaction extends Document {
   receivedBy?: Types.ObjectId;
   bookingId?: Types.ObjectId;
   inventoryTransactionId?: Types.ObjectId;
+  maintenanceTaskId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,7 +23,7 @@ export interface IAccountTransaction extends Document {
 const AccountTransactionSchema = new Schema<IAccountTransaction>(
   {
     type: { type: String, enum: ['income', 'expense'], required: true },
-    source: { type: String, enum: ['booking', 'sale', 'restock', 'manual'], required: true },
+    source: { type: String, enum: ['booking', 'sale', 'restock', 'manual', 'maintenance'], required: true },
     amount: { type: Number, required: true },
     paymentMode: { type: String, enum: ['bank_transfer', 'upi', 'card', 'cash', 'split', 'other'], default: 'other' },
     customerName: { type: String, default: '' },
@@ -34,6 +35,7 @@ const AccountTransactionSchema = new Schema<IAccountTransaction>(
     receivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     bookingId: { type: Schema.Types.ObjectId, ref: 'Booking' },
     inventoryTransactionId: { type: Schema.Types.ObjectId, ref: 'InventoryTransaction' },
+    maintenanceTaskId: { type: Schema.Types.ObjectId, ref: 'MaintenanceTask' },
   },
   { timestamps: true }
 );

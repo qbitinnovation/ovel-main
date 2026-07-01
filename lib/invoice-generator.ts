@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import numWords from 'num-words';
 
-export function generateTaxInvoice(booking: any, logoBase64?: string) {
+export function generateTaxInvoice(booking: any, logoBase64?: string, action: 'download' | 'print' = 'download', signatureBase64?: string, qrBase64?: string, bankName?: string, bankAccount?: string, bankIfsc?: string, bankHolder?: string) {
   const doc = new jsPDF('portrait', 'pt', 'a4');
   
   // Set default font to helvetica
@@ -228,56 +228,94 @@ export function generateTaxInvoice(booking: any, logoBase64?: string) {
 
   currentY = (doc as any).lastAutoTable.finalY;
 
-  // Footer Section
-  const footerHeight = 120;
-  const box1Width = 150;
-  const box2Width = 180;
+  // Footer Section — 3 boxes: Bank Details | Terms | Signature
+  const footerHeight = 110;
+  const box1Width = 160;
+  const box2Width = 170;
   const box3Width = contentWidth - box1Width - box2Width;
 
   doc.rect(margin, currentY, box1Width, footerHeight);
   doc.rect(margin + box1Width, currentY, box2Width, footerHeight);
   doc.rect(margin + box1Width + box2Width, currentY, box3Width, footerHeight);
 
-  // Box 1: Bank Details
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Bank Details', margin + 5, currentY + 15);
-  doc.setFont('helvetica', 'normal');
+  // Box 1: Bank Details — QR left column (48pt), text right column
+  const qrX = margin + 4;
+  const qrY = currentY + 18;
+  const qrSize = 48;
+  const textX = qrX + qrSize + 5;
+  const textMaxW = box1Width - qrSize - 13;
+
   doc.setFontSize(8);
-  
-  // Fake QR Code box
-  doc.rect(margin + 5, currentY + 25, 40, 40);
-  doc.text('QR', margin + 20, currentY + 45);
-  
-  doc.text('Name : IDBI BANK,', margin + 50, currentY + 30);
-  doc.text('MANACAUD', margin + 50, currentY + 40);
-  doc.text('Account No. :', margin + 50, currentY + 55);
-  doc.text('1328102000005401', margin + 50, currentY + 65);
-  doc.text('IFSC code :', margin + 50, currentY + 80);
-  doc.text('IBKL0001328', margin + 50, currentY + 90);
-  doc.text("Account holder's", margin + 5, currentY + 95);
-  doc.text('name : ECOS', margin + 5, currentY + 105);
-  doc.text('TRIVANDRUM', margin + 5, currentY + 115);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Bank Details', margin + 5, currentY + 10);
+  doc.setFont('helvetica', 'normal');
+
+  // QR image or placeholder
+  if (qrBase64) {
+    try {
+      doc.addImage(qrBase64, 'PNG', qrX, qrY, qrSize, qrSize);
+    } catch (e) {
+      console.warn('Failed to add QR code', e);
+      doc.rect(qrX, qrY, qrSize, qrSize);
+      doc.setFontSize(7);
+      doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2, { align: 'center' });
+    }
+  } else {
+    doc.rect(qrX, qrY, qrSize, qrSize);
+    doc.setFontSize(7);
+    doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2, { align: 'center' });
+  }
+
+  // Bank text — right of QR, compact stacked rows (label + value = 8+8 = 16pt each block)
+  doc.setFontSize(7.5);
+  const bnVal = bankName || 'IDBI BANK, MANACAUD';
+  const splitBn = doc.splitTextToSize(bnVal, textMaxW);
+  doc.text('Name :', textX, currentY + 20);
+  doc.text(splitBn, textX, currentY + 28);
+
+  const acValSplit = doc.splitTextToSize(bankAccount || '1328102000005401', textMaxW);
+  doc.text('A/C No. :', textX, currentY + 44);
+  doc.text(acValSplit, textX, currentY + 52);
+
+  doc.text('IFSC :', textX, currentY + 66);
+  doc.text(bankIfsc || 'IBKL0001328', textX, currentY + 74);
+
+  // Account holder — immediately after IFSC, full-width below QR
+  const ahVal = bankHolder || 'ECOS TRIVANDRUM';
+  const splitAhLabel = doc.splitTextToSize(`Holder: ${ahVal}`, box1Width - 8);
+  doc.text(splitAhLabel, margin + 4, currentY + 90);
 
   // Box 2: Terms and conditions
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.text('Terms and conditions', margin + box1Width + 5, currentY + 15);
+  doc.text('Terms and Conditions', margin + box1Width + 5, currentY + 11);
   doc.setFont('helvetica', 'normal');
-  const termsText = "Thank you for choosing us. We\nlook forward to serving you again.";
-  doc.text(termsText, margin + box1Width + 5, currentY + 30);
+  doc.setFontSize(8);
+  const termsText = 'Thank you for choosing us.\nWe look forward to serving you again.\nAll disputes subject to local jurisdiction.';
+  doc.text(termsText, margin + box1Width + 5, currentY + 24);
 
   // Box 3: Signature
-  doc.text('For : ECOS TRIVANDRUM VENTURES', margin + box1Width + box2Width + 5, currentY + 15);
-  
-  // Fake signature line
-  doc.setDrawColor(0, 0, 255);
-  doc.line(margin + box1Width + box2Width + 50, currentY + 60, margin + box1Width + box2Width + 120, currentY + 60);
-  doc.line(margin + box1Width + box2Width + 55, currentY + 65, margin + box1Width + box2Width + 115, currentY + 45);
-  
-  doc.setDrawColor(0, 0, 0);
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.text('Authorized Signatory', margin + box1Width + box2Width + (box3Width/2), currentY + 90, { align: 'center' });
+  doc.text('For : ECOS TRIVANDRUM VENTURES', margin + box1Width + box2Width + 5, currentY + 11);
+  doc.setFont('helvetica', 'normal');
+
+  const sigX = margin + box1Width + box2Width;
+  if (signatureBase64) {
+    try {
+      doc.addImage(signatureBase64, 'PNG', sigX + (box3Width - 80) / 2, currentY + 25, 80, 40);
+    } catch (e) {
+      console.warn('Failed to add dynamic signature', e);
+    }
+  } else {
+    doc.setDrawColor(0, 0, 255);
+    doc.line(sigX + 20, currentY + 70, sigX + box3Width - 20, currentY + 70);
+    doc.setDrawColor(0, 0, 0);
+  }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('Authorized Signatory', sigX + box3Width / 2, currentY + 100, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
 
   doc.autoPrint();
   const blob = doc.output('blob');
@@ -285,7 +323,7 @@ export function generateTaxInvoice(booking: any, logoBase64?: string) {
   window.open(url, '_blank');
 }
 
-export function generateConsolidatedReport(transactions: any[]) {
+export function generateConsolidatedReport(transactions: any[], signatureBase64?: string, qrBase64?: string, bankName?: string, bankAccount?: string, bankIfsc?: string, bankHolder?: string) {
   if (!transactions || transactions.length === 0) return;
 
   const doc = new jsPDF('portrait', 'pt', 'a4');
@@ -293,6 +331,7 @@ export function generateConsolidatedReport(transactions: any[]) {
 
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
+
   doc.text('Consolidated Tax Invoice', doc.internal.pageSize.getWidth() / 2, 40, { align: 'center' });
 
   const margin = 40;
@@ -529,49 +568,89 @@ export function generateConsolidatedReport(transactions: any[]) {
     currentY = margin;
   }
 
-  const footerHeight = 120;
-  const box1Width = 150;
-  const box2Width = 180;
+  const footerHeight = 110;
+  const box1Width = 160;
+  const box2Width = 170;
   const box3Width = contentWidth - box1Width - box2Width;
 
   doc.rect(margin, currentY, box1Width, footerHeight);
   doc.rect(margin + box1Width, currentY, box2Width, footerHeight);
   doc.rect(margin + box1Width + box2Width, currentY, box3Width, footerHeight);
 
-  doc.setFontSize(9);
+  // Box 1: Bank Details — QR left column (48pt), text right column
+  const qrX = margin + 4;
+  const qrY = currentY + 18;
+  const qrSize = 48;
+  const textX = qrX + qrSize + 5;
+  const textMaxW = box1Width - qrSize - 13;
+
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.text('Bank Details', margin + 5, currentY + 15);
+  doc.text('Bank Details', margin + 5, currentY + 10);
+  doc.setFont('helvetica', 'normal');
+
+  if (qrBase64) {
+    try {
+      doc.addImage(qrBase64, 'PNG', qrX, qrY, qrSize, qrSize);
+    } catch (e) {
+      console.warn('Failed to add QR code', e);
+      doc.rect(qrX, qrY, qrSize, qrSize);
+      doc.setFontSize(7);
+      doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2, { align: 'center' });
+    }
+  } else {
+    doc.rect(qrX, qrY, qrSize, qrSize);
+    doc.setFontSize(7);
+    doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2, { align: 'center' });
+  }
+
+  doc.setFontSize(7.5);
+  const bnVal2 = bankName || 'IDBI BANK, MANACAUD';
+  const splitBn2 = doc.splitTextToSize(bnVal2, textMaxW);
+  doc.text('Name :', textX, currentY + 20);
+  doc.text(splitBn2, textX, currentY + 28);
+
+  const acVal2 = doc.splitTextToSize(bankAccount || '1328102000005401', textMaxW);
+  doc.text('A/C No. :', textX, currentY + 44);
+  doc.text(acVal2, textX, currentY + 52);
+
+  doc.text('IFSC :', textX, currentY + 66);
+  doc.text(bankIfsc || 'IBKL0001328', textX, currentY + 74);
+
+  const ahVal2 = bankHolder || 'ECOS TRIVANDRUM';
+  const splitAh2 = doc.splitTextToSize(`Holder: ${ahVal2}`, box1Width - 8);
+  doc.text(splitAh2, margin + 4, currentY + 90);
+
+  // Box 2: Terms and conditions
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Terms and Conditions', margin + box1Width + 5, currentY + 11);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  
-  doc.rect(margin + 5, currentY + 25, 40, 40);
-  doc.text('QR', margin + 20, currentY + 45);
-  
-  doc.text('Name : IDBI BANK,', margin + 50, currentY + 30);
-  doc.text('MANACAUD', margin + 50, currentY + 40);
-  doc.text('Account No. :', margin + 50, currentY + 55);
-  doc.text('1328102000005401', margin + 50, currentY + 65);
-  doc.text('IFSC code :', margin + 50, currentY + 80);
-  doc.text('IBKL0001328', margin + 50, currentY + 90);
-  doc.text("Account holder's", margin + 5, currentY + 95);
-  doc.text('name : ECOS', margin + 5, currentY + 105);
-  doc.text('TRIVANDRUM', margin + 5, currentY + 115);
+  doc.text('Thank you for choosing us.\nWe look forward to serving you again.\nAll disputes subject to local jurisdiction.', margin + box1Width + 5, currentY + 24);
 
-  doc.setFontSize(9);
+  // Box 3: Signature
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.text('Terms and conditions', margin + box1Width + 5, currentY + 15);
+  doc.text('For : ECOS TRIVANDRUM VENTURES', margin + box1Width + box2Width + 5, currentY + 11);
   doc.setFont('helvetica', 'normal');
-  doc.text("Thank you for choosing us. We\nlook forward to serving you again.", margin + box1Width + 5, currentY + 30);
 
-  doc.text('For : ECOS TRIVANDRUM VENTURES', margin + box1Width + box2Width + 5, currentY + 15);
-  
-  doc.setDrawColor(0, 0, 255);
-  doc.line(margin + box1Width + box2Width + 50, currentY + 60, margin + box1Width + box2Width + 120, currentY + 60);
-  doc.line(margin + box1Width + box2Width + 55, currentY + 65, margin + box1Width + box2Width + 115, currentY + 45);
-  
-  doc.setDrawColor(0, 0, 0);
+  const sigX2 = margin + box1Width + box2Width;
+  if (signatureBase64) {
+    try {
+      doc.addImage(signatureBase64, 'PNG', sigX2 + (box3Width - 80) / 2, currentY + 25, 80, 40);
+    } catch (e) {
+      console.warn('Failed to add dynamic signature', e);
+    }
+  } else {
+    doc.setDrawColor(0, 0, 255);
+    doc.line(sigX2 + 20, currentY + 70, sigX2 + box3Width - 20, currentY + 70);
+    doc.setDrawColor(0, 0, 0);
+  }
   doc.setFont('helvetica', 'bold');
-  doc.text('Authorized Signatory', margin + box1Width + box2Width + (box3Width/2), currentY + 90, { align: 'center' });
+  doc.setFontSize(8);
+  doc.text('Authorized Signatory', sigX2 + box3Width / 2, currentY + 100, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
 
   doc.autoPrint();
   const blob = doc.output('blob');
